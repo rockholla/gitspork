@@ -1,0 +1,18 @@
+version: v0.0.1-examples01
+upstream_owned:
+- upstream-owned.sh
+- upstream-owned.mk
+downstream_owned:
+- downstream-owned.md
+shared_ownership:
+  merged:
+  - Makefile
+  - shared-ownership-merge.tf
+  - sub/shared-ownership-merge.md
+  structured:
+    prefer_upstream:
+    - config.yaml
+    prefer_downstream:
+    - info.json
+  
+  

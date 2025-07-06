@@ -1,0 +1,9 @@
+::gitspork::begin-upstream-owned-block
+Here's some content managed and owned by the upstream.
+::gitspork::end-upstream-owned-block
+
+::gitspork::begin-upstream-owned-block
+and another block, anything above, below, etc. outside of these blocks is fair game for the downstream
+to modify. The merge algo for these types of files and blocks just deals w/ these blocks by list index
+and will manage them in the context of the rest of the file around it accordingly
+::gitspork::end-upstream-owned-block

@@ -31,7 +31,7 @@ In an empty directory on your machine:
 % gitspork integrate \
   --upstream-repo-url https://github.com/rockholla/gitspork \
   --upstream-repo-subpath ./docs/examples/simple/upstream \
-  --upstream-repo-version work \
+  --upstream-repo-version main \
   --downstream-repo-path ./
 ```
 

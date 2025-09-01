@@ -1,0 +1,4 @@
+pre_integrate:
+  exec: ./.gitspork/migration-scripts/migration-001.sh pre
+post_integrate:
+  exec: ./.gitspork/migration-scripts/migration-001.sh post

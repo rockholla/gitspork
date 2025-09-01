@@ -14,5 +14,7 @@ shared_ownership:
     - config.yaml
     prefer_downstream:
     - info.json
+migrations:
+- .gitspork/migration-001.yml
 
 

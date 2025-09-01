@@ -1,10 +1,13 @@
 # `gitspork` Documentation
 
-This project is still in early dev stages. We'll continue to build out more detailed documentation (and the other stuff, too) as we move forward, assuming this all actually proves useful.
+> [!NOTE]
+> Gitspork is still in a relatively early development phase. Pre-1.0 release, we will continue to iterate here and dial in both functionality and documentation alike.
 
-## TODO
+## For Upstream Developers
 
-* generate .gitspork docs from struct comments
-* enforce .gitspork config version vs binary version
-* docs, examples buildout
-* tests
+[comment]: <> (TODO: use generated .gitspork.yml schema docs here)
+More coming soon, if you want to refer to what you can set in `.gitspork.yml` prior to better schema docs being published here, please refer to the [related golang structs](../internal/gitspork.go).
+
+## For Downstream Integrators
+
+More coming soon, see the [root README.md](../README.md) in the meantime for the info currently available.

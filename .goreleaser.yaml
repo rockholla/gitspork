@@ -46,7 +46,4 @@ changelog:
 release:
   prerelease: auto
   footer: >-
-
-    ---
-
-    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+    Container image containing a usable gitspork binary available at https://hub.docker.com/r/rockholla/gitspork/tags?name={{ .Tag }}

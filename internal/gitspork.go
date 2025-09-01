@@ -25,6 +25,7 @@ type GitSporkConfig struct {
 	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://pkg.go.dev/path/filepath#Match) that should be treated as fully-owned by the upstream gitspork repo"`
 	DownstreamOwned []string                      `yaml:"downstream_owned" comment:"file patterns (https://pkg.go.dev/path/filepath#Match) that should be treated as fully-owned by the downstream repo once it's been initially integrated"`
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://pkg.go.dev/path/filepath#Match) that will be owned by both the upstream and downstream repos in some managed way"`
+	Migrations      []string                      `yaml:"migrations" comment:"list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions"`
 }
 
 // GitSporkConfigSharedOwnership represents config for what files will have shared ownership
@@ -37,6 +38,23 @@ type GitSporkConfigSharedOwnership struct {
 type GitSporkConfigSharedOwnershipStructured struct {
 	PreferUpstream   []string `yaml:"prefer_upstream" comment:"file patterns (https://pkg.go.dev/path/filepath#Match) that contain common structure data to merge, prefering the values set in the upstream repo"`
 	PreferDownstream []string `yaml:"prefer_downstream" comment:"file patterns (https://pkg.go.dev/path/filepath#Match) that contain common structure data to merge, prefering the values set in the downstream repo"`
+}
+
+// GitSporkConfigMigration represents config for a single downstream repo migration
+type GitSporkConfigMigration struct {
+	PreIntegrate  *GitSporkConfigMigrationInstructions `yaml:"pre_integrate,omitempty"`
+	PostIntegrate *GitSporkConfigMigrationInstructions `yaml:"post_integrate,omitempty"`
+}
+
+// GitSporkConfigMigrationInstruction provides specific instructions for a migration operation/set of operations
+type GitSporkConfigMigrationInstructions struct {
+	ID   string `yaml:"-"`
+	Exec string `yaml:"exec" comment:"command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation"`
+}
+
+// GitSporkDownstreamState represents state stored in the downstream repo to track integrations, etc.
+type GitSporkDownstreamState struct {
+	MigrationsComplete []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
 }
 
 // IntegrateOptions are options for the Integrate method
@@ -60,6 +78,19 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 	if err != nil {
 		return config, fmt.Errorf("error parsing gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
-
 	return config, nil
+}
+
+// ParseMigrationConfig will read a migration config YAML file, parse its instruction and return the parsed data
+func ParseMigrationConfig(migrationConfigPath string) (*GitSporkConfigMigration, error) {
+	migration := &GitSporkConfigMigration{}
+	f, err := os.ReadFile(migrationConfigPath)
+	if err != nil {
+		return migration, fmt.Errorf("error reading gitspork migration config file %s: %v", migrationConfigPath, err)
+	}
+	err = yaml.Unmarshal(f, migration)
+	if err != nil {
+		return migration, fmt.Errorf("error parsing gitspork migration config file %s: %v", migrationConfigPath, err)
+	}
+	return migration, nil
 }

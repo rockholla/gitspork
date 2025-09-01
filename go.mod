@@ -1,8 +1,6 @@
 module github.com/rockholla/gitspork
 
-go 1.23.0
-
-toolchain go1.23.1
+go 1.25
 
 require (
 	dario.cat/mergo v1.0.1

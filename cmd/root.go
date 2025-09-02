@@ -27,6 +27,7 @@ var rootCmd = &cobra.Command{
 
 func Execute(ver string) {
 	version = ver
+	rootCmd.Version = version
 	err := rootCmd.Execute()
 	if err != nil {
 		logger.Fatal(err.Error())

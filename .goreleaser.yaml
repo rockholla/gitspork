@@ -20,6 +20,8 @@ builds:
       - linux
       - windows
       - darwin
+    ldflags:
+    - -s -w -X main.version={{ .Env.GITSPORK_VERSION }}
 
 archives:
   - formats: [tar.gz]

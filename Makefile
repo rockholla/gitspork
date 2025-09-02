@@ -1,17 +1,33 @@
-# A useful test while developing locally
-.PHONY: dev-test-integrate
-dev-test-integrate:
+.PHONY: ensure-local-test-downstream
+ensure-local-test-downstream:
 	@if [ ! -d /tmp/gitspork-downstream ]; then \
 		mkdir /tmp/gitspork-downstream; \
 		cd /tmp/gitspork-downstream; \
 		git init; \
 		cd $(PWD); \
 	fi; \
-	go run main.go integrate \
+
+# A useful tests while developing locally
+.PHONY: dev-test-integrate
+dev-test-integrate: ensure-local-test-downstream
+	@go run main.go integrate \
 		--upstream-repo-url file://$(PWD) \
 		--upstream-repo-subpath ./docs/examples/simple/upstream \
-		--upstream-repo-version main \
+		--upstream-repo-version $$(git rev-parse --abbrev-ref HEAD) \
 		--downstream-repo-path /tmp/gitspork-downstream;
+
+.PHONY: dev-test-container-integrate
+dev-test-container-integrate: ensure-local-test-downstream
+	@docker build -t gitspork:local .; \
+	docker run -it --rm -v /tmp/gitspork-downstream:/downstream -v $(PWD):/upstream \
+	-v /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock \
+	-e "GITHUB_TOKEN=$${GITHUB_TOKEN}" -e "SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock" \
+	gitspork:local \
+		integrate \
+			--upstream-repo-url https://github.com/rockholla/gitspork \
+			--upstream-repo-subpath ./docs/examples/simple/upstream \
+			--upstream-repo-version main \
+			--downstream-repo-path /downstream;
 
 .PHONY: release
 version ?= 
@@ -25,7 +41,7 @@ release:
 	echo "releasing gitspork version: $(version), description: $(description)"; \
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version); \
-	goreleaser release --clean; \
-	docker build -t rockholla/gitspork:$(version) .; \
+	GITSPORK_VERSION=$(version) goreleaser release --clean; \
+	docker build --build-arg "GITSPORK_VERSION=$(version)" -t rockholla/gitspork:$(version) .; \
 	docker push rockholla/gitspork:$(version);
 

@@ -25,7 +25,7 @@ release:
 	echo "releasing gitspork version: $(version), description: $(description)"; \
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version); \
-	goreleaser release --clean; \
-	docker build -t rockholla/gitspork:$(version) .; \
+	GITSPORK_VERSION=$(version) goreleaser release --clean; \
+	docker build --build-arg "GITSPORK_VERSION=$(version)" -t rockholla/gitspork:$(version) .; \
 	docker push rockholla/gitspork:$(version);
 

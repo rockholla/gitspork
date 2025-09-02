@@ -25,7 +25,7 @@ const (
 	preIntegrateMigrationID  string = "pre_integrate"
 	postIntegrateMigrationID string = "post_integrate"
 	gitSporkMetaDirName      string = ".gitspork"
-	downstreamStateFileName  string = "state.json"
+	downstreamStateFileName  string = "downstream-state.json"
 )
 
 var (

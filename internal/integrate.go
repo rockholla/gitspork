@@ -183,7 +183,7 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
 			Username: gitSpork,
 			Password: opts.UpstreamRepoToken,
 		}
-	} else if !isHTTPsUpstreamURL {
+	} else if !isHTTPsUpstreamURL && os.Getenv("SSH_AUTH_SOCK") != "" {
 		authMethod, err = ssh.NewSSHAgentAuth(gitSSHUsername)
 		if err != nil {
 			return fmt.Errorf("error setting up SSH auth method for git: %v", err)

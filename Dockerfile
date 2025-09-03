@@ -7,4 +7,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X 'main.version=${GITSPORK_VERSION}'
 
 FROM alpine:latest AS release
 COPY --from=build /tmp/gitspork /usr/local/bin/gitspork
+
+RUN apk update && apk add --no-cache bash git
+
 ENTRYPOINT ["gitspork"]

@@ -18,16 +18,15 @@ dev-test-integrate: ensure-local-test-downstream
 
 .PHONY: dev-test-container-integrate
 dev-test-container-integrate: ensure-local-test-downstream
-	@docker build -t gitspork:local .; \
+	@docker rmi gitspork:local && docker system prune -f; \
+	docker build -t gitspork:local .; \
 	docker run -it --rm -v /tmp/gitspork-downstream:/downstream -v $(PWD):/upstream \
-	-v /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock \
-	-e "GITHUB_TOKEN=$${GITHUB_TOKEN}" -e "SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock" \
-	gitspork:local \
-		integrate \
-			--upstream-repo-url https://github.com/rockholla/gitspork \
-			--upstream-repo-subpath ./docs/examples/simple/upstream \
-			--upstream-repo-version main \
-			--downstream-repo-path /downstream;
+		gitspork:local \
+			integrate \
+				--upstream-repo-url file:///upstream \
+				--upstream-repo-subpath ./docs/examples/simple/upstream \
+				--upstream-repo-version $$(git rev-parse --abbrev-ref HEAD) \
+				--downstream-repo-path /downstream;
 
 .PHONY: release
 version ?= 

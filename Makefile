@@ -1,4 +1,8 @@
-.PHONY: ensure-local-test-downstream
+.PHONY: test
+test:
+	@go test -v ./...
+
+.PHONY: ensure-local-test-dodwnstream
 ensure-local-test-downstream:
 	@if [ ! -d /tmp/gitspork-downstream ]; then \
 		mkdir /tmp/gitspork-downstream; \

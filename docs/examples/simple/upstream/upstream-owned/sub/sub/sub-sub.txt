@@ -1,0 +1,1 @@
+nested glob test file

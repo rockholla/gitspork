@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,11 +21,13 @@ func TestIntegrate(t *testing.T) {
 		assert.Nil(t, err)
 		err = Integrate(&IntegrateOptions{
 			Logger:              NewLogger(),
-			UpstreamRepoURL:     "git@github.com:rockholla/gitspork.git",
-			UpstreamRepoVersion: "work",
+			UpstreamRepoURL:     "https://github.com/rockholla/gitspork.git",
+			UpstreamRepoVersion: "glob-improvements",
 			UpstreamRepoSubpath: "docs/examples/simple/upstream",
 			DownstreamRepoPath:  simpleDownstreamPath,
 		})
 		assert.Nil(t, err)
+		_, err = os.Stat(filepath.Join(simpleDownstreamPath, "upstream-owned", "sub", "sub", "sub-sub.txt"))
+		assert.False(t, errors.Is(err, os.ErrNotExist))
 	})
 }

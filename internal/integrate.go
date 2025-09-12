@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
+	"github.com/gobwas/glob"
 	"gopkg.in/yaml.v2"
 )
 
@@ -119,7 +120,7 @@ func Integrate(opts *IntegrateOptions) error {
 
 	for _, preIntegrateMigration := range preIntegrateMigrations {
 		fmt.Println("")
-		opts.Logger.Log(greenBold.Sprintf("running pre-integrate migration defined in upstream against the downstream: %s", preIntegrateMigration.ID))
+		opts.Logger.Log("%s", greenBold.Sprintf("running pre-integrate migration defined in upstream against the downstream: %s", preIntegrateMigration.ID))
 		if err := runMigration(preIntegrateMigration, upstreamRootPath, opts.DownstreamRepoPath); err != nil {
 			return fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
 		}
@@ -129,38 +130,38 @@ func Integrate(opts *IntegrateOptions) error {
 	}
 
 	fmt.Println("")
-	opts.Logger.Log(greenBold.Sprint("integrating configured upstream-owned resources from upstream to downstream"))
+	opts.Logger.Log("%s", greenBold.Sprint("integrating configured upstream-owned resources from upstream to downstream"))
 	if err := (&IntegratorUpstreamOwned{}).Integrate(gitSporkConfig.UpstreamOwned, upstreamRootPath, opts.DownstreamRepoPath, opts.Logger); err != nil {
 		return fmt.Errorf("error integrating upstream-owned: %v", err)
 	}
 
 	fmt.Println("")
-	opts.Logger.Log(greenBold.Sprint("integrating configured downstream-owned resources from upstream to downstream"))
+	opts.Logger.Log("%s", greenBold.Sprint("integrating configured downstream-owned resources from upstream to downstream"))
 	if err := (&IntegratorDownstreamOwned{}).Integrate(gitSporkConfig.DownstreamOwned, upstreamRootPath, opts.DownstreamRepoPath, opts.Logger); err != nil {
 		return fmt.Errorf("error integrating downstream-owned: %v", err)
 	}
 
 	fmt.Println("")
-	opts.Logger.Log(greenBold.Sprint("integrating configured shared-ownership generic resources to merge b/w upstream and downstream"))
+	opts.Logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership generic resources to merge b/w upstream and downstream"))
 	if err := (&IntegratorSharedOwnershipMerged{}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamRootPath, opts.DownstreamRepoPath, opts.Logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.merged: %v", err)
 	}
 
 	fmt.Println("")
-	opts.Logger.Log(greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
+	opts.Logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
 	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamRootPath, opts.DownstreamRepoPath, opts.Logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
 	}
 
 	fmt.Println("")
-	opts.Logger.Log(greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
+	opts.Logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
 	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamRootPath, opts.DownstreamRepoPath, opts.Logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
 	}
 
 	for _, postIntegrateMigration := range postIntegrateMigrations {
 		fmt.Println("")
-		opts.Logger.Log(greenBold.Sprintf("running post-integrate migration defined in upstream against the downstream: %s", postIntegrateMigration.ID))
+		opts.Logger.Log("%s", greenBold.Sprintf("running post-integrate migration defined in upstream against the downstream: %s", postIntegrateMigration.ID))
 		if err := runMigration(postIntegrateMigration, upstreamRootPath, opts.DownstreamRepoPath); err != nil {
 			return fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
 		}
@@ -217,29 +218,34 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {
 	allFiles := []string{}
-	makeFilesRelativePath := func(filesList []string) ([]string, error) {
-		result := []string{}
+	makeFileRelativePath := func(filePath string) (string, error) {
 		re, err := regexp.Compile(fmt.Sprintf("^%s%s", inDir, string(filepath.Separator)))
 		if err != nil {
-			return result, err
+			return "", err
 		}
-		for _, filesListItem := range filesList {
-			result = append(result, re.ReplaceAllString(filesListItem, ""))
-		}
-		return result, nil
+		return re.ReplaceAllString(filePath, ""), nil
 	}
-	for _, configuredGlobPattern := range configuredGlobPatterns {
-		files, err := filepath.Glob(filepath.Join(inDir, configuredGlobPattern))
-		if err != nil {
-			return allFiles, err
+	err := filepath.Walk(inDir, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			return nil
 		}
-		filesRelativePath, err := makeFilesRelativePath(files)
-		if err != nil {
-			return allFiles, err
+		for _, configuredGlobPattern := range configuredGlobPatterns {
+			g, inErr := glob.Compile(configuredGlobPattern)
+			if inErr != nil {
+				return inErr
+			}
+			path, inErr = makeFileRelativePath(path)
+			if inErr != nil {
+				return inErr
+			}
+			if g.Match(path) {
+				allFiles = append(allFiles, path)
+				return nil
+			}
 		}
-		allFiles = append(allFiles, filesRelativePath...)
-	}
-	return allFiles, nil
+		return nil
+	})
+	return allFiles, err
 }
 
 func syncFile(src, dst string) error {

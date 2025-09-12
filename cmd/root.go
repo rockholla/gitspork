@@ -30,7 +30,7 @@ func Execute(ver string) {
 	rootCmd.Version = version
 	err := rootCmd.Execute()
 	if err != nil {
-		logger.Fatal(err.Error())
+		logger.Fatal("%s", err.Error())
 	}
 }
 

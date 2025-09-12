@@ -1,6 +1,6 @@
 version: dev
 upstream_owned:
-- upstream-owned/*
+- upstream-owned/**/*
 - upstream-owned.mk
 downstream_owned:
 - downstream-owned.md

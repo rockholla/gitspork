@@ -8,11 +8,19 @@ import (
 )
 
 const (
-	initHelpShort string = "initializes a local repo clone directory for use as a gitspork upstream"
-	initHelpLong  string = `initialization will do the following:
+	initHelpShort        string = "initializes a local repo clone directory for use as a gitspork upstream"
+	initHelpLongTemplate string = `initialization will do the following:
 
- * create a .gitspork.yml config file at your desired path with the structure prepped for you to fill in
+ * create a .gitspork.yml config file at your desired path with the structure prepped for you to fill in per these docs:
  
+The main .gitspork.yml config schema:
+---------------------------------------------
+%s
+
+And the migrations yml config schema:
+---------------------------------------------
+%s
+
 For more info on the structure and how to configure, see https://github.com/rockholla/gitspork`
 )
 
@@ -23,10 +31,11 @@ type InitSubcommand struct{}
 func (isc *InitSubcommand) GetCmd() *cobra.Command {
 	var initPath string
 
+	configSchema, migrationsSchema, _ := internal.GetGitSporkConfigSchema()
 	var cmd = &cobra.Command{
 		Use:   "init",
 		Short: initHelpShort,
-		Long:  fmt.Sprintf("%s\n\n%s", initHelpShort, initHelpLong),
+		Long:  fmt.Sprintf("%s\n\n%s", initHelpShort, fmt.Sprintf(initHelpLongTemplate, configSchema, migrationsSchema)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return internal.Init(initPath, version, logger)
 		},

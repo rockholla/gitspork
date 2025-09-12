@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/rockholla/go-lib/marshal"
 	"gopkg.in/yaml.v2"
 )
 
@@ -93,4 +94,38 @@ func ParseMigrationConfig(migrationConfigPath string) (*GitSporkConfigMigration,
 		return migration, fmt.Errorf("error parsing gitspork migration config file %s: %v", migrationConfigPath, err)
 	}
 	return migration, nil
+}
+
+// GetGitSporkConfigSchema will render a version of the .gitspork.yml config w/ comments as a schema-like documentation source
+func GetGitSporkConfigSchema() (string, string, error) {
+	gitSporkExampleConfig := &GitSporkConfig{
+		Version:         "v0.1.0",
+		UpstreamOwned:   []string{"upstream-owned.txt"},
+		DownstreamOwned: []string{"downstream-owned.md"},
+		SharedOwnership: GitSporkConfigSharedOwnership{
+			Merged: []string{"shared-ownership-merged.txt"},
+			Structured: GitSporkConfigSharedOwnershipStructured{
+				PreferUpstream:   []string{"shared-ownership-prefer-upstream.json"},
+				PreferDownstream: []string{"shared-ownership-prefer-downstream.json"},
+			},
+		},
+		Migrations: []string{".gitspork/migrations/0001/migration.yml"},
+	}
+	migrationExampleConfig := &GitSporkConfigMigration{
+		PreIntegrate: &GitSporkConfigMigrationInstructions{
+			Exec: "./.gitspork/migrations/0001/pre-integrate.sh",
+		},
+		PostIntegrate: &GitSporkConfigMigrationInstructions{
+			Exec: "./.gitspork/migrations/0001/post-integrate.sh",
+		},
+	}
+	renderedMain, err := marshal.YAMLWithComments(gitSporkExampleConfig, 2)
+	if err != nil {
+		return "", "", err
+	}
+	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 2)
+	if err != nil {
+		return "", "", err
+	}
+	return renderedMain, renderedMigration, nil
 }

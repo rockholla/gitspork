@@ -7,6 +7,7 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v6 v6.0.0-20250701074610-5d6af409877b
 	github.com/gobwas/glob v0.2.3
+	github.com/rockholla/go-lib v0.0.0-20241023190122-11eccca156c1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v2 v2.4.0

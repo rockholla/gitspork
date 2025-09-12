@@ -6,11 +6,6 @@
 
 Solutions like git forks or templates are useful, but fall short in certain cases when staying up-to-date with their upstreams. Enter `gitspork`.
 
----
-:warning: This tool is still in pre-release development. Official releases will be made here in this repo when it is considered ready for production use.
-
----
-
 ## Getting Started
 
 First, quickly some terminology:

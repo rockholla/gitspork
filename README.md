@@ -36,6 +36,7 @@ You'll see that your repo has been initially integrated with [one of our example
 * **Downstream-Owned Resources**: the gitspork integration will make sure these types of files get bootstrapped in the downstream, but then let's the downstream take over full ownership from there
 * **Co-Owned Resources to be Merged (Generic)**: certain files can be owned by both the upstream and and downstream, upstream defining blocks surrounded by `::gitspork::begin-upstream-owned-block`/`::gitspork::end-upstream-owned-block`, typically in comments to maintain upstream-owned content alongside downstream-owned content
 * **Co-Owned Resources to be Merged (Structured Data)**: json/yaml resources that can be merged in a structured way, with a switch to say whether upstream or downstream values should be preferred/take precedence when doing the merging
+* **Templated Upstream -> Downstream Rendered Files**: Utilizing Go templates, allowing for configuration of JSON data files or user prompts as inputs to fill in the needed data to render the resulting file in downstream
 * **Migrations Support**: some ability for the upstream to instruct downstream repos in particular migration-related operations:
   * **Exec**: arbitrary commands or scripts defined in the upstream to run against the downstream either _pre_ `integrate` or _post_ integrate
 

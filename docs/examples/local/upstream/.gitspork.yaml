@@ -1,0 +1,8 @@
+templated:
+- template: config.yml.go.tmpl
+  destination: config.yml
+  inputs:
+  - name: one
+    prompt: value for one
+  - name: two
+    prompt: value for two

@@ -11,14 +11,14 @@ import (
 type IntegratorSharedOwnershipStructuredPreferUpstream struct{}
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorSharedOwnershipStructuredPreferUpstream) Integrate(configuredGlobPatterns []string, upstreamRepoPath string, downstreamRepoPath string, logger *Logger) error {
-	integrateFiles, err := getIntegrateFiles(upstreamRepoPath, configuredGlobPatterns)
+func (i *IntegratorSharedOwnershipStructuredPreferUpstream) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error {
+	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
-		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamRepoPath, configuredGlobPatterns, err)
+		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)
 	}
 	for _, integrateFile := range integrateFiles {
 		logger.Log("📝 gathering structured data for %s", integrateFile)
-		upstreamStructuredData, downstreamStructuredData, structuredDataType, err := getStructuredData(filepath.Join(upstreamRepoPath, integrateFile), filepath.Join(downstreamRepoPath, integrateFile))
+		upstreamStructuredData, downstreamStructuredData, structuredDataType, err := getStructuredData(filepath.Join(upstreamPath, integrateFile), filepath.Join(downstreamPath, integrateFile))
 		if err != nil {
 			return err
 		}
@@ -26,7 +26,7 @@ func (i *IntegratorSharedOwnershipStructuredPreferUpstream) Integrate(configured
 		if err := mergo.Merge(downstreamStructuredData, *upstreamStructuredData, mergo.WithOverride); err != nil {
 			return fmt.Errorf("error merging structured data from %s to downstream: %v", integrateFile, err)
 		}
-		if err := writeStructuredData(upstreamStructuredData, structuredDataType, filepath.Join(downstreamRepoPath, integrateFile)); err != nil {
+		if err := writeStructuredData(upstreamStructuredData, structuredDataType, filepath.Join(downstreamPath, integrateFile)); err != nil {
 			return fmt.Errorf("error writing merged structured data: %v", err)
 		}
 	}

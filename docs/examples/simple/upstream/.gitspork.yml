@@ -14,6 +14,14 @@ shared_ownership:
     - config.yaml
     prefer_downstream:
     - info.json
+templated:
+- template: .gitspork-templates/meta.txt.go.tmpl
+  destination: meta.txt
+  inputs:
+  - name: project_name
+    json_data_path: ../templated-json-input-data.json
+  - name: project_description
+    json_data_path: ../templated-json-input-data.json
 migrations:
 - .gitspork/migration-001.yml
 

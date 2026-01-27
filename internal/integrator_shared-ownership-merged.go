@@ -23,14 +23,14 @@ type upstreamOwnedBlock struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []string, upstreamRepoPath string, downstreamRepoPath string, logger *Logger) error {
-	integrateFiles, err := getIntegrateFiles(upstreamRepoPath, configuredGlobPatterns)
+func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error {
+	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
-		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamRepoPath, configuredGlobPatterns, err)
+		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)
 	}
 	for _, integrateFile := range integrateFiles {
 		logger.Log("➰ parsing upstream file %s for owned blocks", integrateFile)
-		upstreamFile, err := os.Open(filepath.Join(upstreamRepoPath, integrateFile))
+		upstreamFile, err := os.Open(filepath.Join(upstreamPath, integrateFile))
 		if err != nil {
 			return fmt.Errorf("error opening upstream file %s: %v", integrateFile, err)
 		}
@@ -69,15 +69,15 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 			return fmt.Errorf("error scanning/buffering upstream file %s: %v", integrateFile, err)
 		}
 
-		if _, err := os.Stat(filepath.Join(downstreamRepoPath, integrateFile)); os.IsNotExist(err) {
-			if err := syncFile(filepath.Join(upstreamRepoPath, integrateFile), filepath.Join(downstreamRepoPath, integrateFile)); err != nil {
+		if _, err := os.Stat(filepath.Join(downstreamPath, integrateFile)); os.IsNotExist(err) {
+			if err := syncFile(filepath.Join(upstreamPath, integrateFile), filepath.Join(downstreamPath, integrateFile)); err != nil {
 				return fmt.Errorf("error copying upstream %s to downstream", integrateFile)
 			}
 		}
 
 		logger.Log("🔧 merging upstream file owned blocks from %s into downstream ", integrateFile)
 		mergedContent := ""
-		downstreamFile, err := os.Open(filepath.Join(downstreamRepoPath, integrateFile))
+		downstreamFile, err := os.Open(filepath.Join(downstreamPath, integrateFile))
 		if err != nil {
 			return fmt.Errorf("error opening downstream file %s: %v", integrateFile, err)
 		}
@@ -126,7 +126,7 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 			return fmt.Errorf("error scanning/buffering downstream file %s: %v", integrateFile, err)
 		}
 
-		if err := os.WriteFile(filepath.Join(downstreamRepoPath, integrateFile), []byte(mergedContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(downstreamPath, integrateFile), []byte(mergedContent), 0644); err != nil {
 			return fmt.Errorf("error writing merged file %s to downstream: %v", integrateFile, err)
 		}
 	}

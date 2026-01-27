@@ -2,7 +2,7 @@
 test:
 	@go test -v ./...
 
-.PHONY: ensure-local-test-dodwnstream
+.PHONY: ensure-local-test-downstream
 ensure-local-test-downstream:
 	@if [ ! -d /tmp/gitspork-downstream ]; then \
 		mkdir /tmp/gitspork-downstream; \
@@ -32,8 +32,14 @@ dev-test-container-integrate: ensure-local-test-downstream
 				--upstream-repo-version $$(git rev-parse --abbrev-ref HEAD) \
 				--downstream-repo-path /downstream;
 
+.PHONY: dev-test-integrate-local
+dev-test-integrate-local:
+	@go run main.go integrate-local \
+		--upstream-path ./docs/examples/local/upstream \
+		--downstream-path ./docs/examples/local/downstream
+
 .PHONY: release
-version ?= 
+version ?=
 description ?=
 release:
 	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \

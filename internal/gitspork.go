@@ -26,6 +26,7 @@ type GitSporkConfig struct {
 	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo"`
 	DownstreamOwned []string                      `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated"`
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
+	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
 	Migrations      []string                      `yaml:"migrations" comment:"list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions"`
 }
 
@@ -58,6 +59,20 @@ type GitSporkDownstreamState struct {
 	MigrationsComplete []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
 }
 
+// GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
+type GitSporkConfigTemplated struct {
+	Template    string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
+	Destination string                         `yaml:"destination" comment:"destination path and file name in the dowstream where the template will be rendered"`
+	Inputs      []GitSporkConfigTemplatedInput `yaml:"inputs" comment:"list of inputs to provide to the template, and how to determine them"`
+}
+
+// GitSporkConfigTemplatedInput
+type GitSporkConfigTemplatedInput struct {
+	Name         string `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
+	Prompt       string `yaml:"prompt" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
+	JSONDataPath string `yaml:"json_data_path" comment:"(optional, one-of required) JSON data file path (relative to the directory of the .gitspork.{yml,yaml} config file/upstream root) containing the input value at the root property equal to the 'name'"`
+}
+
 // IntegrateOptions are options for the Integrate method
 type IntegrateOptions struct {
 	Logger              *Logger
@@ -66,6 +81,15 @@ type IntegrateOptions struct {
 	UpstreamRepoSubpath string
 	UpstreamRepoToken   string
 	DownstreamRepoPath  string
+	ForceRePrompt       bool
+}
+
+// IntegrateLocalOptions are options for the IntegrateLocal method
+type IntegrateLocalOptions struct {
+	Logger         *Logger
+	UpstreamPath   string
+	DownstreamPath string
+	ForceRePrompt  bool
 }
 
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path
@@ -107,6 +131,22 @@ func GetGitSporkConfigSchema() (string, string, error) {
 			Structured: GitSporkConfigSharedOwnershipStructured{
 				PreferUpstream:   []string{"shared-ownership-prefer-upstream.json"},
 				PreferDownstream: []string{"shared-ownership-prefer-downstream.json"},
+			},
+		},
+		Templated: []GitSporkConfigTemplated{
+			{
+				Template:    "meta.txt.go.tmpl",
+				Destination: "meta.txt",
+				Inputs: []GitSporkConfigTemplatedInput{
+					{
+						Name:   "input_one",
+						Prompt: "Input the value for 'one'",
+					},
+					{
+						Name:   "input_two",
+						Prompt: "Input the value for 'two'",
+					},
+				},
 			},
 		},
 		Migrations: []string{".gitspork/migrations/0001/migration.yml"},

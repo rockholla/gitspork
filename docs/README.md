@@ -21,6 +21,16 @@ shared_ownership: # file patterns (https://github.com/gobwas/glob) that will be 
     - "shared-ownership-prefer-upstream.json"
     prefer_downstream: # file patterns (https://github.com/gobwas/glob) that contain common structure data to merge, prefering the values set in the downstream repo
     - "shared-ownership-prefer-downstream.json"
+templated: # list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream
+- template: "meta.txt.go.tmpl" # source path of the Go template file to use in the upstream
+  destination: "meta.txt" # destination path and file name in the dowstream where the template will be rendered
+  inputs: # list of inputs to provide to the template, and how to determine them
+  - name: "input_one" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "Input the value for 'one'" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    json_data_path: "" # (optional, one-of required) JSON data file path (relative to the directory of the .gitspork.{yml,yaml} config file/upstream root) containing the input value at the root property equal to the 'name'
+  - name: "input_two" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "Input the value for 'two'" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    json_data_path: "" # (optional, one-of required) JSON data file path (relative to the directory of the .gitspork.{yml,yaml} config file/upstream root) containing the input value at the root property equal to the 'name'
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"
 ```

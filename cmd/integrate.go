@@ -26,6 +26,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 	var upstreamRepoSubpath string
 	var upstreamRepoToken string
 	var downstreamRepoPath string
+	var forceRePrompt bool
 
 	var cmd = &cobra.Command{
 		Use:   "integrate",
@@ -39,6 +40,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				UpstreamRepoSubpath: upstreamRepoSubpath,
 				UpstreamRepoToken:   upstreamRepoToken,
 				DownstreamRepoPath:  downstreamRepoPath,
+				ForceRePrompt:       forceRePrompt,
 			})
 		},
 	}
@@ -53,6 +55,8 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 		"if using an HTTPs git repo URL for the upstream, this is the token to auth, otherwise SSH and agent auth assumed")
 	cmd.PersistentFlags().StringVarP(&downstreamRepoPath, "downstream-repo-path", "d", "",
 		"local path to the downstream repo clone to integrate/re-integrate, defaults to the present working directory")
+	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
+		"If true, will disregard and previous prompt input value caches for templated instructions, requiring values to be re-input by the user")
 
 	return cmd
 }

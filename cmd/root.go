@@ -38,8 +38,10 @@ func init() {
 	logger = internal.NewLogger()
 
 	integrateSubcommand := &IntegrateSubcommand{}
+	integrateLocalSubcommand := &IntegrateLocalSubcommand{}
 	InitSubcommand := &InitSubcommand{}
 
 	rootCmd.AddCommand(integrateSubcommand.GetCmd())
+	rootCmd.AddCommand(integrateLocalSubcommand.GetCmd())
 	rootCmd.AddCommand(InitSubcommand.GetCmd())
 }

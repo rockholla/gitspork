@@ -64,6 +64,7 @@ type GitSporkConfigTemplated struct {
 	Template    string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
 	Destination string                         `yaml:"destination" comment:"destination path and file name in the dowstream where the template will be rendered"`
 	Inputs      []GitSporkConfigTemplatedInput `yaml:"inputs" comment:"list of inputs to provide to the template, and how to determine them"`
+	Merged      *GitSporkConfigTemplatedMerged `yaml:"merged" comment:"instruction for merging with pre-existing file in the destination, if present, post-render"`
 }
 
 // GitSporkConfigTemplatedInput
@@ -71,6 +72,11 @@ type GitSporkConfigTemplatedInput struct {
 	Name         string `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt       string `yaml:"prompt" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
 	JSONDataPath string `yaml:"json_data_path" comment:"(optional, one-of required) JSON data file path (relative to the directory of the .gitspork.{yml,yaml} config file/upstream root) containing the input value at the root property equal to the 'name'"`
+}
+
+// GitSporkConfigTemplatedMerged
+type GitSporkConfigTemplatedMerged struct {
+	Structured string `yaml:"structured" comment:"instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'"`
 }
 
 // IntegrateOptions are options for the Integrate method
@@ -137,14 +143,17 @@ func GetGitSporkConfigSchema() (string, string, error) {
 			{
 				Template:    "meta.txt.go.tmpl",
 				Destination: "meta.txt",
+				Merged: &GitSporkConfigTemplatedMerged{
+					Structured: templatedMergeStructuredPreferDownstream,
+				},
 				Inputs: []GitSporkConfigTemplatedInput{
 					{
 						Name:   "input_one",
-						Prompt: "Input the value for 'one'",
+						Prompt: "What is the value of input_one?",
 					},
 					{
 						Name:   "input_two",
-						Prompt: "Input the value for 'two'",
+						Prompt: "What is the value of input_two?",
 					},
 				},
 			},

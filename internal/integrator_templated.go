@@ -32,8 +32,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 	for _, templatedInstruction := range templatedInstructions {
 		logger.Log("📄 executing templated instruction for rendering upstream template %s to downstream location %s", templatedInstruction.Template, templatedInstruction.Destination)
 
-		cachedTemplateDataFilePath := filepath.Join(downstreamPath,
-			filepath.Join(filepath.Dir(templatedInstruction.Destination), fmt.Sprintf(".%s", gitSpork), fmt.Sprintf("%s.json", strings.ReplaceAll(templatedInstruction.Destination, string(filepath.Separator), "_"))))
+		cachedTemplateDataFilePath := filepath.Join(downstreamPath, filepath.Join(fmt.Sprintf(".%s", gitSpork), fmt.Sprintf("%s.json", templatedInstruction.Destination)))
 		templateData := IntegratorTemplatedData{
 			Inputs: map[string]string{},
 		}

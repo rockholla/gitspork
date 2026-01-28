@@ -6,3 +6,12 @@ templated:
     prompt: value for one
   - name: two
     prompt: value for two
+- template: config-alt.yml.go.tmpl
+  destination: config-alt.yml
+  merged:
+    structured: prefer-downstream
+  inputs:
+  - name: three
+    json_data_path: data.json
+  - name: four
+    json_data_path: data.json

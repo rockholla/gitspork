@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -8,7 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dario.cat/mergo"
 	inputpkg "github.com/rockholla/gitspork/internal/input"
+)
+
+const (
+	templatedMergeStructuredPreferUpstream   = "prefer-upstream"
+	templatedMergeStructuredPreferDownstream = "prefer-downstream"
 )
 
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
@@ -85,14 +92,58 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 		if err := os.MkdirAll(fullDestinationDir, 0755); err != nil {
 			return fmt.Errorf("error ensuring %s exists: %v", fullDestinationDir, err)
 		}
-		destinationFile, err := os.OpenFile(fullDestinationPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-		if err != nil {
-			return fmt.Errorf("error opening destination file for rendered template %s: %v", templatedInstruction.Destination, err)
+		performPostMergeStructured := ""
+		if templatedInstruction.Merged != nil && templatedInstruction.Merged.Structured != "" {
+			if _, err := os.Stat(fullDestinationPath); err == nil {
+				// if we have merge instruction present, and there's a file at the destination path already
+				performPostMergeStructured = templatedInstruction.Merged.Structured
+				if performPostMergeStructured != templatedMergeStructuredPreferUpstream && performPostMergeStructured != templatedMergeStructuredPreferDownstream {
+					return fmt.Errorf("invalid templated merged.structured value %s, expects one of: %s, %s", performPostMergeStructured,
+						templatedMergeStructuredPreferUpstream, templatedMergeStructuredPreferDownstream)
+				}
+			}
 		}
-		err = t.Execute(destinationFile, templateData)
+		var renderedBytes bytes.Buffer
+		err = t.Execute(&renderedBytes, templateData)
 		if err != nil {
-			return fmt.Errorf("error rendering template at %s: %v", templatedInstruction.Destination, err)
+			return fmt.Errorf("error rendering template data: %v", err)
 		}
+		if performPostMergeStructured != "" {
+			tmpDir, err := os.MkdirTemp("", gitSpork)
+			if err != nil {
+				return fmt.Errorf("error creating temp directory: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+			tmpFilePath := filepath.Join(tmpDir, filepath.Base(fullDestinationPath))
+			if err := os.WriteFile(tmpFilePath, renderedBytes.Bytes(), 0644); err != nil {
+				return fmt.Errorf("error writing rendered template to temporary location: %v", err)
+			}
+			newData, existingData, structuredDataType, err := getStructuredData(tmpFilePath, fullDestinationPath)
+			var preferredData *map[string]any
+			var secondaryData *map[string]any
+			if err != nil {
+				return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
+			}
+			if performPostMergeStructured == templatedMergeStructuredPreferDownstream {
+				preferredData = existingData
+				secondaryData = newData
+			} else {
+				preferredData = newData
+				secondaryData = existingData
+			}
+			if err := mergo.Merge(secondaryData, *preferredData, mergo.WithOverride); err != nil {
+				return fmt.Errorf("error merging structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
+			}
+			if err := writeStructuredData(preferredData, structuredDataType, fullDestinationPath); err != nil {
+				return fmt.Errorf("error writing merged structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
+			}
+		} else {
+			if err := os.WriteFile(fullDestinationPath, renderedBytes.Bytes(), 0644); err != nil {
+				return fmt.Errorf("error writing rendered templated file from instruction %s: %v", templatedInstruction.Destination, err)
+			}
+		}
+
+		// caching input data in the path for later runs, will respect this data moving forward unless instructed to re-prompt
 		templateDataBytes, err := json.Marshal(templateData)
 		if err != nil {
 			return fmt.Errorf("error marshaling template data: %v", err)

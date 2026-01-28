@@ -51,7 +51,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {
 			if input.JSONDataPath != "" {
-				jsonDataPath := filepath.Join(upstreamPath, input.JSONDataPath)
+				jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
 				jsonData, err := os.ReadFile(jsonDataPath)
 				if err != nil {
 					return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)

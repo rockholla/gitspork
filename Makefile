@@ -10,6 +10,7 @@ ensure-local-test-downstream:
 		git init; \
 		cd $(PWD); \
 	fi; \
+	cp docs/examples/simple/templated-json-input-data.json /tmp/;
 
 # A useful tests while developing locally
 .PHONY: dev-test-integrate

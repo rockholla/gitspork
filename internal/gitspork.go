@@ -71,7 +71,7 @@ type GitSporkConfigTemplated struct {
 type GitSporkConfigTemplatedInput struct {
 	Name         string `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt       string `yaml:"prompt" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
-	JSONDataPath string `yaml:"json_data_path" comment:"(optional, one-of required) JSON data file path (relative to the directory of the .gitspork.{yml,yaml} config file/upstream root) containing the input value at the root property equal to the 'name'"`
+	JSONDataPath string `yaml:"json_data_path" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'"`
 }
 
 // GitSporkConfigTemplatedMerged

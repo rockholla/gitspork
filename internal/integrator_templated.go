@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"dario.cat/mergo"
 	inputpkg "github.com/rockholla/gitspork/internal/input"

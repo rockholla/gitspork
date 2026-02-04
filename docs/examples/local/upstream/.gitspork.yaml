@@ -15,3 +15,7 @@ templated:
     json_data_path: ../data.json
   - name: four
     json_data_path: ../data.json
+  - name: five
+    previous_input:
+      template: config.yml.go.tmpl
+      name: two

@@ -69,9 +69,15 @@ type GitSporkConfigTemplated struct {
 
 // GitSporkConfigTemplatedInput
 type GitSporkConfigTemplatedInput struct {
-	Name         string `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
-	Prompt       string `yaml:"prompt" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
-	JSONDataPath string `yaml:"json_data_path" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'"`
+	Name          string                                `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
+	Prompt        string                                `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
+	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'"`
+	PreviousInput *GitSporkConfigTemplatedInputPrevious `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
+}
+
+type GitSporkConfigTemplatedInputPrevious struct {
+	Template string `yaml:"template" comment:"Name of a previous template defined in the gitspork config from which to pull the value"`
+	Name     string `yaml:"name" comment:"Name of the input from that template from which to pull the value"`
 }
 
 // GitSporkConfigTemplatedMerged
@@ -152,8 +158,15 @@ func GetGitSporkConfigSchema() (string, string, error) {
 						Prompt: "What is the value of input_one?",
 					},
 					{
-						Name:   "input_two",
-						Prompt: "What is the value of input_two?",
+						Name:         "input_two",
+						JSONDataPath: "./.json/data.json",
+					},
+					{
+						Name: "input_three",
+						PreviousInput: &GitSporkConfigTemplatedInputPrevious{
+							Template: "meta.txt.go.tmpl",
+							Name:     "input_one",
+						},
 					},
 				},
 			},

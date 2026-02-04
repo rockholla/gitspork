@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,9 +30,20 @@ type IntegratorTemplatedData struct {
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
 func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error {
 
+	// captured input values will support the input 'previous_input' type via this structure:
+	/*
+		capturedInputValues = {
+			<template name> = {
+				<input name> = <input value>
+				<input name> = <input value>
+			}
+		}
+	*/
+	capturedInputValues := map[string]map[string]string{}
 	for _, templatedInstruction := range templatedInstructions {
 		logger.Log("📄 executing templated instruction for rendering upstream template %s to downstream location %s", templatedInstruction.Template, templatedInstruction.Destination)
 
+		capturedInputValues[templatedInstruction.Template] = map[string]string{}
 		cachedTemplateDataFilePath := filepath.Join(downstreamPath, filepath.Join(fmt.Sprintf(".%s", gitSpork), fmt.Sprintf("%s.json", templatedInstruction.Destination)))
 		templateData := IntegratorTemplatedData{
 			Inputs: map[string]string{},
@@ -56,6 +68,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 					return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)
 				}
 				err = json.Unmarshal(jsonData, &templateData.Inputs)
+				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 				if err != nil {
 					return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
 				}
@@ -70,9 +83,25 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 						return fmt.Errorf("error setting up prompt input: %v", err)
 					}
 					templateData.Inputs[input.Name] = requestInputResult.StringValue
+					capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
+				}
+			} else if input.PreviousInput != nil {
+				var previousInputErr error
+				if _, ok := capturedInputValues[input.PreviousInput.Template]; ok {
+					if value, ok := capturedInputValues[input.PreviousInput.Template][input.PreviousInput.Name]; ok {
+						templateData.Inputs[input.Name] = value
+						capturedInputValues[templatedInstruction.Template][input.Name] = value
+					} else {
+						previousInputErr = fmt.Errorf("previous input name %s not found in template %s", input.PreviousInput.Name, input.PreviousInput.Template)
+					}
+				} else {
+					previousInputErr = fmt.Errorf("previous template not found: %s", input.PreviousInput.Template)
+				}
+				if previousInputErr != nil {
+					return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
 				}
 			} else {
-				return fmt.Errorf("templated definition %s requires at least one of 'prompt' or 'json_data_path' to be defined", input.Name)
+				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
 			}
 		}
 

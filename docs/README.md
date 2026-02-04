@@ -27,10 +27,12 @@ templated: # list of instruction for templated source files in the upstream that
   inputs: # list of inputs to provide to the template, and how to determine them
   - name: "input_one" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_one?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    json_data_path: "" # (optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'
   - name: "input_two" # name of the input as defined in the template like 'index .Inputs "[name]"'
-    prompt: "What is the value of input_two?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    json_data_path: "" # (optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'
+    json_data_path: "./.json/data.json" # (optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'
+  - name: "input_three" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    previous_input: # (optional, one-of-required) reference to an input already known from this template or another template defined before this one
+      template: "meta.txt.go.tmpl" # Name of a previous template defined in the gitspork config from which to pull the value
+      name: "input_one" # Name of the input from that template from which to pull the value
   merged: # instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions

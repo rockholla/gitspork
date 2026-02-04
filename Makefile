@@ -42,6 +42,7 @@ dev-test-integrate-local:
 .PHONY: release
 version ?=
 description ?=
+latest ?= false
 release:
 	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \
 	if [ -z "$(version)" ]; then echo "error: please provide the 'version' for the release"; exit 1; fi; \
@@ -53,5 +54,6 @@ release:
 	git push origin $(version); \
 	GITSPORK_VERSION=$(version) goreleaser release --clean; \
 	docker build --build-arg "GITSPORK_VERSION=$(version)" -t rockholla/gitspork:$(version) .; \
-	docker push rockholla/gitspork:$(version);
+	docker push rockholla/gitspork:$(version); \
+	if [[ "$(latest)" == true ]]; then docker tag rockholla/gitspork:$(version) rockholla/gitspork:latest; docker push rockholla/gitspork:latest; fi;
 

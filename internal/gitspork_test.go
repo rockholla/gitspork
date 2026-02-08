@@ -22,7 +22,7 @@ func TestIntegrate(t *testing.T) {
 		err = Integrate(&IntegrateOptions{
 			Logger:              NewLogger(),
 			UpstreamRepoURL:     "https://github.com/rockholla/gitspork.git",
-			UpstreamRepoVersion: "glob-improvements",
+			UpstreamRepoVersion: "mainfsd",
 			UpstreamRepoSubpath: "docs/examples/simple/upstream",
 			DownstreamRepoPath:  simpleDownstreamPath,
 		})

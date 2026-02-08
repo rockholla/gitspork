@@ -2,7 +2,7 @@
   <img alt="gitspork" src="./docs/gitspork.png">
 </picture>
 
-[![Gitspork](https://github.com/rockholla/gitspork/actions/workflows/main.yml/badge.svg)](https://github.com/rockholla/gitspork/actions/workflows/main.yml)
+[![ci](https://github.com/rockholla/gitspork/actions/workflows/main.yml/badge.svg)](https://github.com/rockholla/gitspork/actions/workflows/main.yml)
 
 ## When a fork just ain't good enough
 

@@ -10,5 +10,5 @@ func IntegrateLocal(opts *IntegrateLocalOptions) error {
 		return err
 	}
 
-	return integrate(gitSporkConfig, opts.UpstreamPath, opts.DownstreamPath, opts.ForceRePrompt, opts.Logger)
+	return integrate(gitSporkConfig, opts.UpstreamPath, opts.DownstreamPath, opts.ForceRePrompt, opts.CheckDrift, opts.Logger)
 }

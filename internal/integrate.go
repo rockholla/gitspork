@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/gobwas/glob"
+	"github.com/rockholla/gitspork/internal/input"
 	"gopkg.in/yaml.v2"
 )
 
@@ -77,11 +78,18 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	return integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.Logger)
+	return integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.CheckDrift, opts.Logger)
 }
 
-func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error {
+func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, checkDrift bool, logger *Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
+
+	// Check for drift in upstream-owned files if requested
+	if checkDrift {
+		if err := checkUpstreamDrift(gitSporkConfig, upstreamPath, downstreamPath, logger); err != nil {
+			return fmt.Errorf("drift check failed: %v", err)
+		}
+	}
 
 	preIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
 	postIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
@@ -465,4 +473,79 @@ func recordCompleteMigration(migrationID string, downstreamRepoPath string) erro
 		state.MigrationsComplete = append(state.MigrationsComplete, migrationID)
 	}
 	return saveDownstreamState(downstreamRepoPath, state)
+}
+
+// checkUpstreamDrift detects local modifications to upstream-owned files by comparing upstream with downstream
+func checkUpstreamDrift(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, logger *Logger) error {
+	yellowBold := color.New(color.FgHiYellow, color.Bold)
+	redBold := color.New(color.FgHiRed, color.Bold)
+	cyanBold := color.New(color.FgHiCyan, color.Bold)
+
+	// Get the list of upstream-owned files
+	upstreamFiles, err := getIntegrateFiles(upstreamPath, gitSporkConfig.UpstreamOwned)
+	if err != nil {
+		return fmt.Errorf("error determining upstream-owned files: %v", err)
+	}
+
+	driftFound := false
+	for _, upstreamFile := range upstreamFiles {
+		upstreamFilePath := filepath.Join(upstreamPath, upstreamFile)
+		downstreamFilePath := filepath.Join(downstreamPath, upstreamFile)
+
+		// Check if the file exists in downstream
+		if _, err := os.Stat(downstreamFilePath); os.IsNotExist(err) {
+			// File doesn't exist in downstream yet, skip drift check
+			continue
+		}
+
+		// Read both files and compare
+		upstreamContent, err := os.ReadFile(upstreamFilePath)
+		if err != nil {
+			return fmt.Errorf("error reading upstream file %s: %v", upstreamFile, err)
+		}
+
+		downstreamContent, err := os.ReadFile(downstreamFilePath)
+		if err != nil {
+			return fmt.Errorf("error reading downstream file %s: %v", upstreamFile, err)
+		}
+
+		// Compare content
+		if string(upstreamContent) != string(downstreamContent) {
+			if !driftFound {
+				fmt.Println("")
+				logger.Log("%s", yellowBold.Sprint("⚠️  Drift detected in upstream-owned files"))
+				fmt.Println("")
+				driftFound = true
+			}
+
+			logger.Log("%s %s", redBold.Sprint("Modified:"), cyanBold.Sprint(upstreamFile))
+
+			// Show diff using git diff
+			cmd := exec.Command("git", "diff", "--no-index", "--color=always", upstreamFilePath, downstreamFilePath)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Dir = downstreamPath
+			_ = cmd.Run() // Ignore error as git diff returns non-zero when there are differences
+		}
+	}
+
+	if driftFound {
+		fmt.Println("")
+		logger.Log("%s", yellowBold.Sprint("The integration will overwrite the modified files shown above."))
+
+		result, err := input.RequestInput(&input.RequestInputOptions{
+			Type:   input.YesNo,
+			Prompt: "Do you want to continue?",
+		})
+		if err != nil {
+			return fmt.Errorf("error reading user input: %v", err)
+		}
+
+		if !result.BoolValue {
+			return fmt.Errorf("integration aborted by user")
+		}
+		fmt.Println("")
+	}
+
+	return nil
 }

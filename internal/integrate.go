@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/gobwas/glob"
+	"github.com/rockholla/gitspork/internal/input"
 	"gopkg.in/yaml.v2"
 )
 
@@ -531,13 +532,16 @@ func checkUpstreamDrift(gitSporkConfig *GitSporkConfig, upstreamPath string, dow
 	if driftFound {
 		fmt.Println("")
 		logger.Log("%s", yellowBold.Sprint("The integration will overwrite the modified files shown above."))
-		fmt.Print("Do you want to continue? (y/N): ")
 
-		var response string
-		fmt.Scanln(&response)
-		response = strings.ToLower(strings.TrimSpace(response))
+		result, err := input.RequestInput(&input.RequestInputOptions{
+			Type:   input.YesNo,
+			Prompt: "Do you want to continue?",
+		})
+		if err != nil {
+			return fmt.Errorf("error reading user input: %v", err)
+		}
 
-		if response != "y" && response != "yes" {
+		if !result.BoolValue {
 			return fmt.Errorf("integration aborted by user")
 		}
 		fmt.Println("")

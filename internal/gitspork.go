@@ -94,6 +94,7 @@ type IntegrateOptions struct {
 	UpstreamRepoToken   string
 	DownstreamRepoPath  string
 	ForceRePrompt       bool
+	CheckDrift          bool
 }
 
 // IntegrateLocalOptions are options for the IntegrateLocal method
@@ -102,6 +103,7 @@ type IntegrateLocalOptions struct {
 	UpstreamPath   string
 	DownstreamPath string
 	ForceRePrompt  bool
+	CheckDrift     bool
 }
 
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path

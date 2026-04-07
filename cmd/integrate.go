@@ -27,6 +27,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 	var upstreamRepoToken string
 	var downstreamRepoPath string
 	var forceRePrompt bool
+	var checkDrift bool
 
 	var cmd = &cobra.Command{
 		Use:   "integrate",
@@ -41,6 +42,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				UpstreamRepoToken:   upstreamRepoToken,
 				DownstreamRepoPath:  downstreamRepoPath,
 				ForceRePrompt:       forceRePrompt,
+				CheckDrift:          checkDrift,
 			})
 		},
 	}
@@ -57,6 +59,8 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 		"local path to the downstream repo clone to integrate/re-integrate, defaults to the present working directory")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
 		"If true, will disregard and previous prompt input value caches for templated instructions, requiring values to be re-input by the user")
+	cmd.PersistentFlags().BoolVar(&checkDrift, "check-drift", false,
+		"If true, will check for local modifications to upstream-owned files before integration and prompt to continue")
 
 	return cmd
 }

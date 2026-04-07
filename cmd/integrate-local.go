@@ -25,6 +25,7 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 	var upstreamPath string
 	var downstreamPath string
 	var forceRePrompt bool
+	var checkDrift bool
 
 	var cmd = &cobra.Command{
 		Use:   "integrate-local",
@@ -36,6 +37,7 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 				UpstreamPath:   upstreamPath,
 				DownstreamPath: downstreamPath,
 				ForceRePrompt:  forceRePrompt,
+				CheckDrift:     checkDrift,
 			})
 		},
 	}
@@ -46,6 +48,8 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 		"local path to integrate/re-integrate w/ the standards set at the upstream-path")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
 		"If true, will disregard and previous prompt input value caches for templated instructions, requiring values to be re-input by the user")
+	cmd.PersistentFlags().BoolVar(&checkDrift, "check-drift", false,
+		"If true, will check for local modifications to upstream-owned files before integration and prompt to continue")
 
 	return cmd
 }

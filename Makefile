@@ -43,21 +43,17 @@ dev-test-integrate-local:
 version ?=
 description ?=
 latest ?= false
+# NOTE: recommended way to run all of this to support multi-arch image builds along w/ release artifacts through goreleaser:
+#   1. Default macOS Docker desktop
+#   2. enabled the containerd image store
+#   3. `docker buildx use desktop-linux`
 release:
 	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \
 	if [ -z "$(version)" ]; then echo "error: please provide the 'version' for the release"; exit 1; fi; \
 	if [ -z "$(description)" ]; then echo "error: please provide the 'description' for the release"; exit 1; fi; \
 	if git ls-remote --tags "$$(git config --get remote.origin.url)" | grep -E '\trefs/tags/$(version)$$' &>/dev/null; then echo "error: git tag for version $(version) already exists in origin repo"; exit 1; fi; \
-	if [[ -n "$$(git tag -l $(version))" ]]; then echo "error: git tag for version $(version) already exists locally"; exit 1; fi; \
+	if [ -n "$$(git tag -l $(version))" ]; then echo "error: git tag for version $(version) already exists locally"; exit 1; fi; \
 	echo "releasing gitspork version: $(version), description: $(description)"; \
 	git tag -a $(version) -m "$(description)"; \
-	git push origin $(version); \
-	GITSPORK_VERSION=$(version) goreleaser release --clean; \
-	docker buildx build \
-		--platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386 \
-		--build-arg "GITSPORK_VERSION=$(version)" \
-		-t rockholla/gitspork:$(version) \
-		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \
-		--push \
-		.;
-
+	git push origin $(version) || (git tag -d $(version); exit 1); \
+	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --verbose --clean || (git tag -d $(version); git push origin --delete $(version); exit 1);

@@ -56,6 +56,6 @@ release: ensure-buildx-builder
 	if git ls-remote --tags "$$(git config --get remote.origin.url)" | grep -E '\trefs/tags/$(version)$$' &>/dev/null; then echo "error: git tag for version $(version) already exists in origin repo"; exit 1; fi; \
 	if [ -n "$$(git tag -l $(version))" ]; then echo "error: git tag for version $(version) already exists locally"; exit 1; fi; \
 	echo "releasing gitspork version: $(version), description: $(description)"; \
-	RELEASE_DESCRIPTION="$(description)" git tag -a $(version) -m "$$RELEASE_DESCRIPTION"; \
+	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version) || (git tag -d $(version); exit 1); \
 	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --clean || (git tag -d $(version); git push origin --delete $(version); exit 1);

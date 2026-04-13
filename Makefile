@@ -43,6 +43,10 @@ dev-test-integrate-local:
 version ?=
 description ?=
 latest ?= false
+# NOTE: recommended way to run all of this to support multi-arch image builds along w/ release artifacts through goreleaser:
+#   1. Default macOS Docker desktop
+#   2. enabled the containerd image store
+#   3. `docker buildx use desktop-linux`
 release:
 	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \
 	if [ -z "$(version)" ]; then echo "error: please provide the 'version' for the release"; exit 1; fi; \

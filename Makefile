@@ -53,7 +53,11 @@ release:
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version); \
 	GITSPORK_VERSION=$(version) goreleaser release --clean; \
-	docker build --build-arg "GITSPORK_VERSION=$(version)" -t rockholla/gitspork:$(version) .; \
-	docker push rockholla/gitspork:$(version); \
-	if [[ "$(latest)" == true ]]; then docker tag rockholla/gitspork:$(version) rockholla/gitspork:latest; docker push rockholla/gitspork:latest; fi;
+	docker buildx build \
+		--platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386,linux/ppc64le,linux/s390x \
+		--build-arg "GITSPORK_VERSION=$(version)" \
+		-t rockholla/gitspork:$(version) \
+		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \
+		--push \
+		.;
 

@@ -1,0 +1,4 @@
+FROM alpine:latest
+COPY gitspork /usr/local/bin/gitspork
+RUN apk update && apk add --no-cache bash git
+ENTRYPOINT ["gitspork"]

@@ -52,12 +52,13 @@ release:
 	echo "releasing gitspork version: $(version), description: $(description)"; \
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version); \
-	GITSPORK_VERSION=$(version) goreleaser release --clean; \
-	docker buildx build \
-		--platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386 \
-		--build-arg "GITSPORK_VERSION=$(version)" \
-		-t rockholla/gitspork:$(version) \
-		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \
-		--push \
-		.;
+	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --clean;
 
+.PHONY: test-multi-platform-build
+test-multi-platform-build:
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg "GITSPORK_VERSION=test-multi-platform-build" \
+		-t rockholla/gitspork:test-multi-platform-build \
+		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \
+		.;

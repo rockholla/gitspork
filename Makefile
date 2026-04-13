@@ -54,7 +54,7 @@ release:
 	git push origin $(version); \
 	GITSPORK_VERSION=$(version) goreleaser release --clean; \
 	docker buildx build \
-		--platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386,linux/ppc64le,linux/s390x \
+		--platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6,linux/386 \
 		--build-arg "GITSPORK_VERSION=$(version)" \
 		-t rockholla/gitspork:$(version) \
 		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \

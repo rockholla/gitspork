@@ -52,4 +52,4 @@ release:
 	echo "releasing gitspork version: $(version), description: $(description)"; \
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version) || (git tag -d $(version); exit 1); \
-	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --clean || (git tag -d $(version); git push origin --delete $(version); exit 1);
+	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --verbose --clean || (git tag -d $(version); git push origin --delete $(version); exit 1);

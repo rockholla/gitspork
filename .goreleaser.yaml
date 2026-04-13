@@ -68,33 +68,33 @@ dockers:
     goarch: amd64
     dockerfile: Dockerfile.release
     use: buildx
-    build_flag_templates: ["--platform=linux/amd64"]
+    build_flag_templates: ["--platform=linux/amd64", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-arm64"]
     goarch: arm64
     dockerfile: Dockerfile.release
     use: buildx
-    build_flag_templates: ["--platform=linux/arm64"]
+    build_flag_templates: ["--platform=linux/arm64", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-armv7"]
     goarch: arm
     goarm: "7"
     dockerfile: Dockerfile.release
     use: buildx
-    build_flag_templates: ["--platform=linux/arm/v7"]
+    build_flag_templates: ["--platform=linux/arm/v7", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-armv6"]
     goarch: arm
     goarm: "6"
     dockerfile: Dockerfile.release
     use: buildx
-    build_flag_templates: ["--platform=linux/arm/v6"]
+    build_flag_templates: ["--platform=linux/arm/v6", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-386"]
     goarch: "386"
     dockerfile: Dockerfile.release
     use: buildx
-    build_flag_templates: ["--platform=linux/386"]
+    build_flag_templates: ["--platform=linux/386", "--provenance=false"]
 
 docker_manifests:
   - name_template: "rockholla/gitspork:{{ .Tag }}"

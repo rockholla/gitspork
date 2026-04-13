@@ -53,12 +53,3 @@ release:
 	git tag -a $(version) -m "$(description)"; \
 	git push origin $(version); \
 	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --clean;
-
-.PHONY: test-multi-platform-build
-test-multi-platform-build:
-	docker buildx build \
-		--platform linux/amd64,linux/arm64 \
-		--build-arg "GITSPORK_VERSION=test-multi-platform-build" \
-		-t rockholla/gitspork:test-multi-platform-build \
-		$(if $(filter true,$(latest)),-t rockholla/gitspork:latest,) \
-		.;

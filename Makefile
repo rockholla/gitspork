@@ -39,17 +39,11 @@ dev-test-integrate-local:
 		--upstream-path ./docs/examples/local/upstream \
 		--downstream-path ./docs/examples/local/downstream
 
-.PHONY: ensure-buildx-builder
-ensure-buildx-builder:
-	@docker buildx inspect gitspork-builder &>/dev/null || \
-		docker buildx create --name gitspork-builder --driver docker-container --bootstrap
-	@docker buildx use gitspork-builder
-
 .PHONY: release
 version ?=
 description ?=
 latest ?= false
-release: ensure-buildx-builder
+release:
 	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \
 	if [ -z "$(version)" ]; then echo "error: please provide the 'version' for the release"; exit 1; fi; \
 	if [ -z "$(description)" ]; then echo "error: please provide the 'description' for the release"; exit 1; fi; \

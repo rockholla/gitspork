@@ -62,23 +62,56 @@ changelog:
       - "^docs:"
       - "^test:"
 
-kos:
-  - build: linux
-    repositories:
-      - rockholla/gitspork
-    bare: true
-    preserve_import_paths: false
-    base_image: alpine:3.23.3
-    tags:
-      - "{{ .Tag }}"
-      - '{{ if eq .Env.IS_LATEST "true" }}latest{{ end }}'
-    platforms:
-      - linux/amd64
-      - linux/arm64
-      - linux/arm/v7
-      - linux/arm/v6
-      - linux/386
-    sbom: none
+dockers:
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-amd64"]
+    goarch: amd64
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64", "--provenance=false"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-arm64"]
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64", "--provenance=false"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-armv7"]
+    goarch: arm
+    goarm: "7"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm/v7", "--provenance=false"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-armv6"]
+    goarch: arm
+    goarm: "6"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm/v6", "--provenance=false"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-386"]
+    goarch: "386"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/386", "--provenance=false"]
+
+docker_manifests:
+  - name_template: "rockholla/gitspork:{{ .Tag }}"
+    image_templates:
+      - "rockholla/gitspork:{{ .Tag }}-amd64"
+      - "rockholla/gitspork:{{ .Tag }}-arm64"
+      - "rockholla/gitspork:{{ .Tag }}-armv7"
+      - "rockholla/gitspork:{{ .Tag }}-armv6"
+      - "rockholla/gitspork:{{ .Tag }}-386"
+  - name_template: "rockholla/gitspork:latest"
+    skip_push: '{{ ne .Env.IS_LATEST "true" }}'
+    image_templates:
+      - "rockholla/gitspork:{{ .Tag }}-amd64"
+      - "rockholla/gitspork:{{ .Tag }}-arm64"
+      - "rockholla/gitspork:{{ .Tag }}-armv7"
+      - "rockholla/gitspork:{{ .Tag }}-armv6"
+      - "rockholla/gitspork:{{ .Tag }}-386"
 
 release:
   prerelease: auto

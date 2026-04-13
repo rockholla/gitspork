@@ -62,20 +62,56 @@ changelog:
       - "^docs:"
       - "^test:"
 
-dockers_v2:
+dockers:
   - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-amd64"]
+    goarch: amd64
     dockerfile: Dockerfile.release
-    images:
-      - rockholla/gitspork
-    tags:
-      - "{{ .Tag }}"
-      - '{{ if eq .Env.IS_LATEST "true" }}latest{{ end }}'
-    platforms:
-      - linux/amd64
-      - linux/arm64
-      - linux/arm/v7
-      - linux/arm/v6
-      - linux/386
+    use: buildx
+    build_flag_templates: ["--platform=linux/amd64"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-arm64"]
+    goarch: arm64
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm64"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-armv7"]
+    goarch: arm
+    goarm: "7"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm/v7"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-armv6"]
+    goarch: arm
+    goarm: "6"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/arm/v6"]
+  - ids: [linux]
+    image_templates: ["rockholla/gitspork:{{ .Tag }}-386"]
+    goarch: "386"
+    dockerfile: Dockerfile.release
+    use: buildx
+    build_flag_templates: ["--platform=linux/386"]
+
+docker_manifests:
+  - name_template: "rockholla/gitspork:{{ .Tag }}"
+    image_templates:
+      - "rockholla/gitspork:{{ .Tag }}-amd64"
+      - "rockholla/gitspork:{{ .Tag }}-arm64"
+      - "rockholla/gitspork:{{ .Tag }}-armv7"
+      - "rockholla/gitspork:{{ .Tag }}-armv6"
+      - "rockholla/gitspork:{{ .Tag }}-386"
+  - name_template: "rockholla/gitspork:latest"
+    skip_push: '{{ ne .Env.IS_LATEST "true" }}'
+    image_templates:
+      - "rockholla/gitspork:{{ .Tag }}-amd64"
+      - "rockholla/gitspork:{{ .Tag }}-arm64"
+      - "rockholla/gitspork:{{ .Tag }}-armv7"
+      - "rockholla/gitspork:{{ .Tag }}-armv6"
+      - "rockholla/gitspork:{{ .Tag }}-386"
 
 release:
   prerelease: auto

@@ -66,6 +66,8 @@ kos:
   - build: linux
     repositories:
       - rockholla/gitspork
+    bare: true
+    preserve_import_paths: false
     base_image: alpine:3.23.3
     tags:
       - "{{ .Tag }}"

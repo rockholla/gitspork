@@ -11,6 +11,7 @@ When getting started, you can run `gitspork init --help` to see the schema and d
 version: "v0.1.0" # version of gitspork relevant to the config
 upstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo
 - "upstream-owned.txt"
+- "source-file.txt:destination-file.txt" # optional rename syntax - sync source-file.txt from upstream to destination-file.txt in downstream
 downstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated
 - "downstream-owned.md"
 shared_ownership: # file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way

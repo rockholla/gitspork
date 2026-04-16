@@ -51,3 +51,20 @@ post_integrate:
 ## For Downstream Integrators
 
 More coming soon, see the [root README.md](../README.md) in the meantime for the info currently available.
+
+### Drift Detection
+
+Before integration overwrites your local modifications to upstream-owned files, you can preview what will change using the `--check-drift` flag:
+
+```bash
+gitspork integrate \
+  --upstream-repo-url https://github.com/your-org/your-upstream \
+  --upstream-repo-version v2.0.0 \
+  --check-drift
+```
+
+When drift is detected, gitspork will:
+- Show a colored diff of each modified upstream-owned file
+- Prompt you to continue or abort the integration
+
+This is useful when you've made local edits to upstream-owned files and want to review what will be overwritten before proceeding.

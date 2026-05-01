@@ -93,6 +93,7 @@ type IntegrateOptions struct {
 	Logger              *Logger
 	UpstreamRepoURL     string
 	UpstreamRepoVersion string
+	UpstreamRepoCommit  string
 	UpstreamRepoSubpath string
 	UpstreamRepoToken   string
 	DownstreamRepoPath  string

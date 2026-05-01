@@ -96,5 +96,4 @@ Flags:
 ## What Is Not In Scope
 
 - `integrate-local` drift detection (no remote URL/hash to store or compare against)
-- Drift detection for shared-ownership block changes beyond what a full re-integrate naturally produces
 - Any changes to existing `integrate` or `integrate-local` behavior beyond state recording and URL rewriting

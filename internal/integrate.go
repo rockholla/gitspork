@@ -172,7 +172,23 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 	return nil
 }
 
+func resolveUpstreamURL(url string, token string) string {
+	sshAgentAvailable := os.Getenv("SSH_AUTH_SOCK") != ""
+	isHTTPS, _ := regexp.MatchString(`^https://`, url)
+	isSSH, _ := regexp.MatchString(`^git@`, url)
+	if sshAgentAvailable && token == "" && isHTTPS {
+		re := regexp.MustCompile(`^https://([^/]+)/(.+)$`)
+		return re.ReplaceAllString(url, "git@$1:$2")
+	}
+	if !sshAgentAvailable && token != "" && isSSH {
+		re := regexp.MustCompile(`^git@([^:]+):(.+)$`)
+		return re.ReplaceAllString(url, "https://$1/$2")
+	}
+	return url
+}
+
 func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
+	opts.UpstreamRepoURL = resolveUpstreamURL(opts.UpstreamRepoURL, opts.UpstreamRepoToken)
 	var err error
 	var authMethod transport.AuthMethod
 	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", opts.UpstreamRepoURL)

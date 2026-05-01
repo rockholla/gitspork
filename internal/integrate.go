@@ -61,6 +61,7 @@ func Integrate(opts *IntegrateOptions) error {
 		return fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
+	originalUpstreamURL := opts.UpstreamRepoURL
 	opts.Logger.Log("cloning gitspork upstream repo %s", opts.UpstreamRepoURL)
 	commitHash, err := cloneUpstreamForIntegrate(cloneDir, opts)
 	if err != nil {
@@ -84,7 +85,7 @@ func Integrate(opts *IntegrateOptions) error {
 		if err != nil {
 			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		state.LastUpstreamRepoURL = opts.UpstreamRepoURL
+		state.LastUpstreamRepoURL = originalUpstreamURL
 		state.LastUpstreamRepoSubpath = opts.UpstreamRepoSubpath
 		state.LastUpstreamCommitHash = commitHash
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {

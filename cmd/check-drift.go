@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -45,7 +45,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				UpstreamRepoToken:  upstreamRepoToken,
 				Verbose:            verbose,
 			})
-			if err != nil && strings.Contains(err.Error(), "drift detected") {
+			if errors.Is(err, internal.ErrDriftDetected) {
 				os.Exit(1)
 			}
 			return err

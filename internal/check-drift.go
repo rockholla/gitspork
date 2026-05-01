@@ -1,12 +1,16 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+// ErrDriftDetected is returned by CheckDrift when drift is found in the downstream
+var ErrDriftDetected = errors.New("drift detected")
 
 // CheckDrift detects whether the downstream has drifted from its last integrated upstream state
 func CheckDrift(opts *CheckDriftOptions) error {
@@ -54,6 +58,9 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	if upstreamURL == "" {
 		upstreamURL = state.LastUpstreamRepoURL
 	}
+	if upstreamURL == "" {
+		return fmt.Errorf("no upstream repo URL found in state — re-run 'gitspork integrate' or pass --upstream-repo-url")
+	}
 
 	opts.Logger.Log("re-integrating at upstream commit %s to check for drift", state.LastUpstreamCommitHash)
 	if err := Integrate(&IntegrateOptions{
@@ -90,7 +97,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		fmt.Println(diffOutput)
 	}
 
-	return fmt.Errorf("drift detected")
+	return ErrDriftDetected
 }
 
 func checkCleanWorkingTree(repoPath string) error {

@@ -56,7 +56,10 @@ type GitSporkConfigMigrationInstructions struct {
 
 // GitSporkDownstreamState represents state stored in the downstream repo to track integrations, etc.
 type GitSporkDownstreamState struct {
-	MigrationsComplete []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
+	MigrationsComplete      []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
+	LastUpstreamRepoURL     string   `json:"last_upstream_repo_url,omitempty"`
+	LastUpstreamRepoSubpath string   `json:"last_upstream_repo_subpath,omitempty"`
+	LastUpstreamCommitHash  string   `json:"last_upstream_commit_hash,omitempty"`
 }
 
 // GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
@@ -102,6 +105,15 @@ type IntegrateLocalOptions struct {
 	UpstreamPath   string
 	DownstreamPath string
 	ForceRePrompt  bool
+}
+
+// CheckDriftOptions are options for the CheckDrift method
+type CheckDriftOptions struct {
+	Logger             *Logger
+	DownstreamRepoPath string
+	UpstreamRepoURL    string
+	UpstreamRepoToken  string
+	Verbose            bool
 }
 
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path

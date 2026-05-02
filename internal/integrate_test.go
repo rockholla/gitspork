@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestResolveUpstreamURL(t *testing.T) {
+func Test_resolveUpstreamURL(t *testing.T) {
 	t.Run("SSH agent present, no token, HTTPS url -> rewrite to SSH", func(t *testing.T) {
 		os.Setenv("SSH_AUTH_SOCK", "/tmp/fake.sock")
 		defer os.Unsetenv("SSH_AUTH_SOCK")

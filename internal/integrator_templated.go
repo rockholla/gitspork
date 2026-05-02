@@ -64,20 +64,14 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 		for _, input := range templatedInstruction.Inputs {
 			if input.JSONDataPath != "" {
 				jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
-				if _, statErr := os.Stat(jsonDataPath); os.IsNotExist(statErr) && len(templateData.Inputs) > 0 {
-					// json_data_path file is not present but cached inputs exist (e.g. during a drift-check
-					// re-integration where the file lives outside the downstream copy) — use the cached data
-					maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-				} else {
-					jsonData, err := os.ReadFile(jsonDataPath)
-					if err != nil {
-						return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)
-					}
-					err = json.Unmarshal(jsonData, &templateData.Inputs)
-					maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-					if err != nil {
-						return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
-					}
+				jsonData, err := os.ReadFile(jsonDataPath)
+				if err != nil {
+					return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)
+				}
+				err = json.Unmarshal(jsonData, &templateData.Inputs)
+				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
+				if err != nil {
+					return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
 				}
 			} else if input.Prompt != "" {
 				if templateData.Inputs[input.Name] == "" || forceRePrompt {

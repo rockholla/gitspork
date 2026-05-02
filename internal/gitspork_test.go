@@ -1,33 +1,60 @@
 package internal
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
+	"time"
 
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIntegrate(t *testing.T) {
-	_, thisTestFile, _, _ := runtime.Caller(0)
-
 	t.Run("simple", func(t *testing.T) {
-		simpleDownstreamPath, err := filepath.Abs(filepath.Join(filepath.Dir(thisTestFile), "..", "docs", "examples", "simple", "downstream"))
-		assert.Nil(t, err)
-		err = os.Mkdir(simpleDownstreamPath, 0755)
-		defer os.RemoveAll(simpleDownstreamPath)
-		assert.Nil(t, err)
+		upstreamDir, err := os.MkdirTemp("", "gitspork-test-upstream")
+		require.NoError(t, err)
+		defer os.RemoveAll(upstreamDir)
+
+		downstreamDir, err := os.MkdirTemp("", "gitspork-test-downstream")
+		require.NoError(t, err)
+		defer os.RemoveAll(downstreamDir)
+
+		makeUpstreamRepo(t, upstreamDir)
+
 		err = Integrate(&IntegrateOptions{
 			Logger:              NewLogger(),
-			UpstreamRepoURL:     "https://github.com/rockholla/gitspork.git",
-			UpstreamRepoVersion: "main",
-			UpstreamRepoSubpath: "docs/examples/simple/upstream",
-			DownstreamRepoPath:  simpleDownstreamPath,
+			UpstreamRepoURL:     upstreamDir,
+			UpstreamRepoVersion: "master",
+			DownstreamRepoPath:  downstreamDir,
 		})
-		assert.Nil(t, err)
-		_, err = os.Stat(filepath.Join(simpleDownstreamPath, "upstream-owned", "sub", "sub", "sub-sub.txt"))
-		assert.False(t, errors.Is(err, os.ErrNotExist))
+		require.NoError(t, err)
+
+		_, err = os.Stat(filepath.Join(downstreamDir, "upstream-owned", "sub", "sub", "sub-sub.txt"))
+		assert.NoError(t, err)
 	})
+}
+
+// makeUpstreamRepo initialises a local git repo with the minimal upstream structure needed for integration tests.
+func makeUpstreamRepo(t *testing.T, dir string) {
+	t.Helper()
+
+	repo, err := gogit.PlainInit(dir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("master")),
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "upstream-owned", "sub", "sub"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "upstream-owned", "sub", "sub", "sub-sub.txt"), []byte("content"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitspork.yml"), []byte("version: dev\nupstream_owned:\n- upstream-owned/**/*\n"), 0644))
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	_, err = wt.Commit("initial", &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
 }

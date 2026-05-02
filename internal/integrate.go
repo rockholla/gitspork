@@ -44,6 +44,7 @@ type GitSporkIntegrator interface {
 func Integrate(opts *IntegrateOptions) error {
 	var err error
 
+	// setup
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {
@@ -56,6 +57,7 @@ func Integrate(opts *IntegrateOptions) error {
 		}
 	}
 
+	// clone the upstream git repo to a temporary local location to start
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
 		return fmt.Errorf("error creating temporary directory: %v", err)
@@ -68,6 +70,8 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
+	// now we can work our way through both the upstream clone and our local downstream source
+	// to begin integrating, merging, etc.
 	upstreamRootPath := filepath.Join(cloneDir, opts.UpstreamRepoSubpath)
 	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)

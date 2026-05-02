@@ -63,8 +63,10 @@ func Integrate(opts *IntegrateOptions) error {
 		return fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
+	originalUpstreamURL := opts.UpstreamRepoURL
 	opts.Logger.Log("cloning gitspork upstream repo %s", opts.UpstreamRepoURL)
-	if err := cloneUpstreamForIntegrate(cloneDir, opts); err != nil {
+	commitHash, err := cloneUpstreamForIntegrate(cloneDir, opts)
+	if err != nil {
 		return err
 	}
 
@@ -77,10 +79,28 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	return integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.Logger)
+	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
+		return err
+	}
+
+	// only persist upstream metadata and migration completions on a real integrate, not on a drift-check re-integrate
+	if !opts.ForDriftCheck {
+		state, err := loadDownstreamState(opts.DownstreamRepoPath)
+		if err != nil {
+			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
+		}
+		state.LastUpstreamRepoURL = originalUpstreamURL
+		state.LastUpstreamRepoSubpath = opts.UpstreamRepoSubpath
+		state.LastUpstreamCommitHash = commitHash
+		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
+			return fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
+		}
+	}
+
+	return nil
 }
 
-func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error {
+func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger *Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	preIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
@@ -122,8 +142,10 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 		if err := runMigration(preIntegrateMigration, upstreamPath, downstreamPath); err != nil {
 			return fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
 		}
-		if err := recordCompleteMigration(preIntegrateMigration.ID, downstreamPath); err != nil {
-			return fmt.Errorf("error recording successful migration result: %v", err)
+		if !forDriftCheck {
+			if err := recordCompleteMigration(preIntegrateMigration.ID, downstreamPath); err != nil {
+				return fmt.Errorf("error recording successful migration result: %v", err)
+			}
 		}
 	}
 
@@ -163,8 +185,10 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 		if err := runMigration(postIntegrateMigration, upstreamPath, downstreamPath); err != nil {
 			return fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
 		}
-		if err := recordCompleteMigration(postIntegrateMigration.ID, downstreamPath); err != nil {
-			return fmt.Errorf("error recording successful migration result: %v", err)
+		if !forDriftCheck {
+			if err := recordCompleteMigration(postIntegrateMigration.ID, downstreamPath); err != nil {
+				return fmt.Errorf("error recording successful migration result: %v", err)
+			}
 		}
 	}
 
@@ -172,7 +196,23 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 	return nil
 }
 
-func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
+func resolveUpstreamURL(url string, token string) string {
+	sshAgentAvailable := os.Getenv("SSH_AUTH_SOCK") != ""
+	isHTTPS, _ := regexp.MatchString(`^https://`, url)
+	isSSH, _ := regexp.MatchString(`^git@`, url)
+	if sshAgentAvailable && token == "" && isHTTPS {
+		re := regexp.MustCompile(`^https://([^/]+)/(.+)$`)
+		return re.ReplaceAllString(url, "git@$1:$2")
+	}
+	if !sshAgentAvailable && token != "" && isSSH {
+		re := regexp.MustCompile(`^git@([^:]+):(.+)$`)
+		return re.ReplaceAllString(url, "https://$1/$2")
+	}
+	return url
+}
+
+func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string, error) {
+	opts.UpstreamRepoURL = resolveUpstreamURL(opts.UpstreamRepoURL, opts.UpstreamRepoToken)
 	var err error
 	var authMethod transport.AuthMethod
 	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", opts.UpstreamRepoURL)
@@ -184,7 +224,7 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
 	} else if !isHTTPsUpstreamURL && os.Getenv("SSH_AUTH_SOCK") != "" {
 		authMethod, err = ssh.NewSSHAgentAuth(gitSSHUsername)
 		if err != nil {
-			return fmt.Errorf("error setting up SSH auth method for git: %v", err)
+			return "", fmt.Errorf("error setting up SSH auth method for git: %v", err)
 		}
 	}
 	cloneOptions := &git.CloneOptions{
@@ -199,18 +239,38 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) error {
 		refName := fmt.Sprintf("refs/heads/%s", opts.UpstreamRepoVersion)
 		isTag, err := regexp.MatchString("^tags\\/", opts.UpstreamRepoVersion)
 		if err != nil {
-			return fmt.Errorf("error processing upstream gitsport repo version to use: %v", err)
+			return "", fmt.Errorf("error processing upstream gitspork repo version to use: %v", err)
 		}
 		if isTag {
 			refName = fmt.Sprintf("refs/%s", opts.UpstreamRepoVersion)
 		}
 		cloneOptions.ReferenceName = plumbing.ReferenceName(refName)
 	}
-	_, err = git.PlainClone(cloneDir, cloneOptions)
-	if err != nil {
-		return fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+	if opts.UpstreamRepoCommit != "" {
+		// need full history to checkout a specific commit
+		cloneOptions.SingleBranch = false
 	}
-	return nil
+	repo, err := git.PlainClone(cloneDir, cloneOptions)
+	if err != nil {
+		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+	}
+	if opts.UpstreamRepoCommit != "" {
+		worktree, err := repo.Worktree()
+		if err != nil {
+			return "", fmt.Errorf("error getting worktree for commit checkout: %v", err)
+		}
+		if err := worktree.Checkout(&git.CheckoutOptions{
+			Hash: plumbing.NewHash(opts.UpstreamRepoCommit),
+		}); err != nil {
+			return "", fmt.Errorf("error checking out commit %s: %v", opts.UpstreamRepoCommit, err)
+		}
+		return opts.UpstreamRepoCommit, nil
+	}
+	ref, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("error resolving HEAD commit from upstream clone: %v", err)
+	}
+	return ref.Hash().String(), nil
 }
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {

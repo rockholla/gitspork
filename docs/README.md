@@ -50,4 +50,21 @@ post_integrate:
 
 ## For Downstream Integrators
 
-More coming soon, see the [root README.md](../README.md) in the meantime for the info currently available.
+It's as simple as identifying your upstream gitspork repo, then on your downstream clone:
+
+```
+% gitspork integrate \
+  --upstream-repo-url <ssh or https upstream repo URL> \
+  --upstream-repo-token <if using git https, you can provide your auth token here> \
+  --upstream-repo-subpath <optional subpath within the repo to the .gitspork.yml config> \
+  --upstream-repo-version <branch, tag, or commit hash from the upstream repo the represents the state you want to integrate with> \
+  --downstream-repo-path <optional subpath in your repo where you want to integrate, defaults to pwd>
+```
+
+Once you've integrated, gitspork stashes awareness of the last state at which you integrated (upstream commit hash etc.), and you can check drift from upstream at any time by:
+
+```
+% gitspork check-drift [ --verbose ]
+```
+
+`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. It exits `0` if no drift is detected, `1` if drift is detected, and other non-zero codes on error.

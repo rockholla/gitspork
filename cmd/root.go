@@ -40,8 +40,10 @@ func init() {
 	integrateSubcommand := &IntegrateSubcommand{}
 	integrateLocalSubcommand := &IntegrateLocalSubcommand{}
 	InitSubcommand := &InitSubcommand{}
+	checkDriftSubcommand := &CheckDriftSubcommand{}
 
 	rootCmd.AddCommand(integrateSubcommand.GetCmd())
 	rootCmd.AddCommand(integrateLocalSubcommand.GetCmd())
 	rootCmd.AddCommand(InitSubcommand.GetCmd())
+	rootCmd.AddCommand(checkDriftSubcommand.GetCmd())
 }

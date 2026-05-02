@@ -58,6 +58,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			if err != nil {
 				return fmt.Errorf("error parsing cached template data file at %s into inputs: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
 			}
+			maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {

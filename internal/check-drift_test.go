@@ -28,6 +28,8 @@ func TestCheckDrift(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		runCmd(t, dir, "git", "init")
+		runCmd(t, dir, "git", "config", "user.email", "gitspork@localhost")
+		runCmd(t, dir, "git", "config", "user.name", "gitspork")
 		runCmd(t, dir, "git", "commit", "--allow-empty", "-m", "init")
 		err = os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty"), 0644)
 		assert.Nil(t, err)

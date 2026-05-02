@@ -79,12 +79,12 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.Logger); err != nil {
+	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
 		return err
 	}
 
-	// only persist upstream metadata on a real integrate, not on a drift-check re-integrate
-	if opts.UpstreamRepoCommit == "" {
+	// only persist upstream metadata and migration completions on a real integrate, not on a drift-check re-integrate
+	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
@@ -100,7 +100,7 @@ func Integrate(opts *IntegrateOptions) error {
 	return nil
 }
 
-func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error {
+func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger *Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	preIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
@@ -142,8 +142,10 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 		if err := runMigration(preIntegrateMigration, upstreamPath, downstreamPath); err != nil {
 			return fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
 		}
-		if err := recordCompleteMigration(preIntegrateMigration.ID, downstreamPath); err != nil {
-			return fmt.Errorf("error recording successful migration result: %v", err)
+		if !forDriftCheck {
+			if err := recordCompleteMigration(preIntegrateMigration.ID, downstreamPath); err != nil {
+				return fmt.Errorf("error recording successful migration result: %v", err)
+			}
 		}
 	}
 
@@ -183,8 +185,10 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 		if err := runMigration(postIntegrateMigration, upstreamPath, downstreamPath); err != nil {
 			return fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
 		}
-		if err := recordCompleteMigration(postIntegrateMigration.ID, downstreamPath); err != nil {
-			return fmt.Errorf("error recording successful migration result: %v", err)
+		if !forDriftCheck {
+			if err := recordCompleteMigration(postIntegrateMigration.ID, downstreamPath); err != nil {
+				return fmt.Errorf("error recording successful migration result: %v", err)
+			}
 		}
 	}
 

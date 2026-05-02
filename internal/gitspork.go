@@ -98,6 +98,7 @@ type IntegrateOptions struct {
 	UpstreamRepoToken   string
 	DownstreamRepoPath  string
 	ForceRePrompt       bool
+	ForDriftCheck       bool
 }
 
 // IntegrateLocalOptions are options for the IntegrateLocal method

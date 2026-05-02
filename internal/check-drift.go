@@ -3,11 +3,17 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+	"time"
+
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 )
+
+const driftCheckBranch = "_gitspork-check-drift"
 
 // ErrDriftDetected is returned by CheckDrift when drift is found in the downstream
 var ErrDriftDetected = errors.New("drift detected")
@@ -36,24 +42,6 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		return fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
 	}
 
-	if err := checkCleanWorkingTree(opts.DownstreamRepoPath); err != nil {
-		return err
-	}
-
-	tempDir, err := os.MkdirTemp("", gitSpork+"-drift")
-	if err != nil {
-		return fmt.Errorf("error creating temporary directory: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	if err := copyDir(opts.DownstreamRepoPath, tempDir); err != nil {
-		return fmt.Errorf("error copying downstream to temp dir: %v", err)
-	}
-
-	if err := initGitBaseline(tempDir); err != nil {
-		return fmt.Errorf("error initialising git baseline in temp dir: %v", err)
-	}
-
 	upstreamURL := opts.UpstreamRepoURL
 	if upstreamURL == "" {
 		upstreamURL = state.LastUpstreamRepoURL
@@ -62,6 +50,43 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		return fmt.Errorf("no upstream repo URL found in state — re-run 'gitspork integrate' or pass --upstream-repo-url")
 	}
 
+	repo, err := gogit.PlainOpen(opts.DownstreamRepoPath)
+	if err != nil {
+		return fmt.Errorf("error opening downstream repo: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("error accessing downstream worktree: %v", err)
+	}
+
+	if err := checkCleanWorkingTree(wt); err != nil {
+		return err
+	}
+
+	headRef, err := repo.Head()
+	if err != nil {
+		return fmt.Errorf("error resolving HEAD: %v", err)
+	}
+	if !headRef.Name().IsBranch() {
+		return fmt.Errorf("downstream repo is in detached HEAD state — check out a branch before running check-drift")
+	}
+	originalBranch := headRef.Name()
+
+	// create or reset the drift-check branch to the current HEAD
+	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(driftBranchRef, headRef.Hash())); err != nil {
+		return fmt.Errorf("error creating/resetting drift-check branch: %v", err)
+	}
+
+	if err := wt.Checkout(&gogit.CheckoutOptions{Branch: driftBranchRef}); err != nil {
+		return fmt.Errorf("error checking out drift-check branch: %v", err)
+	}
+
+	defer func() {
+		_ = wt.Checkout(&gogit.CheckoutOptions{Branch: originalBranch})
+		_ = repo.DeleteBranch(driftCheckBranch)
+	}()
+
 	opts.Logger.Log("re-integrating at upstream commit %s to check for drift", state.LastUpstreamCommitHash)
 	if err := Integrate(&IntegrateOptions{
 		Logger:              opts.Logger,
@@ -69,97 +94,82 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		UpstreamRepoCommit:  state.LastUpstreamCommitHash,
 		UpstreamRepoSubpath: state.LastUpstreamRepoSubpath,
 		UpstreamRepoToken:   opts.UpstreamRepoToken,
-		DownstreamRepoPath:  tempDir,
+		DownstreamRepoPath:  opts.DownstreamRepoPath,
+		ForDriftCheck:       true,
 	}); err != nil {
 		return fmt.Errorf("error running integration for drift check: %v", err)
 	}
 
-	diffOutput, err := runGitDiff(tempDir)
+	patch, err := diffWorktreeAgainstHEAD(repo, wt)
 	if err != nil {
-		return fmt.Errorf("error running git diff in temp dir: %v", err)
+		return fmt.Errorf("error diffing downstream against HEAD: %v", err)
 	}
 
-	if diffOutput == "" {
+	if patch == nil {
 		opts.Logger.Log("no drift detected")
 		return nil
 	}
 
-	changedFiles, err := runGitDiffNameOnly(tempDir)
-	if err != nil {
-		return fmt.Errorf("error getting changed file list: %v", err)
-	}
-	files := strings.Split(strings.TrimSpace(changedFiles), "\n")
-	opts.Logger.Log("drift detected: %d file(s) changed", len(files))
-	for _, f := range files {
-		opts.Logger.Log("  %s", f)
+	stats := patch.Stats()
+	opts.Logger.Log("drift detected: %d file(s) changed", len(stats))
+	for _, s := range stats {
+		opts.Logger.Log("  %s", s.Name)
 	}
 	if opts.Verbose {
-		fmt.Println(diffOutput)
+		pr, pw := io.Pipe()
+		go func() { pw.CloseWithError(patch.Encode(pw)) }()
+		if err := opts.Logger.Diff(pr); err != nil {
+			return fmt.Errorf("error encoding diff: %v", err)
+		}
 	}
 
 	return ErrDriftDetected
 }
 
-func checkCleanWorkingTree(repoPath string) error {
-	cmd := exec.Command("git", "status", "--porcelain")
-	cmd.Dir = repoPath
-	out, err := cmd.Output()
+// diffWorktreeAgainstHEAD stages all changes and compares against HEAD.
+// Returns nil patch when there are no changes (no drift).
+func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*object.Patch, error) {
+	headRef, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("error resolving HEAD: %v", err)
+	}
+	headCommit, err := repo.CommitObject(headRef.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("error loading HEAD commit: %v", err)
+	}
+
+	if err := wt.AddWithOptions(&gogit.AddOptions{All: true}); err != nil {
+		return nil, fmt.Errorf("error staging changes: %v", err)
+	}
+
+	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	newHash, err := wt.Commit("drift-check", &gogit.CommitOptions{Author: sig})
+	if errors.Is(err, gogit.ErrEmptyCommit) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error committing staged changes: %v", err)
+	}
+
+	newCommit, err := repo.CommitObject(newHash)
+	if err != nil {
+		return nil, fmt.Errorf("error loading new commit: %v", err)
+	}
+
+	patch, err := headCommit.Patch(newCommit)
+	if err != nil {
+		return nil, fmt.Errorf("error computing patch: %v", err)
+	}
+	return patch, nil
+}
+
+func checkCleanWorkingTree(wt *gogit.Worktree) error {
+	status, err := wt.StatusWithOptions(gogit.StatusOptions{Strategy: gogit.Preload})
 	if err != nil {
 		return fmt.Errorf("error checking working tree status: %v", err)
 	}
-	if strings.TrimSpace(string(out)) != "" {
+	if !status.IsClean() {
 		return fmt.Errorf("working tree is not clean — commit or stash changes before running check-drift")
 	}
 	return nil
-}
-
-func copyDir(src string, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		if rel == ".git" || strings.HasPrefix(rel, ".git"+string(filepath.Separator)) {
-			return nil
-		}
-		target := filepath.Join(dst, rel)
-		if info.IsDir() {
-			return os.MkdirAll(target, info.Mode())
-		}
-		return syncFile(path, target)
-	})
-}
-
-func initGitBaseline(dir string) error {
-	for _, args := range [][]string{
-		{"git", "init"},
-		{"git", "config", "user.email", "gitspork@localhost"},
-		{"git", "config", "user.name", "gitspork"},
-		{"git", "add", "-A"},
-		{"git", "commit", "-m", "baseline"},
-	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("error running %v: %v\n%s", args, err, string(out))
-		}
-	}
-	return nil
-}
-
-func runGitDiff(dir string) (string, error) {
-	cmd := exec.Command("git", "diff", "HEAD")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	return string(out), err
-}
-
-func runGitDiffNameOnly(dir string) (string, error) {
-	cmd := exec.Command("git", "diff", "HEAD", "--name-only")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	return string(out), err
 }

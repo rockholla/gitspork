@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 )
 
 func Test_computeUpstreamDelta(t *testing.T) {
@@ -70,6 +71,76 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, delta.Deletions)
 		assert.Empty(t, delta.Renames)
+	})
+
+	t.Run("prevHash not in repo returns empty delta without error", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, _, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
+		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+
+		delta, err := computeUpstreamDelta(repo, "0000000000000000000000000000000000000000", newHash, config, "")
+		require.NoError(t, err)
+		assert.Empty(t, delta.Deletions)
+		assert.Empty(t, delta.Renames)
+	})
+
+	t.Run("upstreamSubpath prefix is stripped from delta paths", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		// file lives at upstream/docs/guide.md in the repo tree
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md")
+	})
+
+	t.Run("templated destination removed appears in Deletions", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		prevCfg := &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "tmpl/foo.go.tmpl", Destination: "out/foo.txt"},
+			},
+		}
+		newCfg := &GitSporkConfig{}
+		repo, prevHash, newHash := makeUpstreamWithTemplatedConfigChange(t, dir, prevCfg, newCfg)
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, newCfg, "")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "out/foo.txt")
+	})
+
+	t.Run("templated destination changed appears in Renames", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		prevCfg := &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "tmpl/foo.go.tmpl", Destination: "out/old.txt"},
+			},
+		}
+		newCfg := &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "tmpl/foo.go.tmpl", Destination: "out/new.txt"},
+			},
+		}
+		repo, prevHash, newHash := makeUpstreamWithTemplatedConfigChange(t, dir, prevCfg, newCfg)
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, newCfg, "")
+		require.NoError(t, err)
+		require.Len(t, delta.Renames, 1)
+		assert.Equal(t, "out/old.txt", delta.Renames[0].OldPath)
+		assert.Equal(t, "out/new.txt", delta.Renames[0].NewPath)
 	})
 }
 
@@ -198,4 +269,33 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
 		assert.True(t, os.IsNotExist(err))
 	})
+}
+
+func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, newCfg *GitSporkConfig) (*gogit.Repository, string, string) {
+	t.Helper()
+	repo, err := gogit.PlainInit(dir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+
+	// write prevCfg as .gitspork.yml and commit
+	b, err := yaml.Marshal(prevCfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, gitSporkConfigFileName), b, 0644))
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	prev, err := wt.Commit("add config", &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	// overwrite with newCfg and commit
+	b, err = yaml.Marshal(newCfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, gitSporkConfigFileName), b, 0644))
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	next, err := wt.Commit("update config", &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	return repo, prev.String(), next.String()
 }

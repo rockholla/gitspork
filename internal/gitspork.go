@@ -99,6 +99,7 @@ type IntegrateOptions struct {
 	DownstreamRepoPath  string
 	ForceRePrompt       bool
 	ForDriftCheck       bool
+	PrevUpstreamCommitHash string
 }
 
 // IntegrateLocalOptions are options for the IntegrateLocal method

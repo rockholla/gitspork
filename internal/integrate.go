@@ -57,6 +57,16 @@ func Integrate(opts *IntegrateOptions) error {
 		}
 	}
 
+	prevHash := ""
+	if !opts.ForDriftCheck {
+		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
+		if err != nil {
+			return fmt.Errorf("error loading downstream state for delta check: %v", err)
+		}
+		prevHash = existingState.LastUpstreamCommitHash
+		opts.PrevUpstreamCommitHash = prevHash
+	}
+
 	// clone the upstream git repo to a temporary local location to start
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
@@ -77,6 +87,20 @@ func Integrate(opts *IntegrateOptions) error {
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
 		return err
+	}
+
+	if !opts.ForDriftCheck && prevHash != "" {
+		upstreamRepo, err := git.PlainOpen(cloneDir)
+		if err != nil {
+			return fmt.Errorf("error opening upstream clone for delta computation: %v", err)
+		}
+		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, opts.UpstreamRepoSubpath)
+		if err != nil {
+			return fmt.Errorf("error computing upstream delta: %v", err)
+		}
+		if err := applyUpstreamDelta(delta, opts.DownstreamRepoPath, opts.Logger); err != nil {
+			return fmt.Errorf("error applying upstream delta to downstream: %v", err)
+		}
 	}
 
 	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
@@ -246,7 +270,7 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string,
 		}
 		cloneOptions.ReferenceName = plumbing.ReferenceName(refName)
 	}
-	if opts.UpstreamRepoCommit != "" {
+	if opts.UpstreamRepoCommit != "" || opts.PrevUpstreamCommitHash != "" {
 		// need full history to checkout a specific commit
 		cloneOptions.SingleBranch = false
 	}

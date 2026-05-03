@@ -135,3 +135,4 @@ func AssertFileContains(t *testing.T, dir, rel, substr string) {
 	content := ReadFile(t, dir, rel)
 	require.Contains(t, content, substr, "file %s does not contain %q", rel, substr)
 }
+

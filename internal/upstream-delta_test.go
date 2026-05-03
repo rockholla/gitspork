@@ -186,4 +186,16 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "existing", string(contents))
 	})
+
+	t.Run("rename source absent skips move without error", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+
+		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
+		assert.True(t, os.IsNotExist(err))
+	})
 }

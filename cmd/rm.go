@@ -53,7 +53,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 				return err
 			}
 
-			warnings, err := internal.UpstreamRm(configPath, repoPath, path, recursive)
+			warnings, err := internal.UpstreamRm(configPath, path, recursive)
 			if err != nil {
 				return fmt.Errorf("error updating .gitspork.yml: %v", err)
 			}
@@ -65,7 +65,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root, defaults to current directory")
+	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root; auto-discovered from current directory if not set")
 	cmd.PersistentFlags().BoolVarP(&recursive, "recursive", "R", false, "recursively remove directory and update .gitspork.yml entries under that path")
 	return cmd
 }

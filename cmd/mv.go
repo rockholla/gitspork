@@ -47,7 +47,7 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 				return err
 			}
 
-			warnings, err := internal.UpstreamMv(configPath, repoPath, oldPath, newPath)
+			warnings, err := internal.UpstreamMv(configPath, oldPath, newPath)
 			if err != nil {
 				return fmt.Errorf("error updating .gitspork.yml: %v", err)
 			}
@@ -59,6 +59,6 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root, defaults to current directory")
+	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root; auto-discovered from current directory if not set")
 	return cmd
 }

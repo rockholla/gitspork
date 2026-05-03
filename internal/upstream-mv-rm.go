@@ -23,8 +23,7 @@ func globNonWildcardPrefix(pattern string) string {
 // UpstreamMv updates the config at configPath to reflect a file/directory move from oldPath to newPath.
 // It rewrites exact path entries, glob patterns whose non-wildcard prefix matches the old path,
 // and emits warnings for patterns it can't automatically handle.
-// The repoDir parameter is included for future use (cmd layer needs it for FindGitSporkConfigFile).
-func UpstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) {
+func UpstreamMv(configPath, oldPath, newPath string) ([]string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config: %v", err)
@@ -73,7 +72,7 @@ func UpstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) 
 
 // UpstreamRm updates .gitspork.yml at configPath to remove entries matching path.
 // If recursive is true, also removes entries whose non-wildcard prefix falls under path.
-func UpstreamRm(configPath, repoDir, path string, recursive bool) ([]string, error) {
+func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config: %v", err)

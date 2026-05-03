@@ -119,3 +119,79 @@ func loadConfigFile(t *testing.T, cfgPath string) *GitSporkConfig {
 	require.NoError(t, err)
 	return cfg
 }
+
+func Test_upstreamRm(t *testing.T) {
+	t.Run("exact entry removed", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/guide.md", "docs/other.md"},
+		})
+		warnings, err := upstreamRm(cfg, dir, "docs/guide.md", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("recursive: child exact paths removed", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/cloud-native/file.md", "docs/other.md"},
+		})
+		warnings, err := upstreamRm(cfg, dir, "docs/cloud-native", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("recursive: glob with matching prefix removed", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/cloud-native/**", "docs/other.md"},
+		})
+		warnings, err := upstreamRm(cfg, dir, "docs/cloud-native", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("glob with leading wildcard emits warning and is unchanged", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"**/cloud-native/*.md"},
+		})
+		warnings, err := upstreamRm(cfg, dir, "cloud-native", true)
+		require.NoError(t, err)
+		assert.Len(t, warnings, 1)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"**/cloud-native/*.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("templated entry removed when template matches", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/foo.tmpl", Destination: "out/foo.txt"},
+				{Template: "templates/bar.tmpl", Destination: "out/bar.txt"},
+			},
+		})
+		warnings, err := upstreamRm(cfg, dir, "templates/foo.tmpl", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		require.Len(t, result.Templated, 1)
+		assert.Equal(t, "templates/bar.tmpl", result.Templated[0].Template)
+	})
+
+	t.Run("recursive: templated entry removed when template is child of removed path", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/cloud-native/foo.tmpl", Destination: "out/foo.txt"},
+				{Template: "templates/bar.tmpl", Destination: "out/bar.txt"},
+			},
+		})
+		warnings, err := upstreamRm(cfg, dir, "templates/cloud-native", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		require.Len(t, result.Templated, 1)
+		assert.Equal(t, "templates/bar.tmpl", result.Templated[0].Template)
+	})
+}

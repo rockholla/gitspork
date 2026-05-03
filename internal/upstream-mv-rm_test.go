@@ -1,8 +1,13 @@
 package internal
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 )
 
 func Test_globNonWildcardPrefix(t *testing.T) {
@@ -10,4 +15,85 @@ func Test_globNonWildcardPrefix(t *testing.T) {
 	assert.Equal(t, "docs/cloud-native", globNonWildcardPrefix("docs/cloud-native/*.md"))
 	assert.Equal(t, "", globNonWildcardPrefix("**/cloud-native/*.md"))
 	assert.Equal(t, "exact/path.md", globNonWildcardPrefix("exact/path.md"))
+}
+
+func Test_upstreamMv(t *testing.T) {
+	t.Run("exact upstream_owned entry is replaced", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/old.md"},
+		})
+		warnings, err := upstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/new.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("glob with matching prefix is rewritten", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/cloud-native/**"},
+		})
+		warnings, err := upstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/cloud/**"}, result.UpstreamOwned)
+	})
+
+	t.Run("glob with wildcard before moved segment emits warning and is unchanged", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"**/cloud-native/*.md"},
+		})
+		warnings, err := upstreamMv(cfg, dir, "cloud-native", "cloud")
+		require.NoError(t, err)
+		assert.Len(t, warnings, 1)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"**/cloud-native/*.md"}, result.UpstreamOwned)
+	})
+
+	t.Run("templated template field updated", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/old.tmpl", Destination: "out/file.txt"},
+			},
+		})
+		warnings, err := upstreamMv(cfg, dir, "templates/old.tmpl", "templates/new.tmpl")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, "templates/new.tmpl", result.Templated[0].Template)
+		assert.Equal(t, "out/file.txt", result.Templated[0].Destination)
+	})
+
+	t.Run("templated destination field updated", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/foo.tmpl", Destination: "out/old.txt"},
+			},
+		})
+		warnings, err := upstreamMv(cfg, dir, "out/old.txt", "out/new.txt")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, "out/new.txt", result.Templated[0].Destination)
+	})
+}
+
+func makeConfigFile(t *testing.T, config *GitSporkConfig) (string, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "gitspork-mv-rm-test")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	cfgPath := filepath.Join(dir, gitSporkConfigFileName)
+	b, err := yaml.Marshal(config)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfgPath, b, 0644))
+	return dir, cfgPath
+}
+
+func loadConfigFile(t *testing.T, cfgPath string) *GitSporkConfig {
+	t.Helper()
+	cfg, err := ParseGitSporkConfig(cfgPath)
+	require.NoError(t, err)
+	return cfg
 }

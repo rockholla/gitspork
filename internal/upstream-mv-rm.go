@@ -20,14 +20,19 @@ func globNonWildcardPrefix(pattern string) string {
 	return pattern
 }
 
-// UpstreamMv updates the config at configPath to reflect a file/directory move from oldPath to newPath.
-// It rewrites exact path entries, glob patterns whose non-wildcard prefix matches the old path,
-// and emits warnings for patterns it can't automatically handle.
-func UpstreamMv(configPath, oldPath, newPath string) ([]string, error) {
+// ComputeUpstreamMv returns the rewritten config and any warnings for a move from oldPath to newPath,
+// without writing to disk. Use WriteGitSporkConfig to persist the result.
+func ComputeUpstreamMv(configPath, oldPath, newPath string) (*GitSporkConfig, []string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading config: %v", err)
+		return nil, nil, fmt.Errorf("error reading config: %v", err)
 	}
+	return ComputeUpstreamMvFromConfig(config, oldPath, newPath)
+}
+
+// ComputeUpstreamMvFromConfig applies a move rewrite to an already-parsed config.
+// Used to chain multiple source rewrites without re-reading the file between each.
+func ComputeUpstreamMvFromConfig(config *GitSporkConfig, oldPath, newPath string) (*GitSporkConfig, []string, error) {
 	var warnings []string
 
 	rewritePatterns := func(patterns []string) []string {
@@ -72,16 +77,33 @@ func UpstreamMv(configPath, oldPath, newPath string) ([]string, error) {
 		config.Templated[i].Destination = rewritePath(t.Destination)
 	}
 
-	return warnings, writeConfigFile(configPath, config)
+	return config, warnings, nil
 }
 
-// UpstreamRm updates .gitspork.yml at configPath to remove entries matching path.
-// If recursive is true, also removes entries whose non-wildcard prefix falls under path.
-func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
+// UpstreamMv updates the config at configPath to reflect a file/directory move from oldPath to newPath.
+// It rewrites exact path entries, glob patterns whose non-wildcard prefix matches the old path,
+// and emits warnings for patterns it can't automatically handle.
+func UpstreamMv(configPath, oldPath, newPath string) ([]string, error) {
+	config, warnings, err := ComputeUpstreamMv(configPath, oldPath, newPath)
+	if err != nil {
+		return nil, err
+	}
+	return warnings, WriteGitSporkConfig(configPath, config)
+}
+
+// ComputeUpstreamRm returns the rewritten config and any warnings for a removal of path,
+// without writing to disk. Use WriteGitSporkConfig to persist the result.
+func ComputeUpstreamRm(configPath, path string, recursive bool) (*GitSporkConfig, []string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading config: %v", err)
+		return nil, nil, fmt.Errorf("error reading config: %v", err)
 	}
+	return ComputeUpstreamRmFromConfig(config, path, recursive)
+}
+
+// ComputeUpstreamRmFromConfig applies a removal to an already-parsed config.
+// Used to chain multiple path removals without re-reading the file between each.
+func ComputeUpstreamRmFromConfig(config *GitSporkConfig, path string, recursive bool) (*GitSporkConfig, []string, error) {
 	var warnings []string
 
 	filterPatterns := func(patterns []string) []string {
@@ -124,10 +146,21 @@ func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
 	}
 	config.Templated = templated
 
-	return warnings, writeConfigFile(configPath, config)
+	return config, warnings, nil
 }
 
-func writeConfigFile(configPath string, config *GitSporkConfig) error {
+// UpstreamRm updates .gitspork.yml at configPath to remove entries matching path.
+// If recursive is true, also removes entries whose non-wildcard prefix falls under path.
+func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
+	config, warnings, err := ComputeUpstreamRm(configPath, path, recursive)
+	if err != nil {
+		return nil, err
+	}
+	return warnings, WriteGitSporkConfig(configPath, config)
+}
+
+// WriteGitSporkConfig writes config to configPath.
+func WriteGitSporkConfig(configPath string, config *GitSporkConfig) error {
 	b, err := yaml.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("error marshalling config: %v", err)

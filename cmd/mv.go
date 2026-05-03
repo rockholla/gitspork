@@ -35,12 +35,6 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 			}
 			repoPath := filepath.Dir(configPath)
 
-			gitCmd := exec.Command("git", append([]string{"mv"}, args...)...)
-			gitCmd.Dir = repoPath
-			if out, err := gitCmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("git mv failed: %v\n%s", err, out)
-			}
-
 			// Strip flags; remaining args are: [src...] dest
 			var paths []string
 			for _, a := range args {
@@ -54,24 +48,48 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 			dest := paths[len(paths)-1]
 			srcs := paths[:len(paths)-1]
 
-			var allWarnings []string
-			for _, src := range srcs {
-				newPath := dest
-				// If dest is a directory target, the new path is dest/basename(src)
-				if len(srcs) > 1 {
-					newPath = filepath.Join(dest, filepath.Base(src))
-				}
-				warnings, err := internal.UpstreamMv(configPath, src, newPath)
-				if err != nil {
-					return fmt.Errorf("error updating .gitspork.yml: %v", err)
-				}
-				allWarnings = append(allWarnings, warnings...)
+			// Compute all config changes before touching the index — bail early on any error.
+			// Chain rewrites through the in-memory config so multi-source moves are consistent.
+			config, warnings, err := internal.ComputeUpstreamMv(configPath, srcs[0], mvDest(srcs, dest, 0))
+			if err != nil {
+				return fmt.Errorf("error computing .gitspork.yml update: %v", err)
 			}
-			for _, w := range allWarnings {
+			for i := 1; i < len(srcs); i++ {
+				var w []string
+				config, w, err = internal.ComputeUpstreamMvFromConfig(config, srcs[i], mvDest(srcs, dest, i))
+				if err != nil {
+					return fmt.Errorf("error computing .gitspork.yml update: %v", err)
+				}
+				warnings = append(warnings, w...)
+			}
+
+			gitCmd := exec.Command("git", append([]string{"mv"}, args...)...)
+			gitCmd.Dir = repoPath
+			if out, err := gitCmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("git mv failed: %v\n%s", err, out)
+			}
+
+			if err := internal.WriteGitSporkConfig(configPath, config); err != nil {
+				return fmt.Errorf("error writing .gitspork.yml: %v", err)
+			}
+			if out, err := exec.Command("git", "add", configPath).CombinedOutput(); err != nil {
+				return fmt.Errorf("git add .gitspork.yml failed: %v\n%s", err, out)
+			}
+
+			for _, w := range warnings {
 				logger.Log("⚠️  %s", w)
 			}
-			logger.Log("✅ git mv complete and .gitspork.yml updated — remember to commit")
+			logger.Log("✅ git mv complete and .gitspork.yml staged — ready to commit")
 			return nil
 		},
 	}
+}
+
+// mvDest returns the effective destination path for srcs[i] → dest.
+// When multiple sources are given, dest is treated as a directory.
+func mvDest(srcs []string, dest string, i int) string {
+	if len(srcs) > 1 {
+		return filepath.Join(dest, filepath.Base(srcs[i]))
+	}
+	return dest
 }

@@ -37,28 +37,49 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 			}
 			repoPath := filepath.Dir(configPath)
 
+			// Strip flags; remaining args are the paths to remove.
+			// Compute all config changes before touching the index — bail early on any error.
+			// Chain removals through the in-memory config so multi-path removes are consistent.
+			var rmPaths []string
+			for _, a := range args {
+				if !strings.HasPrefix(a, "-") {
+					rmPaths = append(rmPaths, a)
+				}
+			}
+			if len(rmPaths) == 0 {
+				return fmt.Errorf("expected at least one path")
+			}
+
+			config, warnings, err := internal.ComputeUpstreamRm(configPath, rmPaths[0], recursive)
+			if err != nil {
+				return fmt.Errorf("error computing .gitspork.yml update: %v", err)
+			}
+			for i := 1; i < len(rmPaths); i++ {
+				var w []string
+				config, w, err = internal.ComputeUpstreamRmFromConfig(config, rmPaths[i], recursive)
+				if err != nil {
+					return fmt.Errorf("error computing .gitspork.yml update: %v", err)
+				}
+				warnings = append(warnings, w...)
+			}
+
 			gitCmd := exec.Command("git", append([]string{"rm"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git rm failed: %v\n%s", err, out)
 			}
 
-			// Strip flags; remaining args are the paths to remove
-			var allWarnings []string
-			for _, a := range args {
-				if strings.HasPrefix(a, "-") {
-					continue
-				}
-				warnings, err := internal.UpstreamRm(configPath, a, recursive)
-				if err != nil {
-					return fmt.Errorf("error updating .gitspork.yml: %v", err)
-				}
-				allWarnings = append(allWarnings, warnings...)
+			if err := internal.WriteGitSporkConfig(configPath, config); err != nil {
+				return fmt.Errorf("error writing .gitspork.yml: %v", err)
 			}
-			for _, w := range allWarnings {
+			if out, err := exec.Command("git", "add", configPath).CombinedOutput(); err != nil {
+				return fmt.Errorf("git add .gitspork.yml failed: %v\n%s", err, out)
+			}
+
+			for _, w := range warnings {
 				logger.Log("⚠️  %s", w)
 			}
-			logger.Log("✅ git rm complete and .gitspork.yml updated — remember to commit")
+			logger.Log("✅ git rm complete and .gitspork.yml staged — ready to commit")
 			return nil
 		},
 	}

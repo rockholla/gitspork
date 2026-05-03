@@ -95,9 +95,6 @@ func upstreamRm(configPath, repoDir, path string, recursive bool) ([]string, err
 				if prefix == path || strings.HasPrefix(prefix, path+"/") {
 					continue // prefix falls under removed path — remove
 				}
-				if strings.HasPrefix(p, path+"/") {
-					continue // exact child path — remove
-				}
 			}
 			result = append(result, p)
 		}

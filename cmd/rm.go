@@ -18,7 +18,6 @@ recursive directory removal.`
 type RmSubcommand struct{}
 
 func (s *RmSubcommand) GetCmd() *cobra.Command {
-	var repoPath string
 	var recursive bool
 
 	cmd := &cobra.Command{
@@ -29,12 +28,9 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := args[0]
 
-			if repoPath == "" {
-				var err error
-				repoPath, err = internal.FindGitSporkConfigDir(".")
-				if err != nil {
-					return fmt.Errorf("not in a gitspork upstream repo: %v", err)
-				}
+			repoPath, err := internal.FindGitSporkConfigDir(".")
+			if err != nil {
+				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
 
 			gitArgs := []string{"rm"}
@@ -65,7 +61,6 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root; auto-discovered from current directory if not set")
-	cmd.PersistentFlags().BoolVarP(&recursive, "recursive", "R", false, "recursively remove directory and update .gitspork.yml entries under that path")
+	cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "recursively remove directory and update .gitspork.yml entries under that path")
 	return cmd
 }

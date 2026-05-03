@@ -18,8 +18,6 @@ glob patterns whose non-wildcard prefix matches the moved path.`
 type MvSubcommand struct{}
 
 func (s *MvSubcommand) GetCmd() *cobra.Command {
-	var repoPath string
-
 	cmd := &cobra.Command{
 		Use:   "mv <old-path> <new-path>",
 		Short: mvHelpShort,
@@ -28,12 +26,9 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			oldPath, newPath := args[0], args[1]
 
-			if repoPath == "" {
-				var err error
-				repoPath, err = internal.FindGitSporkConfigDir(".")
-				if err != nil {
-					return fmt.Errorf("not in a gitspork upstream repo: %v", err)
-				}
+			repoPath, err := internal.FindGitSporkConfigDir(".")
+			if err != nil {
+				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
 
 			gitCmd := exec.Command("git", "mv", oldPath, newPath)
@@ -59,6 +54,5 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&repoPath, "repo-path", "r", "", "path to the upstream gitspork repo root; auto-discovered from current directory if not set")
 	return cmd
 }

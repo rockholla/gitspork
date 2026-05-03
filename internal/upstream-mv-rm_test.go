@@ -77,6 +77,28 @@ func Test_upstreamMv(t *testing.T) {
 		result := loadConfigFile(t, cfg)
 		assert.Equal(t, "out/new.txt", result.Templated[0].Destination)
 	})
+
+	t.Run("glob with matching sub-prefix is rewritten", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []string{"docs/cloud-native/sub/**"},
+		})
+		warnings, err := upstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/cloud/sub/**"}, result.UpstreamOwned)
+	})
+
+	t.Run("downstream_owned entry is rewritten", func(t *testing.T) {
+		dir, cfg := makeConfigFile(t, &GitSporkConfig{
+			DownstreamOwned: []string{"docs/old.md"},
+		})
+		warnings, err := upstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []string{"docs/new.md"}, result.DownstreamOwned)
+	})
 }
 
 func makeConfigFile(t *testing.T, config *GitSporkConfig) (string, string) {

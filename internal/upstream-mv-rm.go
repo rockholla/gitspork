@@ -53,6 +53,7 @@ func upstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) 
 	}
 
 	config.UpstreamOwned = rewritePatterns(config.UpstreamOwned)
+	config.DownstreamOwned = rewritePatterns(config.DownstreamOwned)
 	config.SharedOwnership.Merged = rewritePatterns(config.SharedOwnership.Merged)
 	config.SharedOwnership.Structured.PreferUpstream = rewritePatterns(config.SharedOwnership.Structured.PreferUpstream)
 	config.SharedOwnership.Structured.PreferDownstream = rewritePatterns(config.SharedOwnership.Structured.PreferDownstream)
@@ -69,7 +70,6 @@ func upstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) 
 	return warnings, writeConfigFile(configPath, config)
 }
 
-// writeConfigFile writes the config to disk at configPath.
 func writeConfigFile(configPath string, config *GitSporkConfig) error {
 	b, err := yaml.Marshal(config)
 	if err != nil {

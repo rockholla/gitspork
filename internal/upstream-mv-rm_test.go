@@ -127,38 +127,12 @@ func Test_UpstreamMv(t *testing.T) {
 	})
 }
 
-func Test_FindGitSporkConfigDir(t *testing.T) {
-	t.Run("finds config in start dir", func(t *testing.T) {
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, gitSporkConfigFileName), []byte(""), 0644))
-		got, err := FindGitSporkConfigDir(dir)
-		require.NoError(t, err)
-		assert.Equal(t, dir, got)
-	})
-
-	t.Run("finds config in parent dir", func(t *testing.T) {
-		parent := t.TempDir()
-		child := filepath.Join(parent, "subdir")
-		require.NoError(t, os.Mkdir(child, 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(parent, gitSporkConfigFileName), []byte(""), 0644))
-		got, err := FindGitSporkConfigDir(child)
-		require.NoError(t, err)
-		assert.Equal(t, parent, got)
-	})
-
-	t.Run("returns error when not found", func(t *testing.T) {
-		dir := t.TempDir()
-		_, err := FindGitSporkConfigDir(dir)
-		require.Error(t, err)
-	})
-}
-
-func Test_FindGitSporkConfigFile(t *testing.T) {
-	t.Run("finds .gitspork.yml", func(t *testing.T) {
+func Test_FindGitSporkConfig(t *testing.T) {
+	t.Run("finds .gitspork.yml in start dir", func(t *testing.T) {
 		dir := t.TempDir()
 		p := filepath.Join(dir, gitSporkConfigFileName)
 		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
-		got, err := FindGitSporkConfigFile(dir)
+		got, err := FindGitSporkConfig(dir)
 		require.NoError(t, err)
 		assert.Equal(t, p, got)
 	})
@@ -167,14 +141,25 @@ func Test_FindGitSporkConfigFile(t *testing.T) {
 		dir := t.TempDir()
 		p := filepath.Join(dir, gitSporkConfigFileNameAlt)
 		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
-		got, err := FindGitSporkConfigFile(dir)
+		got, err := FindGitSporkConfig(dir)
 		require.NoError(t, err)
 		assert.Equal(t, p, got)
 	})
 
-	t.Run("returns error when neither found", func(t *testing.T) {
+	t.Run("finds config in parent dir", func(t *testing.T) {
+		parent := t.TempDir()
+		child := filepath.Join(parent, "subdir")
+		require.NoError(t, os.Mkdir(child, 0755))
+		p := filepath.Join(parent, gitSporkConfigFileName)
+		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
+		got, err := FindGitSporkConfig(child)
+		require.NoError(t, err)
+		assert.Equal(t, p, got)
+	})
+
+	t.Run("returns error when not found", func(t *testing.T) {
 		dir := t.TempDir()
-		_, err := FindGitSporkConfigFile(dir)
+		_, err := FindGitSporkConfig(dir)
 		require.Error(t, err)
 	})
 }

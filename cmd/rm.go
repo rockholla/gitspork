@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -30,20 +31,16 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			recursive := slices.Contains(args, "-r")
 
-			repoPath, err := internal.FindGitSporkConfigDir(".")
+			configPath, err := internal.FindGitSporkConfig(".")
 			if err != nil {
 				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
+			repoPath := filepath.Dir(configPath)
 
 			gitCmd := exec.Command("git", append([]string{"rm"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git rm failed: %v\n%s", err, out)
-			}
-
-			configPath, err := internal.FindGitSporkConfigFile(repoPath)
-			if err != nil {
-				return err
 			}
 
 			// Strip flags; remaining args are the paths to remove

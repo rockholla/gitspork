@@ -29,20 +29,16 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		DisableFlagParsing: true,
 		Args:               cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			repoPath, err := internal.FindGitSporkConfigDir(".")
+			configPath, err := internal.FindGitSporkConfig(".")
 			if err != nil {
 				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
+			repoPath := filepath.Dir(configPath)
 
 			gitCmd := exec.Command("git", append([]string{"mv"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git mv failed: %v\n%s", err, out)
-			}
-
-			configPath, err := internal.FindGitSporkConfigFile(repoPath)
-			if err != nil {
-				return err
 			}
 
 			// Strip flags; remaining args are: [src...] dest

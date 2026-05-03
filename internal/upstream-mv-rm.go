@@ -135,19 +135,19 @@ func writeConfigFile(configPath string, config *GitSporkConfig) error {
 	return os.WriteFile(configPath, b, 0644)
 }
 
-// FindGitSporkConfigDir walks up from startDir to find a directory containing .gitspork.yml or .gitspork.yaml.
-func FindGitSporkConfigDir(startDir string) (string, error) {
+// FindGitSporkConfig walks up from startDir to find .gitspork.yml (or .gitspork.yaml) and returns its path.
+func FindGitSporkConfig(startDir string) (string, error) {
 	abs, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", err
 	}
 	dir := abs
 	for {
-		if _, err := os.Stat(filepath.Join(dir, gitSporkConfigFileName)); err == nil {
-			return dir, nil
+		if p := filepath.Join(dir, gitSporkConfigFileName); fileExists(p) {
+			return p, nil
 		}
-		if _, err := os.Stat(filepath.Join(dir, gitSporkConfigFileNameAlt)); err == nil {
-			return dir, nil
+		if p := filepath.Join(dir, gitSporkConfigFileNameAlt); fileExists(p) {
+			return p, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -157,15 +157,7 @@ func FindGitSporkConfigDir(startDir string) (string, error) {
 	}
 }
 
-// FindGitSporkConfigFile returns the path to .gitspork.yml (or .yaml) in repoDir.
-func FindGitSporkConfigFile(repoDir string) (string, error) {
-	p := filepath.Join(repoDir, gitSporkConfigFileName)
-	if _, err := os.Stat(p); err == nil {
-		return p, nil
-	}
-	p = filepath.Join(repoDir, gitSporkConfigFileNameAlt)
-	if _, err := os.Stat(p); err == nil {
-		return p, nil
-	}
-	return "", fmt.Errorf("no .gitspork.yml found in %s", repoDir)
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

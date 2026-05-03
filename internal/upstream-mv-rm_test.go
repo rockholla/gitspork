@@ -17,12 +17,12 @@ func Test_globNonWildcardPrefix(t *testing.T) {
 	assert.Equal(t, "exact/path.md", globNonWildcardPrefix("exact/path.md"))
 }
 
-func Test_upstreamMv(t *testing.T) {
+func Test_UpstreamMv(t *testing.T) {
 	t.Run("exact upstream_owned entry is replaced", func(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/old.md"},
 		})
-		warnings, err := upstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
+		warnings, err := UpstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -33,7 +33,7 @@ func Test_upstreamMv(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/cloud-native/**"},
 		})
-		warnings, err := upstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
+		warnings, err := UpstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -44,7 +44,7 @@ func Test_upstreamMv(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"**/cloud-native/*.md"},
 		})
-		warnings, err := upstreamMv(cfg, dir, "cloud-native", "cloud")
+		warnings, err := UpstreamMv(cfg, dir, "cloud-native", "cloud")
 		require.NoError(t, err)
 		assert.Len(t, warnings, 1)
 		result := loadConfigFile(t, cfg)
@@ -57,7 +57,7 @@ func Test_upstreamMv(t *testing.T) {
 				{Template: "templates/old.tmpl", Destination: "out/file.txt"},
 			},
 		})
-		warnings, err := upstreamMv(cfg, dir, "templates/old.tmpl", "templates/new.tmpl")
+		warnings, err := UpstreamMv(cfg, dir, "templates/old.tmpl", "templates/new.tmpl")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -71,7 +71,7 @@ func Test_upstreamMv(t *testing.T) {
 				{Template: "templates/foo.tmpl", Destination: "out/old.txt"},
 			},
 		})
-		warnings, err := upstreamMv(cfg, dir, "out/old.txt", "out/new.txt")
+		warnings, err := UpstreamMv(cfg, dir, "out/old.txt", "out/new.txt")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -82,7 +82,7 @@ func Test_upstreamMv(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/cloud-native/sub/**"},
 		})
-		warnings, err := upstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
+		warnings, err := UpstreamMv(cfg, dir, "docs/cloud-native", "docs/cloud")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -93,7 +93,7 @@ func Test_upstreamMv(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			DownstreamOwned: []string{"docs/old.md"},
 		})
-		warnings, err := upstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
+		warnings, err := UpstreamMv(cfg, dir, "docs/old.md", "docs/new.md")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -120,12 +120,12 @@ func loadConfigFile(t *testing.T, cfgPath string) *GitSporkConfig {
 	return cfg
 }
 
-func Test_upstreamRm(t *testing.T) {
+func Test_UpstreamRm(t *testing.T) {
 	t.Run("exact entry removed", func(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/guide.md", "docs/other.md"},
 		})
-		warnings, err := upstreamRm(cfg, dir, "docs/guide.md", false)
+		warnings, err := UpstreamRm(cfg, dir, "docs/guide.md", false)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -136,7 +136,7 @@ func Test_upstreamRm(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/cloud-native/file.md", "docs/other.md"},
 		})
-		warnings, err := upstreamRm(cfg, dir, "docs/cloud-native", true)
+		warnings, err := UpstreamRm(cfg, dir, "docs/cloud-native", true)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -147,7 +147,7 @@ func Test_upstreamRm(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"docs/cloud-native/**", "docs/other.md"},
 		})
-		warnings, err := upstreamRm(cfg, dir, "docs/cloud-native", true)
+		warnings, err := UpstreamRm(cfg, dir, "docs/cloud-native", true)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -158,7 +158,7 @@ func Test_upstreamRm(t *testing.T) {
 		dir, cfg := makeConfigFile(t, &GitSporkConfig{
 			UpstreamOwned: []string{"**/cloud-native/*.md"},
 		})
-		warnings, err := upstreamRm(cfg, dir, "cloud-native", true)
+		warnings, err := UpstreamRm(cfg, dir, "cloud-native", true)
 		require.NoError(t, err)
 		assert.Len(t, warnings, 1)
 		result := loadConfigFile(t, cfg)
@@ -172,7 +172,7 @@ func Test_upstreamRm(t *testing.T) {
 				{Template: "templates/bar.tmpl", Destination: "out/bar.txt"},
 			},
 		})
-		warnings, err := upstreamRm(cfg, dir, "templates/foo.tmpl", false)
+		warnings, err := UpstreamRm(cfg, dir, "templates/foo.tmpl", false)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
@@ -187,7 +187,7 @@ func Test_upstreamRm(t *testing.T) {
 				{Template: "templates/bar.tmpl", Destination: "out/bar.txt"},
 			},
 		})
-		warnings, err := upstreamRm(cfg, dir, "templates/cloud-native", true)
+		warnings, err := UpstreamRm(cfg, dir, "templates/cloud-native", true)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)

@@ -42,8 +42,13 @@ func init() {
 	InitSubcommand := &InitSubcommand{}
 	checkDriftSubcommand := &CheckDriftSubcommand{}
 
+	mvSubcommand := &MvSubcommand{}
+	rmSubcommand := &RmSubcommand{}
+
 	rootCmd.AddCommand(integrateSubcommand.GetCmd())
 	rootCmd.AddCommand(integrateLocalSubcommand.GetCmd())
 	rootCmd.AddCommand(InitSubcommand.GetCmd())
 	rootCmd.AddCommand(checkDriftSubcommand.GetCmd())
+	rootCmd.AddCommand(mvSubcommand.GetCmd())
+	rootCmd.AddCommand(rmSubcommand.GetCmd())
 }

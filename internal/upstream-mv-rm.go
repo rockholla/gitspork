@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -19,11 +20,11 @@ func globNonWildcardPrefix(pattern string) string {
 	return pattern
 }
 
-// upstreamMv updates the config at configPath to reflect a file/directory move from oldPath to newPath.
+// UpstreamMv updates the config at configPath to reflect a file/directory move from oldPath to newPath.
 // It rewrites exact path entries, glob patterns whose non-wildcard prefix matches the old path,
 // and emits warnings for patterns it can't automatically handle.
 // The repoDir parameter is included for future use (cmd layer needs it for FindGitSporkConfigFile).
-func upstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) {
+func UpstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config: %v", err)
@@ -70,9 +71,9 @@ func upstreamMv(configPath, repoDir, oldPath, newPath string) ([]string, error) 
 	return warnings, writeConfigFile(configPath, config)
 }
 
-// upstreamRm updates .gitspork.yml at configPath to remove entries matching path.
+// UpstreamRm updates .gitspork.yml at configPath to remove entries matching path.
 // If recursive is true, also removes entries whose non-wildcard prefix falls under path.
-func upstreamRm(configPath, repoDir, path string, recursive bool) ([]string, error) {
+func UpstreamRm(configPath, repoDir, path string, recursive bool) ([]string, error) {
 	config, err := ParseGitSporkConfig(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config: %v", err)
@@ -128,4 +129,39 @@ func writeConfigFile(configPath string, config *GitSporkConfig) error {
 		return fmt.Errorf("error marshalling config: %v", err)
 	}
 	return os.WriteFile(configPath, b, 0644)
+}
+
+// FindGitSporkConfigDir walks up from startDir to find a directory containing .gitspork.yml or .gitspork.yaml.
+func FindGitSporkConfigDir(startDir string) (string, error) {
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
+	dir := abs
+	for {
+		if _, err := os.Stat(filepath.Join(dir, gitSporkConfigFileName)); err == nil {
+			return dir, nil
+		}
+		if _, err := os.Stat(filepath.Join(dir, gitSporkConfigFileNameAlt)); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no .gitspork.yml found in %s or any parent directory", startDir)
+		}
+		dir = parent
+	}
+}
+
+// FindGitSporkConfigFile returns the path to .gitspork.yml (or .yaml) in repoDir.
+func FindGitSporkConfigFile(repoDir string) (string, error) {
+	p := filepath.Join(repoDir, gitSporkConfigFileName)
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	p = filepath.Join(repoDir, gitSporkConfigFileNameAlt)
+	if _, err := os.Stat(p); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("no .gitspork.yml found in %s", repoDir)
 }

@@ -8,11 +8,11 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v6 v6.0.0-20250701074610-5d6af409877b
 	github.com/gobwas/glob v0.2.3
+	github.com/goccy/go-yaml v1.19.2
 	github.com/pkg/term v1.1.0
 	github.com/rockholla/go-lib v0.0.0-20241023190122-11eccca156c1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
-	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
@@ -38,7 +38,6 @@ require (
 	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20250531010427-b6e5de432a8b // indirect
 	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

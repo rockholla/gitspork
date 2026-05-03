@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"github.com/goccy/go-yaml"
 )
 
 func Test_globNonWildcardPrefix(t *testing.T) {
@@ -179,6 +179,25 @@ func loadConfigFile(t *testing.T, cfgPath string) *GitSporkConfig {
 	cfg, err := ParseGitSporkConfig(cfgPath)
 	require.NoError(t, err)
 	return cfg
+}
+
+func Test_WriteGitSporkConfig_preservesComments(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, gitSporkConfigFileName)
+	raw := "# top-level comment\nupstream_owned:\n  # entry comment\n  - docs/guide.md\n"
+	require.NoError(t, os.WriteFile(cfgPath, []byte(raw), 0644))
+
+	cfg, err := ParseGitSporkConfig(cfgPath)
+	require.NoError(t, err)
+
+	cfg.UpstreamOwned = append(cfg.UpstreamOwned, "docs/new.md")
+	require.NoError(t, WriteGitSporkConfig(cfgPath, cfg))
+
+	result, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(result), "# top-level comment")
+	assert.Contains(t, string(result), "docs/guide.md")
+	assert.Contains(t, string(result), "docs/new.md")
 }
 
 func Test_UpstreamRm(t *testing.T) {

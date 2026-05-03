@@ -3,10 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v2"
 )
 
 // globNonWildcardPrefix returns the portion of a glob pattern before the first wildcard character.
@@ -157,37 +154,6 @@ func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
 		return nil, err
 	}
 	return warnings, WriteGitSporkConfig(configPath, config)
-}
-
-// WriteGitSporkConfig writes config to configPath.
-func WriteGitSporkConfig(configPath string, config *GitSporkConfig) error {
-	b, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("error marshalling config: %v", err)
-	}
-	return os.WriteFile(configPath, b, 0644)
-}
-
-// FindGitSporkConfig walks up from startDir to find .gitspork.yml (or .gitspork.yaml) and returns its path.
-func FindGitSporkConfig(startDir string) (string, error) {
-	abs, err := filepath.Abs(startDir)
-	if err != nil {
-		return "", err
-	}
-	dir := abs
-	for {
-		if p := filepath.Join(dir, gitSporkConfigFileName); fileExists(p) {
-			return p, nil
-		}
-		if p := filepath.Join(dir, gitSporkConfigFileNameAlt); fileExists(p) {
-			return p, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no .gitspork.yml found in %s or any parent directory", startDir)
-		}
-		dir = parent
-	}
 }
 
 func fileExists(path string) bool {

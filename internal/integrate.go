@@ -17,7 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/gobwas/glob"
-	"gopkg.in/yaml.v2"
+	"github.com/goccy/go-yaml"
 )
 
 const (

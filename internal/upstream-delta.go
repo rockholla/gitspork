@@ -11,7 +11,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/gobwas/glob"
-	"gopkg.in/yaml.v2"
+	"github.com/goccy/go-yaml"
 )
 
 type upstreamRename struct {

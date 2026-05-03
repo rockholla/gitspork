@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/goccy/go-yaml"
 	"github.com/rockholla/go-lib/marshal"
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -29,6 +29,9 @@ type GitSporkConfig struct {
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
 	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
 	Migrations      []string                      `yaml:"migrations" comment:"list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions"`
+
+	// comments holds user-written YAML comments captured on parse, re-injected on write.
+	comments yaml.CommentMap `yaml:"-"`
 }
 
 // GitSporkConfigSharedOwnership represents config for what files will have shared ownership
@@ -127,10 +130,11 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 	if err != nil {
 		return config, fmt.Errorf("error reading gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
-	err = yaml.Unmarshal(f, config)
-	if err != nil {
+	cm := yaml.CommentMap{}
+	if err = yaml.UnmarshalWithOptions(f, config, yaml.CommentToMap(cm)); err != nil {
 		return config, fmt.Errorf("error parsing gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
+	config.comments = cm
 	return config, nil
 }
 
@@ -209,8 +213,15 @@ func GetGitSporkConfigSchema() (string, string, error) {
 }
 
 // WriteGitSporkConfig writes config to configPath, prepending header if non-empty.
+// User-written YAML comments captured during ParseGitSporkConfig are re-injected automatically.
 func WriteGitSporkConfig(configPath string, config *GitSporkConfig, header ...string) error {
-	b, err := yaml.Marshal(config)
+	var b []byte
+	var err error
+	if config.comments != nil {
+		b, err = yaml.MarshalWithOptions(config, yaml.WithComment(config.comments))
+	} else {
+		b, err = yaml.Marshal(config)
+	}
 	if err != nil {
 		return fmt.Errorf("error marshalling config: %v", err)
 	}

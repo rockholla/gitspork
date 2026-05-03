@@ -12,7 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"github.com/goccy/go-yaml"
 )
 
 func Test_computeUpstreamDelta(t *testing.T) {

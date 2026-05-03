@@ -56,7 +56,7 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 	for _, change := range changes {
 		action, err := change.Action()
 		if err != nil {
-			continue
+			return delta, fmt.Errorf("error determining action for change: %v", err)
 		}
 
 		switch action {
@@ -77,28 +77,32 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		}
 	}
 
-	if err := applyTemplatedConfigDelta(repo, prevCommit, newCommit, upstreamSubpath, delta); err != nil {
+	if err := applyTemplatedConfigDelta(prevCommit, newCommit, upstreamSubpath, delta); err != nil {
 		return delta, err
 	}
 
 	return delta, nil
 }
 
-func buildManagedGlobs(config *GitSporkConfig) []string {
-	var patterns []string
+func buildManagedGlobs(config *GitSporkConfig) []glob.Glob {
+	patterns := []string{}
 	patterns = append(patterns, config.UpstreamOwned...)
 	patterns = append(patterns, config.SharedOwnership.Merged...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferUpstream...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferDownstream...)
-	return patterns
-}
-
-func matchesAnyGlob(path string, patterns []string) bool {
-	for _, pattern := range patterns {
-		g, err := glob.Compile(pattern)
+	var compiled []glob.Glob
+	for _, p := range patterns {
+		g, err := glob.Compile(p)
 		if err != nil {
 			continue
 		}
+		compiled = append(compiled, g)
+	}
+	return compiled
+}
+
+func matchesAnyGlob(path string, globs []glob.Glob) bool {
+	for _, g := range globs {
 		if g.Match(path) {
 			return true
 		}
@@ -117,13 +121,13 @@ func stripSubpath(path, subpath string) string {
 	return path
 }
 
-func applyTemplatedConfigDelta(repo *gogit.Repository, prevCommit, newCommit *object.Commit, upstreamSubpath string, delta *upstreamDelta) error {
-	prevConfig, err := readConfigFromCommit(repo, prevCommit, upstreamSubpath)
+func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSubpath string, delta *upstreamDelta) error {
+	prevConfig, err := readConfigFromCommit(prevCommit, upstreamSubpath)
 	if err != nil {
 		// No config file in prev commit — nothing to compare
 		return nil
 	}
-	newConfig, err := readConfigFromCommit(repo, newCommit, upstreamSubpath)
+	newConfig, err := readConfigFromCommit(newCommit, upstreamSubpath)
 	if err != nil {
 		// No config file in new commit — treat all prev templated entries as deleted
 		for _, prev := range prevConfig.Templated {
@@ -150,7 +154,7 @@ func applyTemplatedConfigDelta(repo *gogit.Repository, prevCommit, newCommit *ob
 	return nil
 }
 
-func readConfigFromCommit(repo *gogit.Repository, commit *object.Commit, subpath string) (*GitSporkConfig, error) {
+func readConfigFromCommit(commit *object.Commit, subpath string) (*GitSporkConfig, error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return &GitSporkConfig{}, err

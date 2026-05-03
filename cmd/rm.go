@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"slices"
+	"strings"
 
 	"github.com/rockholla/gitspork/internal"
 	"github.com/spf13/cobra"
@@ -20,15 +21,13 @@ All arguments are passed through directly to 'git rm'.`
 type RmSubcommand struct{}
 
 func (s *RmSubcommand) GetCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:                "rm [git rm flags] <path>",
+	return &cobra.Command{
+		Use:                "rm [git rm flags] <path>...",
 		Short:              rmHelpShort,
 		Long:               fmt.Sprintf("%s\n\n%s", rmHelpShort, rmHelpLong),
 		DisableFlagParsing: true,
 		Args:               cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Last arg is the path; -r flag means recursive config cleanup
-			path := args[len(args)-1]
 			recursive := slices.Contains(args, "-r")
 
 			repoPath, err := internal.FindGitSporkConfigDir(".")
@@ -47,17 +46,23 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 				return err
 			}
 
-			warnings, err := internal.UpstreamRm(configPath, path, recursive)
-			if err != nil {
-				return fmt.Errorf("error updating .gitspork.yml: %v", err)
+			// Strip flags; remaining args are the paths to remove
+			var allWarnings []string
+			for _, a := range args {
+				if strings.HasPrefix(a, "-") {
+					continue
+				}
+				warnings, err := internal.UpstreamRm(configPath, a, recursive)
+				if err != nil {
+					return fmt.Errorf("error updating .gitspork.yml: %v", err)
+				}
+				allWarnings = append(allWarnings, warnings...)
 			}
-			for _, w := range warnings {
+			for _, w := range allWarnings {
 				logger.Log("⚠️  %s", w)
 			}
 			logger.Log("✅ git rm complete and .gitspork.yml updated — remember to commit")
 			return nil
 		},
 	}
-
-	return cmd
 }

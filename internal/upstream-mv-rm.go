@@ -58,13 +58,18 @@ func UpstreamMv(configPath, oldPath, newPath string) ([]string, error) {
 	config.SharedOwnership.Structured.PreferUpstream = rewritePatterns(config.SharedOwnership.Structured.PreferUpstream)
 	config.SharedOwnership.Structured.PreferDownstream = rewritePatterns(config.SharedOwnership.Structured.PreferDownstream)
 
+	rewritePath := func(p string) string {
+		if p == oldPath {
+			return newPath
+		}
+		if strings.HasPrefix(p, oldPath+"/") {
+			return newPath + p[len(oldPath):]
+		}
+		return p
+	}
 	for i, t := range config.Templated {
-		if t.Template == oldPath {
-			config.Templated[i].Template = newPath
-		}
-		if t.Destination == oldPath {
-			config.Templated[i].Destination = newPath
-		}
+		config.Templated[i].Template = rewritePath(t.Template)
+		config.Templated[i].Destination = rewritePath(t.Destination)
 	}
 
 	return warnings, writeConfigFile(configPath, config)
@@ -109,10 +114,10 @@ func UpstreamRm(configPath, path string, recursive bool) ([]string, error) {
 
 	var templated []GitSporkConfigTemplated
 	for _, t := range config.Templated {
-		if t.Template == path {
+		if t.Template == path || t.Destination == path {
 			continue
 		}
-		if recursive && strings.HasPrefix(t.Template, path+"/") {
+		if recursive && (strings.HasPrefix(t.Template, path+"/") || strings.HasPrefix(t.Destination, path+"/")) {
 			continue
 		}
 		templated = append(templated, t)

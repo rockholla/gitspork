@@ -39,7 +39,10 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		return delta, fmt.Errorf("error resolving new upstream commit %s: %v", newHash, err)
 	}
 
-	managedGlobs := buildManagedGlobs(config)
+	managedGlobs, err := buildManagedGlobs(config)
+	if err != nil {
+		return delta, err
+	}
 
 	prevTree, err := prevCommit.Tree()
 	if err != nil {
@@ -86,8 +89,8 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 	return delta, nil
 }
 
-func buildManagedGlobs(config *GitSporkConfig) []glob.Glob {
-	patterns := []string{}
+func buildManagedGlobs(config *GitSporkConfig) ([]glob.Glob, error) {
+	var patterns []string
 	patterns = append(patterns, config.UpstreamOwned...)
 	patterns = append(patterns, config.SharedOwnership.Merged...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferUpstream...)
@@ -96,11 +99,11 @@ func buildManagedGlobs(config *GitSporkConfig) []glob.Glob {
 	for _, p := range patterns {
 		g, err := glob.Compile(p)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", p, err)
 		}
 		compiled = append(compiled, g)
 	}
-	return compiled
+	return compiled, nil
 }
 
 func matchesAnyGlob(path string, globs []glob.Glob) bool {

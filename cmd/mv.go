@@ -12,26 +12,30 @@ const (
 	mvHelpShort string = "move/rename a file in an upstream gitspork repo and update .gitspork.yml"
 	mvHelpLong  string = `Run from within an upstream gitspork repo. Wraps 'git mv' and updates
 all entries in .gitspork.yml that reference the old path, including rewriting
-glob patterns whose non-wildcard prefix matches the moved path.`
+glob patterns whose non-wildcard prefix matches the moved path.
+
+All arguments are passed through directly to 'git mv'.`
 )
 
 type MvSubcommand struct{}
 
 func (s *MvSubcommand) GetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mv <old-path> <new-path>",
-		Short: mvHelpShort,
-		Long:  fmt.Sprintf("%s\n\n%s", mvHelpShort, mvHelpLong),
-		Args:  cobra.ExactArgs(2),
+		Use:                "mv [git mv flags] <old-path> <new-path>",
+		Short:              mvHelpShort,
+		Long:               fmt.Sprintf("%s\n\n%s", mvHelpShort, mvHelpLong),
+		DisableFlagParsing: true,
+		Args:               cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			oldPath, newPath := args[0], args[1]
+			// Last two non-flag args are old-path and new-path
+			oldPath, newPath := args[len(args)-2], args[len(args)-1]
 
 			repoPath, err := internal.FindGitSporkConfigDir(".")
 			if err != nil {
 				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
 
-			gitCmd := exec.Command("git", "mv", oldPath, newPath)
+			gitCmd := exec.Command("git", append([]string{"mv"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git mv failed: %v\n%s", err, out)

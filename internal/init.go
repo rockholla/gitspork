@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -31,15 +29,10 @@ func Init(initPath string, gitSporkVersion string, logger *Logger) error {
 	initConfig := &GitSporkConfig{
 		Version: gitSporkVersion,
 	}
-	yamlBytes, err := yaml.Marshal(initConfig)
-	if err != nil {
-		return fmt.Errorf("error initializing YAML configuration: %v", err)
+	if err := WriteGitSporkConfig(filepath.Join(initPath, gitSporkConfigFileName), initConfig, gitSporkConfigHeader); err != nil {
+		return fmt.Errorf("error initializing gitspork config: %v", err)
 	}
-	yamlBytes = append([]byte(gitSporkConfigHeader), yamlBytes...)
-	if err := os.WriteFile(filepath.Join(initPath, gitSporkConfigFileName), yamlBytes, 0644); err != nil {
-		return fmt.Errorf("error initializing YAML configuration: %v", err)
-	}
-	logger.Log("successfully created %s at %s, see that file for more info on what to set and a link to the docs", gitSporkConfigFileName, initPath)
 
+	logger.Log("successfully created %s at %s, see that file for more info on what to set and a link to the docs", gitSporkConfigFileName, initPath)
 	return nil
 }

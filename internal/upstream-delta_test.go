@@ -124,3 +124,66 @@ func makeUpstreamWithRenamedFile(t *testing.T, dir, oldPath, newPath string) (*g
 
 	return repo, prev.String(), next.String()
 }
+
+func Test_applyUpstreamDelta(t *testing.T) {
+	t.Run("deletes existing file", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		target := filepath.Join(dir, "docs/guide.md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(target), 0755))
+		require.NoError(t, os.WriteFile(target, []byte("x"), 0644))
+
+		delta := &upstreamDelta{Deletions: []string{"docs/guide.md"}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		_, err = os.Stat(target)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("missing delete target does not error", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		delta := &upstreamDelta{Deletions: []string{"docs/guide.md"}}
+		assert.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+	})
+
+	t.Run("renames existing file to new path", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		oldPath := filepath.Join(dir, "config/old.yml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0755))
+		require.NoError(t, os.WriteFile(oldPath, []byte("content"), 0644))
+
+		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+
+		_, err = os.Stat(oldPath)
+		assert.True(t, os.IsNotExist(err))
+		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("rename target already exists skips move without error", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		oldPath := filepath.Join(dir, "config/old.yml")
+		newPath := filepath.Join(dir, "config/new.yml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0755))
+		require.NoError(t, os.WriteFile(oldPath, []byte("old"), 0644))
+		require.NoError(t, os.WriteFile(newPath, []byte("existing"), 0644))
+
+		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+
+		contents, err := os.ReadFile(newPath)
+		require.NoError(t, err)
+		assert.Equal(t, "existing", string(contents))
+	})
+}

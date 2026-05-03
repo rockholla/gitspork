@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -186,5 +188,37 @@ func readConfigFromCommit(commit *object.Commit, subpath string) (*GitSporkConfi
 }
 
 func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger *Logger) error {
+	for _, del := range delta.Deletions {
+		target := filepath.Join(downstreamPath, del)
+		if _, err := os.Stat(target); os.IsNotExist(err) {
+			logger.Log("⚠️  delta: %s already absent in downstream, skipping removal", del)
+			continue
+		}
+		logger.Log("🗑️  delta: removing %s from downstream", del)
+		if err := os.Remove(target); err != nil {
+			return fmt.Errorf("error removing %s from downstream: %v", del, err)
+		}
+	}
+
+	for _, ren := range delta.Renames {
+		oldTarget := filepath.Join(downstreamPath, ren.OldPath)
+		newTarget := filepath.Join(downstreamPath, ren.NewPath)
+		if _, err := os.Stat(newTarget); err == nil {
+			logger.Log("⚠️  delta: rename target %s already exists in downstream, skipping move", ren.NewPath)
+			continue
+		}
+		if _, err := os.Stat(oldTarget); os.IsNotExist(err) {
+			logger.Log("⚠️  delta: rename source %s absent in downstream, skipping move", ren.OldPath)
+			continue
+		}
+		logger.Log("📦 delta: moving %s → %s in downstream", ren.OldPath, ren.NewPath)
+		if err := os.MkdirAll(filepath.Dir(newTarget), 0755); err != nil {
+			return fmt.Errorf("error creating directory for %s: %v", ren.NewPath, err)
+		}
+		if err := os.Rename(oldTarget, newTarget); err != nil {
+			return fmt.Errorf("error moving %s to %s: %v", ren.OldPath, ren.NewPath, err)
+		}
+	}
+
 	return nil
 }

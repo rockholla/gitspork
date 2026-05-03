@@ -105,15 +105,22 @@ Upstream-helper commands for upstream maintainers. Must be run from within an up
 
 **`gitspork mv <old-path> <new-path>`**
 1. Runs `git mv <old-path> <new-path>` in the upstream repo
-2. Updates `.gitspork.yml`: for `upstream_owned` / `shared_ownership`, replaces exact path entries (non-glob) matching `old-path`; for `templated`, updates the `template` or `destination` field on the matching entry
+2. Updates `.gitspork.yml`:
+   - Exact path entries matching `old-path` are replaced with `new-path`
+   - Glob entries whose non-wildcard prefix matches `old-path` have that prefix rewritten to `new-path` (e.g. `docs/cloud-native/**` → `docs/cloud/**` when moving `docs/cloud-native` → `docs/cloud`)
+   - For `templated`, updates `template` or `destination` fields on the matching entry
+   - Glob patterns with a wildcard before the moved path segment (e.g. `**/cloud-native/*.md`) are left unchanged and a warning is printed
 
-**`gitspork rm <path>`**
-1. Runs `git rm <path>` in the upstream repo
-2. Updates `.gitspork.yml`: removes exact path entries matching `path`; for `templated`, removes the entry whose `template` matches `path`
+**`gitspork rm [-r] <path>`**
+1. Runs `git rm [-r] <path>` in the upstream repo
+2. Updates `.gitspork.yml`:
+   - Exact path entries matching `path` are removed
+   - With `-r`: exact path entries that are children of `path` (i.e. have `path` as a prefix) are also removed
+   - With `-r`: glob entries whose non-wildcard prefix starts with `path` are also removed (e.g. `docs/cloud-native/**` removed when `gitspork rm -r docs/cloud-native`)
+   - For `templated`, removes entries whose `template` matches `path` or (with `-r`) is a child of `path`
+   - Glob patterns with a wildcard before the removed path segment are left unchanged and a warning is printed
 
 Both commands print a summary of `.gitspork.yml` changes made and remind the maintainer to commit.
-
-Note: these commands only handle exact path matches in the config, not glob patterns. Glob patterns that happen to match the moved/removed file are left for the maintainer to update manually.
 
 ## Error Handling & Edge Cases
 
@@ -147,6 +154,23 @@ Uses temp dirs:
 - File in `Deletions` does not exist → no error
 - File in `Renames` exists, target absent → moved
 - File in `Renames`, target already exists → warning logged, not overwritten
+
+**`Test_upstreamMv`** (`internal/upstream-mv-rm_test.go`)
+
+- Exact path entry → replaced with new path
+- Glob entry with matching non-wildcard prefix → prefix rewritten
+- Glob with wildcard before moved segment → unchanged, warning emitted
+- `templated` entry with matching `template` → `template` field updated
+- `templated` entry with matching `destination` → `destination` field updated
+
+**`Test_upstreamRm`** (`internal/upstream-mv-rm_test.go`)
+
+- Exact path entry → removed
+- With `-r`: exact child path entries → removed
+- With `-r`: glob entry whose non-wildcard prefix starts with removed path → removed
+- With `-r`: glob with wildcard before removed segment → unchanged, warning emitted
+- `templated` entry with matching `template` → entry removed
+- With `-r`: `templated` entry whose `template` is a child of removed path → entry removed
 
 **`TestIntegrate` additions** (`internal/integrate_test.go`)
 

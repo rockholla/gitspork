@@ -252,10 +252,18 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string,
 			Password: opts.UpstreamRepoToken,
 		}
 	} else if !isHTTPsUpstreamURL && os.Getenv("SSH_AUTH_SOCK") != "" {
-		authMethod, err = ssh.NewSSHAgentAuth(gitSSHUsername)
+		agentAuth, err := ssh.NewSSHAgentAuth(gitSSHUsername)
 		if err != nil {
 			return "", fmt.Errorf("error setting up SSH auth method for git: %v", err)
 		}
+		if knownHostsFile := os.Getenv("SSH_KNOWN_HOSTS"); knownHostsFile != "" {
+			cb, err := ssh.NewKnownHostsCallback(filepath.SplitList(knownHostsFile)...)
+			if err != nil {
+				return "", fmt.Errorf("error loading SSH known hosts from SSH_KNOWN_HOSTS: %v", err)
+			}
+			agentAuth.HostKeyCallback = cb
+		}
+		authMethod = agentAuth
 	}
 	cloneOptions := &git.CloneOptions{
 		URL:          opts.UpstreamRepoURL,

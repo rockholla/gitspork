@@ -1,7 +1,21 @@
 # `gitspork` Documentation
 
-> [!NOTE]
-> Gitspork is still in a relatively early development phase. Pre-1.0 release, we will continue to iterate here and dial in both functionality and documentation alike.
+## Examples
+
+The `docs/examples/` directory contains fully worked scenarios showing gitspork in realistic contexts. Each example includes an upstream repo layout, a gitspork config, and a README explaining the real-world use case.
+
+| Example | What it shows |
+|---|---|
+| [platform-team](examples/platform-team/README.md) | Platform engineering team distributing CI pipelines, Makefile targets, and deployment config to service repos |
+| [open-source-template](examples/open-source-template/README.md) | Open source project template pushing GitHub Actions, license, and generated docs to forks |
+| [standards-library](examples/standards-library/README.md) | Security/standards team enforcing linting rules, policy documents, and non-overridable security config |
+| [integrate-local](examples/integrate-local/README.md) | Using a local upstream directory instead of a remote repo — useful during upstream development |
+
+All examples are covered by a test suite:
+
+```bash
+make test-examples
+```
 
 ## For Upstream Developers
 

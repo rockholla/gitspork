@@ -125,5 +125,6 @@ brews:
 
 release:
   prerelease: auto
+  replace_existing_artifacts: true
   footer: >-
     Container image containing a usable gitspork binary available at https://hub.docker.com/r/rockholla/gitspork/tags?name={{ .Tag }}

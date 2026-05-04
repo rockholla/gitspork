@@ -55,7 +55,7 @@ scripts/
 ## Testing
 
 ```bash
-make test-unit              # go test ./... (unit tests, no build tag)
+make test-unit              # go vet ./... && go test ./... (unit tests, no build tag)
 make test-functional        # -tags functional (compiles binary, runs against synthetic repos)
 make test-functional-docker # -tags functional_docker (same scenarios via Docker image)
 make test-examples          # -tags examples (runs against docs/examples/ upstream dirs)

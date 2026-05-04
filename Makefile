@@ -1,6 +1,11 @@
+.PHONY: build
+build: ## Builds gitspork to dist/gitspork
+	@mkdir -p dist
+	@go build -o dist/gitspork .
+
 .PHONY: test-unit
 test-unit: ## Run unit tests
-	@go test -v ./...
+	@go vet ./... && go test -v ./...
 
 .PHONY: test-functional
 test-functional: ## Run functional tests, compiles the tool and executes in real, functional scenarios using synthetic/dynamic repos

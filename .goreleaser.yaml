@@ -116,7 +116,7 @@ brews:
       name: homebrew-gitspork
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/rockholla/gitspork"
-    description: "When a fork just ain't good enough -- a tool for managing upstream/downstream git repo relationships"
+    description: "When a fork just ain't good enough — a tool for managing upstream/downstream git repo relationships"
     license: "MIT"
     install: |
       bin.install "gitspork"

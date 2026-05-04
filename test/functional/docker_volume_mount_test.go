@@ -88,6 +88,25 @@ func runAsRootWithSSH(t *testing.T, upstreamDir, downstreamDir, workdir string, 
 		dockerArgs = append(dockerArgs, rewrite(a))
 	}
 
+	// Restore ownership of any volume-mounted dirs to the current user before
+	// t.TempDir cleanup runs — the container writes as root, leaving files the
+	// host process cannot remove.
+	uid := os.Getuid()
+	gid := os.Getgid()
+	for _, dir := range []string{upstreamDir, downstreamDir, sshDir} {
+		if dir == "" {
+			continue
+		}
+		d := dir
+		t.Cleanup(func() {
+			_ = exec.Command("docker", "run", "--rm",
+				"-v", d+":/mnt",
+				"alpine:3.23.4",
+				"chown", "-R", fmt.Sprintf("%d:%d", uid, gid), "/mnt",
+			).Run()
+		})
+	}
+
 	cmd := exec.Command("docker", dockerArgs...)
 	out, err := cmd.CombinedOutput()
 	code := 0

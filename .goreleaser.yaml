@@ -57,10 +57,6 @@ archives:
 
 changelog:
   sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
 
 dockers:
   - ids: [linux]

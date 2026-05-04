@@ -27,12 +27,22 @@ if ! git remote get-url origin &>/dev/null; then
   exit 1
 fi
 
-latest_tag="$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' \
+latest_stable_tag="$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' \
   | grep -v '\^{}' \
-  | head -1 \
+  | sed 's|.*refs/tags/||' \
+  | grep -v -- '-' \
+  | head -1)"
+latest_tag="$(git ls-remote --tags --sort=-creatordate origin 'refs/tags/v*' \
+  | grep -v '\^{}' \
+  | tail -1 \
   | sed 's|.*refs/tags/||')"
+if [ -n "$latest_stable_tag" ]; then
+  info "Most recent stable tag: ${latest_stable_tag}"
+else
+  info "No stable remote tags found yet"
+fi
 if [ -n "$latest_tag" ]; then
-  info "Most recent remote tag: ${latest_tag}"
+  info "Most recent tag (by date): ${latest_tag}"
 else
   info "No remote tags found yet"
 fi

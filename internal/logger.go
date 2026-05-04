@@ -74,7 +74,7 @@ func ColorizeYAMLSchema(schema string) string {
 		return schema
 	}
 	var sb strings.Builder
-	for _, line := range strings.Split(schema, "\n") {
+	for line := range strings.SplitSeq(schema, "\n") {
 		// extract and strip comment first so it isn't re-colored by key/value rules
 		comment := ""
 		if loc := yamlCommentRe.FindStringIndex(line); loc != nil {

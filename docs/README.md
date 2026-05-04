@@ -13,7 +13,7 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 
 ## For Upstream Maintainers
 
-When getting started, you can run `gitspork init --help` to see the schema and documentation for `.gitspork.yml`:
+When getting started, you can run `gitspork init --help` or `gitspork schema` to see the schema and documentation for `.gitspork.yml`:
 
 ```yaml
 upstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo

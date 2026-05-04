@@ -198,6 +198,12 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 	}
 
 	fmt.Println("")
+	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
+	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
+		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
+	}
+
+	fmt.Println("")
 	logger.Log("%s", greenBold.Sprint("integrating configured templated resources from upstream to downstream"))
 	if err := (&IntegratorTemplated{}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger); err != nil {
 		return fmt.Errorf("error integrating templated: %v", err)

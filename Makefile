@@ -10,6 +10,10 @@ test-functional: ## Run functional tests, compiles the tool and executes in real
 test-functional-docker: ## Run tests specific to testing the containerized version of the tool
 	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
 
+.PHONY: test-examples
+test-examples: ## Run example scenario tests
+	@go test -tags examples -timeout 120s -v ./test/examples/...
+
 .PHONY: test-all
 test-all: test-unit test-functional test-functional-docker ## Run all test suite types
 

@@ -75,8 +75,8 @@ func Test_checkCleanWorkingTree(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		wt := makeBaselineRepo(t, dir)
-		assert.NoError(t, checkCleanWorkingTree(wt))
+		makeBaselineRepo(t, dir)
+		assert.NoError(t, checkCleanWorkingTree(dir))
 	})
 
 	t.Run("untracked file fails", func(t *testing.T) {
@@ -84,9 +84,9 @@ func Test_checkCleanWorkingTree(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		wt := makeBaselineRepo(t, dir)
+		makeBaselineRepo(t, dir)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0644))
-		assert.ErrorContains(t, checkCleanWorkingTree(wt), "working tree is not clean")
+		assert.ErrorContains(t, checkCleanWorkingTree(dir), "working tree is not clean")
 	})
 
 	t.Run("modified tracked file fails", func(t *testing.T) {
@@ -94,9 +94,9 @@ func Test_checkCleanWorkingTree(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		wt := makeBaselineRepo(t, dir)
+		makeBaselineRepo(t, dir)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("modified"), 0644))
-		assert.ErrorContains(t, checkCleanWorkingTree(wt), "working tree is not clean")
+		assert.ErrorContains(t, checkCleanWorkingTree(dir), "working tree is not clean")
 	})
 }
 

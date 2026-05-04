@@ -161,7 +161,7 @@ func AssertFileContains(t *testing.T, dir, rel, substr string) {
 
 - [ ] **Step 2: Replace `test/functional/harness.go` with thin wrappers**
 
-Keep `Runner`, `BinaryRunner` in place. Replace the repo helper implementations with delegates:
+Keep `Runner`, `BinaryRunner`, and `resolveRunner` in place. Replace the repo helper implementations with thin delegates to `internal/testharness/`:
 
 ```go
 //go:build functional || functional_docker
@@ -241,7 +241,6 @@ git commit -m "refactor: extract harness helpers to internal/testharness"
 - [ ] **Step 1: Create `.gitspork.yml`**
 
 ```yaml
-version: dev
 upstream_owned:
   - ci/**
   - scripts/shared-bootstrap.sh
@@ -372,7 +371,6 @@ git commit -m "docs: add platform-team example"
 - [ ] **Step 1: Create `.gitspork.yml`**
 
 ```yaml
-version: dev
 upstream_owned:
   - .github/**
   - LICENSE
@@ -513,7 +511,6 @@ git commit -m "docs: add open-source-template example"
 - [ ] **Step 1: Create `.gitspork.yml`**
 
 ```yaml
-version: dev
 upstream_owned:
   - .golangci.yml
   - policies/**
@@ -640,7 +637,6 @@ git commit -m "docs: add standards-library example"
 
 `upstream/.gitspork.yaml`:
 ```yaml
-version: dev
 upstream_owned:
   - app-config.yaml
 templated:

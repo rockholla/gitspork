@@ -140,7 +140,7 @@ downstream/
 
 ## Harness Extraction: `internal/testharness/`
 
-The following helpers are extracted from `test/functional/harness.go` into `internal/testharness/` as a non-test package (no `_test.go` suffix, no build tag):
+The following helpers are extracted from `test/functional/harness.go` into `internal/testharness/testharness.go` as a non-test package (no `_test.go` suffix, no build tag). The full implementations live in `internal/testharness/`:
 
 - `NewUpstreamRepo(t, files map[string]string, gitsporkYML string) string`
 - `NewDownstreamRepo(t) string`
@@ -151,7 +151,7 @@ The following helpers are extracted from `test/functional/harness.go` into `inte
 - `AssertFileContains(t, dir, path, substr)`
 - `AssertFileAbsent(t, dir, path)`
 
-`test/functional/harness.go` retains only `Runner`, `BinaryRunner`, and the `resolveRunner` wiring — the pure repo helpers are replaced with imports from `internal/testharness/`.
+`test/functional/harness.go` retains `Runner`, `BinaryRunner`, and the `resolveRunner` wiring. The repo helper functions in `harness.go` are thin wrappers that delegate to `internal/testharness/` — this allows both `test/functional/` and `test/examples/` to share the same implementations without duplication.
 
 ---
 

@@ -1,4 +1,4 @@
-//go:build functional
+//go:build functional && !functional_docker
 
 package functional
 

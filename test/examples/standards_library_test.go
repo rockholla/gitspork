@@ -74,4 +74,7 @@ func TestStandardsLibraryExample(t *testing.T) {
 
 	policy := testharness.ReadFile(t, downstreamDir, "security-policy.yaml")
 	assert.Contains(t, policy, "require_mfa: true", "security-policy.yaml prefer_upstream value should win")
+
+	// previous_input template still renders correctly after re-integrate
+	testharness.AssertFileContains(t, downstreamDir, "security-summary.md", "auth-service")
 }

@@ -1,7 +1,11 @@
 .PHONY: build
-build: ## Builds gitspork to dist/gitspork
-	@mkdir -p dist
+build: ## Builds gitspork to dist/gitspork and builds Docker image tagged gitspork:local
+	@mkdir -p dist dist/.docker-build
 	@go build -o dist/gitspork .
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork .
+	@cp Dockerfile dist/.docker-build/Dockerfile
+	@docker build -t gitspork:local dist/.docker-build/
+	@rm -rf dist/.docker-build
 
 .PHONY: test-unit
 test-unit: ## Run unit tests

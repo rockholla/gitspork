@@ -226,15 +226,40 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 	return nil
 }
 
+// applySSHKnownHosts sets the host key callback on agentAuth from SSH_KNOWN_HOSTS.
+// No-ops when SSH_KNOWN_HOSTS is not set (go-git uses its own discovery).
+// Returns an error when the env var is set but no listed files exist, preventing
+// a nil-pointer panic inside go-git's NewKnownHostsCallback.
+func applySSHKnownHosts(agentAuth *ssh.PublicKeysCallback) error {
+	val := os.Getenv("SSH_KNOWN_HOSTS")
+	if val == "" {
+		return nil
+	}
+	var validFiles []string
+	for _, f := range filepath.SplitList(val) {
+		if _, err := os.Stat(f); err == nil {
+			validFiles = append(validFiles, f)
+		}
+	}
+	if len(validFiles) == 0 {
+		return nil
+	}
+	cb, err := ssh.NewKnownHostsCallback(validFiles...)
+	if err != nil {
+		return fmt.Errorf("error loading SSH known hosts: %v", err)
+	}
+	agentAuth.HostKeyCallback = cb
+	return nil
+}
+
 func resolveUpstreamURL(url string, token string) string {
-	sshAgentAvailable := os.Getenv("SSH_AUTH_SOCK") != ""
 	isHTTPS, _ := regexp.MatchString(`^https://`, url)
 	isSSH, _ := regexp.MatchString(`^git@`, url)
-	if sshAgentAvailable && token == "" && isHTTPS {
+	if token == "" && isHTTPS {
 		re := regexp.MustCompile(`^https://([^/]+)/(.+)$`)
 		return re.ReplaceAllString(url, "git@$1:$2")
 	}
-	if !sshAgentAvailable && token != "" && isSSH {
+	if token != "" && isSSH {
 		re := regexp.MustCompile(`^git@([^:]+):(.+)$`)
 		return re.ReplaceAllString(url, "https://$1/$2")
 	}
@@ -251,17 +276,13 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string,
 			Username: gitSpork,
 			Password: opts.UpstreamRepoToken,
 		}
-	} else if !isHTTPsUpstreamURL && os.Getenv("SSH_AUTH_SOCK") != "" {
+	} else if !isHTTPsUpstreamURL {
 		agentAuth, err := ssh.NewSSHAgentAuth(gitSSHUsername)
 		if err != nil {
 			return "", fmt.Errorf("error setting up SSH auth method for git: %v", err)
 		}
-		if knownHostsFile := os.Getenv("SSH_KNOWN_HOSTS"); knownHostsFile != "" {
-			cb, err := ssh.NewKnownHostsCallback(filepath.SplitList(knownHostsFile)...)
-			if err != nil {
-				return "", fmt.Errorf("error loading SSH known hosts from SSH_KNOWN_HOSTS: %v", err)
-			}
-			agentAuth.HostKeyCallback = cb
+		if err := applySSHKnownHosts(agentAuth); err != nil {
+			return "", err
 		}
 		authMethod = agentAuth
 	}

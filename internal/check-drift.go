@@ -158,7 +158,9 @@ func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*objec
 		return nil, fmt.Errorf("error loading new commit: %v", err)
 	}
 
-	patch, err := headCommit.Patch(newCommit)
+	// Reverse: show what drifted from clean (re-integrated) state to HEAD,
+	// not what integrate would do to correct it.
+	patch, err := newCommit.Patch(headCommit)
 	if err != nil {
 		return nil, fmt.Errorf("error computing patch: %v", err)
 	}

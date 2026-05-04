@@ -25,6 +25,7 @@ func TestPlatformTeamExample(t *testing.T) {
 		"--downstream-repo-path", downstreamDir,
 	}, downstreamDir)
 	require.Equal(t, 0, code, "integrate failed:\n%s", out)
+	assert.Contains(t, out, "migration 0001: post-integrate init complete", "post-integrate migration should have run")
 
 	// upstream-owned CI files land
 	testharness.AssertFileContains(t, downstreamDir, "ci/build.yml", "Build")

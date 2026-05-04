@@ -6,7 +6,7 @@
 
 **Architecture:** `integrate` saves upstream URL, subpath, and resolved commit hash to `.gitspork/downstream-state.json` after each successful run. `check-drift` reads that state, copies the downstream to a temp dir, re-runs the full integration at the stored commit, diffs the result, and reports. URL rewriting (SSH ↔ HTTPS) is applied inside `cloneUpstreamForIntegrate` so it benefits both `integrate` and `check-drift`.
 
-**Tech Stack:** Go 1.25, `github.com/go-git/go-git/v6`, `github.com/spf13/cobra`, `github.com/stretchr/testify`, `os/exec` for git CLI calls, standard library `os` and `path/filepath`.
+**Tech Stack:** Go 1.26, `github.com/go-git/go-git/v6`, `github.com/spf13/cobra`, `github.com/stretchr/testify`, `os/exec` for git CLI calls, standard library `os` and `path/filepath`.
 
 ---
 
@@ -132,7 +132,7 @@ Expected: FAIL with "undefined: resolveUpstreamURL"
 
 - [ ] **Step 3: Add `resolveUpstreamURL` to `internal/integrate.go`**
 
-Add this function anywhere before `cloneUpstreamForIntegrate` in `internal/integrate.go`. The caller is responsible for choosing the URL (override or stored) before calling this — this function only handles SSH↔HTTPS rewriting based on the environment:
+Add this function anywhere before `cloneUpstreamForIntegrate` in `internal/integrate.go`. The function takes two parameters: the URL to potentially rewrite and the token. The caller (`CheckDrift`) is responsible for choosing which URL to pass (override or stored state) before calling this — this function only handles SSH↔HTTPS rewriting based on the environment:
 
 ```go
 func resolveUpstreamURL(url string, token string) string {
@@ -187,21 +187,23 @@ git commit -m "feat: add resolveUpstreamURL helper, apply in cloneUpstreamForInt
 
 `check-drift` needs to clone at a specific commit hash, not a branch or tag. `cloneUpstreamForIntegrate` currently only supports `UpstreamRepoVersion` (branch/tag ref). We add `UpstreamRepoCommit` to `IntegrateOptions`: when set, clone the default branch then checkout that commit. We also change `cloneUpstreamForIntegrate` to return the resolved commit hash so `Integrate` can save it to state.
 
-- [ ] **Step 1: Add `UpstreamRepoCommit` to `IntegrateOptions` in `internal/gitspork.go`**
+- [ ] **Step 1: Add `UpstreamRepoCommit`, `ForDriftCheck`, and `PrevUpstreamCommitHash` to `IntegrateOptions` in `internal/gitspork.go`**
 
 Replace the existing `IntegrateOptions` struct:
 
 ```go
 // IntegrateOptions are options for the Integrate method
 type IntegrateOptions struct {
-	Logger               *Logger
-	UpstreamRepoURL      string
-	UpstreamRepoVersion  string
-	UpstreamRepoCommit   string
-	UpstreamRepoSubpath  string
-	UpstreamRepoToken    string
-	DownstreamRepoPath   string
-	ForceRePrompt        bool
+	Logger                 *Logger
+	UpstreamRepoURL        string
+	UpstreamRepoVersion    string
+	UpstreamRepoCommit     string
+	UpstreamRepoSubpath    string
+	UpstreamRepoToken      string
+	DownstreamRepoPath     string
+	ForceRePrompt          bool
+	ForDriftCheck          bool
+	PrevUpstreamCommitHash string
 }
 ```
 
@@ -245,8 +247,8 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string,
 		}
 		cloneOptions.ReferenceName = plumbing.ReferenceName(refName)
 	}
-	if opts.UpstreamRepoCommit != "" {
-		// need full history to be able to checkout a specific commit
+	if opts.UpstreamRepoCommit != "" || opts.PrevUpstreamCommitHash != "" {
+		// need full history to checkout a specific commit or to walk history for delta
 		cloneOptions.SingleBranch = false
 	}
 	repo, err := git.PlainClone(cloneDir, cloneOptions)
@@ -298,6 +300,8 @@ func Integrate(opts *IntegrateOptions) error {
 		return fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
+	// Capture original URL before cloneUpstreamForIntegrate may rewrite it via resolveUpstreamURL
+	originalUpstreamURL := opts.UpstreamRepoURL
 	opts.Logger.Log("cloning gitspork upstream repo %s", opts.UpstreamRepoURL)
 	commitHash, err := cloneUpstreamForIntegrate(cloneDir, opts)
 	if err != nil {
@@ -311,17 +315,18 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.Logger); err != nil {
+	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
 		return err
 	}
 
-	// only persist upstream metadata when called from a real integrate (not from check-drift's re-integrate)
-	if opts.UpstreamRepoCommit == "" {
+	// only persist upstream metadata on a real integrate (not on a drift-check re-integrate)
+	// Store originalUpstreamURL — captured before cloneUpstreamForIntegrate rewrites opts.UpstreamRepoURL
+	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		state.LastUpstreamRepoURL = opts.UpstreamRepoURL
+		state.LastUpstreamRepoURL = originalUpstreamURL
 		state.LastUpstreamRepoSubpath = opts.UpstreamRepoSubpath
 		state.LastUpstreamCommitHash = commitHash
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
@@ -446,6 +451,9 @@ import (
 	"strings"
 )
 
+// ErrDriftDetected is returned by CheckDrift when drift is found in the downstream
+var ErrDriftDetected = errors.New("drift detected")
+
 // CheckDrift detects whether the downstream has drifted from its last integrated upstream state
 func CheckDrift(opts *CheckDriftOptions) error {
 	var err error
@@ -528,7 +536,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		fmt.Println(diffOutput)
 	}
 
-	return fmt.Errorf("drift detected")
+	return ErrDriftDetected
 }
 
 func checkCleanWorkingTree(repoPath string) error {
@@ -671,7 +679,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				UpstreamRepoToken:  upstreamRepoToken,
 				Verbose:            verbose,
 			})
-			if err != nil && strings.Contains(err.Error(), "drift detected") {
+			if errors.Is(err, internal.ErrDriftDetected) {
 				os.Exit(1)
 			}
 			return err

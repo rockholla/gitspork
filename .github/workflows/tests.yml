@@ -11,7 +11,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Unit Tests
       run: make test-unit
 
@@ -22,7 +22,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Functional Tests
       run: make test-functional
 
@@ -33,7 +33,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
     - name: Functional Container/Docker Tests
@@ -46,6 +46,6 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Examples Tests
       run: make test-examples

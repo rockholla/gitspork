@@ -94,11 +94,15 @@ func initExampleRepo(t *testing.T, name string) string {
 		if d.IsDir() {
 			return os.MkdirAll(filepath.Join(dstDir, rel), 0755)
 		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(filepath.Join(dstDir, rel), b, 0644)
+		return os.WriteFile(filepath.Join(dstDir, rel), b, info.Mode())
 	})
 	require.NoError(t, err)
 

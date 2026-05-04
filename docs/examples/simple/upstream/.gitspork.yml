@@ -29,7 +29,7 @@ templated:
     json_data_path: templated-json-input-data.json # downstream's responsibility to maintain at the configured path
   - name: pre_input
     previous_input:
-      template: "pre-meta.txt.go.tmpl"
+      template: pre-meta.txt.go.tmpl
       name: pre_input
 - template: .gitspork-templates/structured.json.go.tmpl
   destination: structured.json

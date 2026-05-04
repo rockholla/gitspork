@@ -45,6 +45,12 @@ while true; do
   warn "Please enter a valid semver with v prefix (e.g. v1.2.3)"
 done
 
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$current_branch" != "main" && ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+  err "Stable releases require the main branch. Current branch: ${current_branch}. Use a pre-release version (e.g. ${version}-rc.1) or switch to main."
+  handle_errors "exit 1"
+fi
+
 if [ -n "$(git tag -l "${version}")" ]; then
   err "git tag for version ${version} already exists locally"
 fi

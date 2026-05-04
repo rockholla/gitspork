@@ -2,6 +2,17 @@
 test:
 	@go test -v ./...
 
+.PHONY: test-functional
+test-functional:
+	@go test -tags functional -timeout 120s -v ./test/functional/...
+
+.PHONY: test-functional-docker
+test-functional-docker:
+	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
+
+.PHONY: test-all
+test-all: test test-functional
+
 .PHONY: ensure-local-test-downstream
 ensure-local-test-downstream:
 	@if [ ! -d /tmp/gitspork-downstream ]; then \

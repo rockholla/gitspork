@@ -28,7 +28,7 @@ builds:
       - "6"
       - "7"
     ldflags:
-      - -s -w -X main.version={{ .Env.GITSPORK_VERSION }}
+      - -s -w -X main.version={{ .Tag }}
   - id: darwin
     env:
       - CGO_ENABLED=0
@@ -38,7 +38,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{ .Env.GITSPORK_VERSION }}
+      - -s -w -X main.version={{ .Tag }}
 
 archives:
   - formats: [tar.gz]
@@ -101,13 +101,27 @@ docker_manifests:
       - "rockholla/gitspork:{{ .Tag }}-armv6"
       - "rockholla/gitspork:{{ .Tag }}-386"
   - name_template: "rockholla/gitspork:latest"
-    skip_push: '{{ ne .Env.IS_LATEST "true" }}'
+    skip_push: '{{ if .Prerelease }}true{{ else }}false{{ end }}'
     image_templates:
       - "rockholla/gitspork:{{ .Tag }}-amd64"
       - "rockholla/gitspork:{{ .Tag }}-arm64"
       - "rockholla/gitspork:{{ .Tag }}-armv7"
       - "rockholla/gitspork:{{ .Tag }}-armv6"
       - "rockholla/gitspork:{{ .Tag }}-386"
+
+brews:
+  - name: gitspork
+    repository:
+      owner: rockholla
+      name: homebrew-gitspork
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/rockholla/gitspork"
+    description: "A tool for managing upstream/downstream git repo relationships"
+    license: "MIT"
+    install: |
+      bin.install "gitspork"
+    test: |
+      system "#{bin}/gitspork", "--version"
 
 release:
   prerelease: auto

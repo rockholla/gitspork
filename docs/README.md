@@ -75,3 +75,10 @@ Once you've integrated, gitspork stashes awareness of the last state at which yo
 ```
 
 `check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. It exits `0` if no drift is detected, `1` if drift is detected, and other non-zero codes on error.
+
+## Installing via Homebrew
+
+```bash
+brew tap rockholla/gitspork
+brew install gitspork
+```

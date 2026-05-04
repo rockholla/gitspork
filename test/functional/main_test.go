@@ -34,7 +34,13 @@ func TestMain(m *testing.M) {
 }
 
 func buildBinary(repoRoot string) string {
-	out := filepath.Join(os.TempDir(), "gitspork-functional-test")
+	// Use a unique temp dir per run to avoid collisions when multiple functional
+	// test runs execute concurrently on the same machine (e.g. parallel CI jobs).
+	dir, err := os.MkdirTemp("", "gitspork-functional-")
+	if err != nil {
+		panic("cannot create temp dir for binary: " + err.Error())
+	}
+	out := filepath.Join(dir, "gitspork")
 	cmd := exec.Command("go", "build", "-o", out, ".")
 	cmd.Dir = repoRoot
 	if b, err := cmd.CombinedOutput(); err != nil {

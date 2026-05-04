@@ -9,62 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const simpleGitsporkYML = `version: dev
-upstream_owned:
-- upstream-owned/**
-- upstream-owned.mk
-downstream_owned:
-- downstream-owned.md
-shared_ownership:
-  merged:
-  - Makefile
-  structured:
-    prefer_upstream:
-    - config.yaml
-    prefer_downstream:
-    - info.json
-templated:
-- template: .gitspork-templates/meta.txt.go.tmpl
-  destination: meta.txt
-  inputs:
-  - name: project_name
-    json_data_path: input-data.json
-  - name: project_description
-    json_data_path: input-data.json
-`
-
-const metaTemplate = `Project: {{ index .Inputs "project_name" }}
-Description: {{ index .Inputs "project_description" }}
-`
-
-func buildSimpleUpstream(t *testing.T) string {
-	t.Helper()
-	return NewUpstreamRepo(t, map[string]string{
-		"upstream-owned/file.txt":              "upstream content\n",
-		"upstream-owned.mk":                    "upstream mk content\n",
-		"downstream-owned.md":                  "downstream seed content\n",
-		"Makefile":                             "# upstream makefile\n",
-		"config.yaml":                          "key: upstream-value\n",
-		"info.json":                            `{"version":"1"}`,
-		".gitspork-templates/meta.txt.go.tmpl": metaTemplate,
-	}, simpleGitsporkYML)
-}
-
-func prepDownstreamWithInputData(t *testing.T, downstreamDir string) {
-	t.Helper()
-	WriteFiles(t, downstreamDir, map[string]string{
-		"input-data.json": `{"project_name":"my-project","project_description":"my description"}`,
-	})
-}
-
-func integrateArgs(upstreamDir, downstreamDir string) []string {
-	return []string{
-		"integrate",
-		"--upstream-repo-url", "file://" + upstreamDir,
-		"--upstream-repo-version", "main",
-		"--downstream-repo-path", downstreamDir,
-	}
-}
 
 func TestIntegrate_fresh(t *testing.T) {
 	upstreamDir := buildSimpleUpstream(t)
@@ -201,4 +145,29 @@ func TestIntegrate_upstream_delta_delete(t *testing.T) {
 	require.Equal(t, 0, code, "re-integrate after delete failed:\n%s", out)
 
 	AssertFileAbsent(t, downstreamDir, "upstream-owned/file.txt")
+}
+
+func TestIntegrate_structured_prefer_downstream(t *testing.T) {
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "post-integrate baseline")
+
+	WriteFiles(t, downstreamDir, map[string]string{
+		"info.json": `{"version":"downstream"}`,
+	})
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "downstream modifies prefer_downstream file")
+
+	prepDownstreamWithInputData(t, downstreamDir)
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate failed:\n%s", out)
+
+	content := ReadFile(t, downstreamDir, "info.json")
+	assert.Contains(t, content, "downstream",
+		"info.json (prefer_downstream) should retain downstream value after re-integrate")
 }

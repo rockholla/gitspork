@@ -15,6 +15,11 @@ shared_ownership:
     prefer_downstream:
     - info.json
 templated:
+- template: .gitspork-templates/pre-meta.txt.go.tmpl
+  destination: pre-meta.txt
+  inputs:
+  - name: pre_input
+    prompt: "What is the value of pre_input?"
 - template: .gitspork-templates/meta.txt.go.tmpl
   destination: meta.txt
   inputs:
@@ -22,6 +27,17 @@ templated:
     json_data_path: templated-json-input-data.json # downstream's responsibility to maintain at the configured path
   - name: project_description
     json_data_path: templated-json-input-data.json # downstream's responsibility to maintain at the configured path
+  - name: pre_input
+    previous_input:
+      template: "pre-meta.txt.go.tmpl"
+      name: pre_input
+- template: .gitspork-templates/structured.json.go.tmpl
+  destination: structured.json
+  inputs:
+  - name: structured_value
+    prompt: "What is the value of structured_value?"
+  merged:
+    structured: prefer-upstream
 migrations:
 - .gitspork/migration-001.yml
 

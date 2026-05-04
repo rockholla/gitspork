@@ -35,6 +35,25 @@ func TestCheckDrift_no_drift(t *testing.T) {
 	require.Equal(t, 0, code, "expected no drift (exit 0):\n%s", out)
 }
 
+func TestCheckDrift_no_drift_state_url(t *testing.T) {
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+
+	// integrate with explicit URL — stores URL in downstream state
+	integrateForDrift(t, runner, upstreamDir, downstreamDir)
+	// check-drift re-runs integrate internally and needs input-data.json
+	prepDownstreamWithInputData(t, downstreamDir)
+
+	// check-drift without --upstream-repo-url; should fall back to state
+	out, code := runner.Run(t, []string{
+		"check-drift",
+		"--downstream-repo-path", downstreamDir,
+	}, downstreamDir)
+	require.Equal(t, 0, code, "expected no drift using state URL (exit 0):\n%s", out)
+}
+
 func TestCheckDrift_drift_detected(t *testing.T) {
 	upstreamDir := buildSimpleUpstream(t)
 	downstreamDir := NewDownstreamRepo(t)

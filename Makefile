@@ -10,8 +10,14 @@ test-functional:
 test-functional-docker:
 	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
 
+# test-all runs unit + native functional tests. Docker tests are separate (test-functional-docker)
+# because they require a running Docker daemon and take significantly longer.
+# Use the ci target to run everything including Docker.
 .PHONY: test-all
 test-all: test test-functional
+
+.PHONY: ci
+ci: test test-functional test-functional-docker
 
 .PHONY: ensure-local-test-downstream
 ensure-local-test-downstream:

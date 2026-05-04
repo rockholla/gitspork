@@ -255,96 +255,84 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		return delta, fmt.Errorf("error resolving new upstream commit %s: %v", newHash, err)
 	}
 
-	managedGlobs := buildManagedGlobs(config)
-
-	// walk all commits from prevHash..newHash
-	logOpts := &gogit.LogOptions{From: newCommit.Hash}
-	iter, err := repo.Log(logOpts)
+	// Deletions/renames must be checked against the OLD config: a file removed by
+	// "gitspork rm" is stripped from .gitspork.yml in the same commit, so the new
+	// config no longer lists it. Using the prev config ensures those removals still
+	// propagate to downstream repos.
+	prevConfig, err := readConfigFromCommit(prevCommit, upstreamSubpath)
 	if err != nil {
-		return delta, fmt.Errorf("error iterating upstream commits: %v", err)
+		prevConfig = config // fall back to new config if prev has none
 	}
-	defer iter.Close()
+	prevManagedGlobs, err := buildManagedGlobs(prevConfig)
+	if err != nil {
+		return delta, err
+	}
 
-	seen := map[string]bool{}
-	for {
-		commit, err := iter.Next()
+	prevTree, err := prevCommit.Tree()
+	if err != nil {
+		return delta, fmt.Errorf("error getting prev commit tree: %v", err)
+	}
+	newTree, err := newCommit.Tree()
+	if err != nil {
+		return delta, fmt.Errorf("error getting new commit tree: %v", err)
+	}
+
+	changes, err := object.DiffTreeWithOptions(context.Background(), prevTree, newTree, object.DefaultDiffTreeOptions)
+	if err != nil {
+		return delta, fmt.Errorf("error computing tree diff: %v", err)
+	}
+
+	for _, change := range changes {
+		action, err := change.Action()
 		if err != nil {
-			break
+			return delta, fmt.Errorf("error determining action for change: %v", err)
 		}
-		if commit.Hash == prevCommit.Hash {
-			break
-		}
-		if len(commit.ParentHashes) == 0 {
-			continue
-		}
-		parent, err := repo.CommitObject(commit.ParentHashes[0])
-		if err != nil {
-			continue
-		}
-		patch, err := parent.Patch(commit)
-		if err != nil {
-			continue
-		}
-		for _, fp := range patch.FilePatches() {
-			from, to := fp.Files()
-			if from == nil || to != nil {
-				continue // not a deletion or rename at this level
-			}
-			fromPath := stripSubpath(from.Path(), upstreamSubpath)
-			if seen[fromPath] {
-				continue
-			}
-			if !matchesAnyGlob(fromPath, managedGlobs) {
-				continue
-			}
-			seen[fromPath] = true
-			if to == nil {
-				// deletion
+
+		switch action {
+		case merkletrie.Delete:
+			fromPath := stripSubpath(change.From.Name, upstreamSubpath)
+			if matchesAnyGlob(fromPath, prevManagedGlobs) {
 				delta.Deletions = append(delta.Deletions, fromPath)
 			}
-		}
-		// handle renames separately via Stats rename detection
-		for _, fp := range patch.FilePatches() {
-			from, to := fp.Files()
-			if from == nil || to == nil {
-				continue // not a rename
+		case merkletrie.Modify:
+			// A Modify with different From/To names is a rename (after rename detection)
+			if change.From.Name != change.To.Name {
+				fromPath := stripSubpath(change.From.Name, upstreamSubpath)
+				toPath := stripSubpath(change.To.Name, upstreamSubpath)
+				if matchesAnyGlob(fromPath, prevManagedGlobs) {
+					delta.Renames = append(delta.Renames, upstreamRename{OldPath: fromPath, NewPath: toPath})
+				}
 			}
-			fromPath := stripSubpath(from.Path(), upstreamSubpath)
-			toPath := stripSubpath(to.Path(), upstreamSubpath)
-			if seen[fromPath] {
-				continue
-			}
-			if !matchesAnyGlob(fromPath, managedGlobs) && !matchesAnyGlob(toPath, managedGlobs) {
-				continue
-			}
-			seen[fromPath] = true
-			delta.Renames = append(delta.Renames, upstreamRename{OldPath: fromPath, NewPath: toPath})
 		}
 	}
 
 	// config-level delta for templated
-	if err := applyTemplatedConfigDelta(repo, prevCommit, newCommit, upstreamSubpath, delta); err != nil {
+	if err := applyTemplatedConfigDelta(prevCommit, newCommit, upstreamSubpath, delta); err != nil {
 		return delta, err
 	}
 
 	return delta, nil
 }
 
-func buildManagedGlobs(config *GitSporkConfig) []string {
+func buildManagedGlobs(config *GitSporkConfig) ([]glob.Glob, error) {
 	var patterns []string
 	patterns = append(patterns, config.UpstreamOwned...)
 	patterns = append(patterns, config.SharedOwnership.Merged...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferUpstream...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferDownstream...)
-	return patterns
+	var compiled []glob.Glob
+	for _, p := range patterns {
+		g, err := glob.Compile(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", p, err)
+		}
+		compiled = append(compiled, g)
+	}
+	return compiled, nil
 }
 
-func matchesAnyGlob(path string, patterns []string) bool {
-	for _, pattern := range patterns {
-		g, err := glob.Compile(pattern)
-		if err != nil {
-			continue
-		}
+func matchesAnyGlob(path string, globs []glob.Glob) bool {
+	for _, g := range globs {
 		if g.Match(path) {
 			return true
 		}
@@ -363,14 +351,19 @@ func stripSubpath(path, subpath string) string {
 	return path
 }
 
-func applyTemplatedConfigDelta(repo *gogit.Repository, prevCommit, newCommit *object.Commit, upstreamSubpath string, delta *upstreamDelta) error {
-	prevConfig, err := readConfigFromCommit(repo, prevCommit, upstreamSubpath)
+func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSubpath string, delta *upstreamDelta) error {
+	prevConfig, err := readConfigFromCommit(prevCommit, upstreamSubpath)
 	if err != nil {
-		return fmt.Errorf("error reading .gitspork.yml at prev commit: %v", err)
+		// No config file in prev commit — nothing to compare
+		return nil
 	}
-	newConfig, err := readConfigFromCommit(repo, newCommit, upstreamSubpath)
+	newConfig, err := readConfigFromCommit(newCommit, upstreamSubpath)
 	if err != nil {
-		return fmt.Errorf("error reading .gitspork.yml at new commit: %v", err)
+		// No config file in new commit — treat all prev templated entries as deleted
+		for _, prev := range prevConfig.Templated {
+			delta.Deletions = append(delta.Deletions, prev.Destination)
+		}
+		return nil
 	}
 
 	newByTemplate := map[string]GitSporkConfigTemplated{}
@@ -381,19 +374,17 @@ func applyTemplatedConfigDelta(repo *gogit.Repository, prevCommit, newCommit *ob
 	for _, prev := range prevConfig.Templated {
 		next, exists := newByTemplate[prev.Template]
 		if !exists {
-			// template removed — delete old destination
 			delta.Deletions = append(delta.Deletions, prev.Destination)
 			continue
 		}
 		if next.Destination != prev.Destination {
-			// destination changed — rename
 			delta.Renames = append(delta.Renames, upstreamRename{OldPath: prev.Destination, NewPath: next.Destination})
 		}
 	}
 	return nil
 }
 
-func readConfigFromCommit(repo *gogit.Repository, commit *object.Commit, subpath string) (*GitSporkConfig, error) {
+func readConfigFromCommit(commit *object.Commit, subpath string) (*GitSporkConfig, error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return &GitSporkConfig{}, err

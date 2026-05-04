@@ -49,6 +49,13 @@ func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int
 	}
 
 	dockerArgs := []string{"run", "--rm"}
+	// Trust all mounted directories — volume mounts are owned by the host user
+	// but the container runs as root, which triggers git's safe.directory check.
+	dockerArgs = append(dockerArgs,
+		"-e", "GIT_CONFIG_COUNT=1",
+		"-e", "GIT_CONFIG_KEY_0=safe.directory",
+		"-e", "GIT_CONFIG_VALUE_0=*",
+	)
 	if r.UpstreamDir != "" {
 		dockerArgs = append(dockerArgs, "-v", r.UpstreamDir+":/upstream")
 	}

@@ -6,10 +6,11 @@ import (
 	"io"
 	"log"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/goccy/go-yaml/lexer"
+	"github.com/goccy/go-yaml/printer"
 )
 
 // Logger is an instance of a logger
@@ -57,44 +58,26 @@ func (l *Logger) Diff(r io.Reader) error {
 	return scanner.Err()
 }
 
-var (
-	yamlCommentRe = regexp.MustCompile(`(#.*)$`)
-	yamlKeyRe     = regexp.MustCompile(`^(\s*-?\s*)([a-zA-Z_][a-zA-Z0-9_]*\s*:)`)
-	yamlValueRe   = regexp.MustCompile(`:\s*(".*")`)
-
-	colorYAMLKey     = color.New(color.FgCyan)
-	colorYAMLValue   = color.New(color.FgGreen)
-	colorYAMLComment = color.New(color.Faint)
-)
-
-// ColorizeYAMLSchema applies syntax highlighting to a YAML schema string (keys, values, comments).
+// ColorizeYAMLSchema applies syntax highlighting to a YAML schema string using the
+// go-yaml lexer for token-accurate coloring of keys, string values, and comments.
 // When color output is disabled (non-TTY or NO_COLOR), the string is returned unchanged.
 func ColorizeYAMLSchema(schema string) string {
 	if color.NoColor {
 		return schema
 	}
-	var sb strings.Builder
-	for line := range strings.SplitSeq(schema, "\n") {
-		// extract and strip comment first so it isn't re-colored by key/value rules
-		comment := ""
-		if loc := yamlCommentRe.FindStringIndex(line); loc != nil {
-			comment = colorYAMLComment.Sprint(line[loc[0]:])
-			line = line[:loc[0]]
-		}
-		// color inline value (quoted string after colon)
-		line = yamlValueRe.ReplaceAllStringFunc(line, func(m string) string {
-			sub := yamlValueRe.FindStringSubmatch(m)
-			return strings.Replace(m, sub[1], colorYAMLValue.Sprint(sub[1]), 1)
-		})
-		// color key
-		line = yamlKeyRe.ReplaceAllStringFunc(line, func(m string) string {
-			sub := yamlKeyRe.FindStringSubmatch(m)
-			return sub[1] + colorYAMLKey.Sprint(sub[2])
-		})
-		sb.WriteString(line + comment + "\n")
+	p := printer.Printer{
+		MapKey: func() *printer.Property {
+			return &printer.Property{Prefix: "\x1b[96m", Suffix: "\x1b[0m"}
+		},
+		String: func() *printer.Property {
+			return &printer.Property{Prefix: "\x1b[92m", Suffix: "\x1b[0m"}
+		},
+		Comment: func() *printer.Property {
+			return &printer.Property{Prefix: "\x1b[2m", Suffix: "\x1b[0m"}
+		},
 	}
-	// trim the trailing newline added by the loop
-	return strings.TrimSuffix(sb.String(), "\n")
+	tokens := lexer.Tokenize(schema)
+	return strings.TrimRight(p.PrintTokens(tokens), "\n")
 }
 
 // NewLogger will return a new instance of a logger

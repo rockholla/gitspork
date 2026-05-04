@@ -77,7 +77,7 @@ func TestCheckDrift_drift_detected(t *testing.T) {
 		"--upstream-repo-url", "file://" + upstreamDir,
 		"--verbose",
 	}, downstreamDir)
-	require.Equal(t, 1, code, "expected drift detected (exit 1):\n%s", out)
+	require.Equal(t, 2, code, "expected drift detected (exit 2):\n%s", out)
 	require.Contains(t, out, "upstream-owned/file.txt",
 		"expected verbose output to name the drifted file:\n%s", out)
 }

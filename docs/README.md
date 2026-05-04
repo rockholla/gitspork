@@ -98,4 +98,4 @@ Once you've integrated, gitspork records awareness of the last state at which yo
 gitspork check-drift [ --verbose ] [ --upstream-repo-url <override-url> ]
 ```
 
-`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. The `--upstream-repo-url` flag overrides the stored upstream URL, useful when running in an environment where the original URL protocol (SSH vs HTTPS) needs to differ. It exits `0` if no drift is detected, `1` if drift is detected, and other non-zero codes on error.
+`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. The `--upstream-repo-url` flag overrides the stored upstream URL, useful when running in an environment where the original URL protocol (SSH vs HTTPS) needs to differ. It exits `0` if no drift is detected, `2` if drift is detected, and `1` on error.

@@ -78,7 +78,7 @@ type GitSporkConfigTemplated struct {
 type GitSporkConfigTemplatedInput struct {
 	Name          string                                `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt        string                                `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
-	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'"`
+	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
 	PreviousInput *GitSporkConfigTemplatedInputPrevious `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
 }
 

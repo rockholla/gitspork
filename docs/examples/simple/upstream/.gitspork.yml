@@ -19,9 +19,9 @@ templated:
   destination: meta.txt
   inputs:
   - name: project_name
-    json_data_path: templated-json-input-data.json
+    json_data_path: templated-json-input-data.json # downstream's responsibility to maintain at the configured path
   - name: project_description
-    json_data_path: templated-json-input-data.json
+    json_data_path: templated-json-input-data.json # downstream's responsibility to maintain at the configured path
 migrations:
 - .gitspork/migration-001.yml
 

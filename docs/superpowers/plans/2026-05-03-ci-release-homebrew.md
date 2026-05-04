@@ -49,12 +49,10 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 handle_errors "exit 1"
 
-latest_tag="$(git ls-remote --tags "$(git config --get remote.origin.url)" \
-  | grep -o 'refs/tags/v[0-9]*\.[0-9]*\.[0-9]*[^{}]*$' \
-  | sed 's|refs/tags/||' \
-  | grep -E '^v[0-9]' \
-  | sort -V \
-  | tail -1)"
+latest_tag="$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' \
+  | grep -v '\^{}' \
+  | head -1 \
+  | sed 's|.*refs/tags/||')"
 if [ -n "$latest_tag" ]; then
   info "Most recent remote tag: ${latest_tag}"
 else

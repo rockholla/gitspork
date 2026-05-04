@@ -11,12 +11,6 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 | [standards-library](examples/standards-library/README.md) | Security/standards team enforcing linting rules, policy documents, and non-overridable security config |
 | [integrate-local](examples/integrate-local/README.md) | Using a local upstream directory instead of a remote repo — useful during upstream development |
 
-All examples are covered by a test suite:
-
-```bash
-make test-examples
-```
-
 ## For Upstream Developers
 
 When getting started, you can run `gitspork init --help` to see the schema and documentation for `.gitspork.yml`:

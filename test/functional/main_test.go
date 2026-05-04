@@ -50,7 +50,31 @@ func buildBinary(repoRoot string) string {
 }
 
 func buildDockerImageForTests(repoRoot string) {
-	cmd := exec.Command("docker", "build", "-t", dockerImageTag, repoRoot)
+	// Build the linux/amd64 binary first, then use the release Dockerfile
+	// (which expects a pre-built binary named "gitspork" in the build context).
+	dir, err := os.MkdirTemp("", "gitspork-docker-build-")
+	if err != nil {
+		panic("cannot create temp dir for docker build context: " + err.Error())
+	}
+	binaryPath := filepath.Join(dir, "gitspork")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd.Dir = repoRoot
+	buildCmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
+	if b, err := buildCmd.CombinedOutput(); err != nil {
+		panic("go build (linux/amd64) failed:\n" + string(b))
+	}
+
+	dockerfileSource := filepath.Join(repoRoot, "Dockerfile")
+	dockerfileDest := filepath.Join(dir, "Dockerfile")
+	dockerfileContent, err := os.ReadFile(dockerfileSource)
+	if err != nil {
+		panic("cannot read Dockerfile: " + err.Error())
+	}
+	if err := os.WriteFile(dockerfileDest, dockerfileContent, 0644); err != nil {
+		panic("cannot copy Dockerfile to build context: " + err.Error())
+	}
+
+	cmd := exec.Command("docker", "build", "-t", dockerImageTag, dir)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		panic("docker build failed:\n" + string(b))
 	}

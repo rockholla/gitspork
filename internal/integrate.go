@@ -271,12 +271,13 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string,
 	var err error
 	var authMethod transport.AuthMethod
 	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", opts.UpstreamRepoURL)
+	isSSHUpstreamURL, _ := regexp.MatchString("^git@", opts.UpstreamRepoURL)
 	if isHTTPsUpstreamURL && opts.UpstreamRepoToken != "" {
 		authMethod = &http.BasicAuth{
 			Username: gitSpork,
 			Password: opts.UpstreamRepoToken,
 		}
-	} else if !isHTTPsUpstreamURL {
+	} else if isSSHUpstreamURL {
 		agentAuth, err := ssh.NewSSHAgentAuth(gitSSHUsername)
 		if err != nil {
 			return "", fmt.Errorf("error setting up SSH auth method for git: %v", err)

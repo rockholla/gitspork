@@ -18,6 +18,11 @@ upstream_owned:
 - docs/keep.md
 `
 
+const globDirGitsporkYML = `version: dev
+upstream_owned:
+- docs/**
+`
+
 const mvMultiSourceGitsporkYML = `version: dev
 upstream_owned:
 - docs/first.md
@@ -113,4 +118,128 @@ func TestRm_updates_config_and_stages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(staged), ".gitspork.yml")
 	assert.Contains(t, string(staged), "docs/old.md")
+}
+
+// TestRm_downstream_exact runs gitspork rm on an exact path, commits the upstream
+// change, then integrates into a downstream and verifies the file is gone there too.
+func TestRm_downstream_exact(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/old.md":  "# old doc\n",
+		"docs/keep.md": "# keep\n",
+	}, mvRmGitsporkYML)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "post-integrate baseline")
+
+	AssertFileContains(t, downstreamDir, "docs/old.md", "old doc")
+
+	// Run gitspork rm in upstream, then commit the result.
+	upstreamRunner := resolveRunner(t, upstreamDir, "")
+	out, code = upstreamRunner.Run(t, []string{"rm", "docs/old.md"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork rm failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, upstreamDir), upstreamDir, "remove docs/old.md")
+
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate after rm failed:\n%s", out)
+
+	AssertFileAbsent(t, downstreamDir, "docs/old.md")
+	AssertFileContains(t, downstreamDir, "docs/keep.md", "keep")
+}
+
+// TestRm_downstream_glob runs gitspork rm -r on a glob-covered directory, commits,
+// then integrates and verifies all matching files are removed from downstream.
+func TestRm_downstream_glob(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/alpha.md": "# alpha\n",
+		"docs/beta.md":  "# beta\n",
+	}, globDirGitsporkYML)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "post-integrate baseline")
+
+	AssertFileContains(t, downstreamDir, "docs/alpha.md", "alpha")
+	AssertFileContains(t, downstreamDir, "docs/beta.md", "beta")
+
+	// Remove the entire docs/ directory from upstream.
+	upstreamRunner := resolveRunner(t, upstreamDir, "")
+	out, code = upstreamRunner.Run(t, []string{"rm", "-r", "docs/"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork rm -r failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, upstreamDir), upstreamDir, "remove docs/ directory")
+
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate after glob rm failed:\n%s", out)
+
+	AssertFileAbsent(t, downstreamDir, "docs/alpha.md")
+	AssertFileAbsent(t, downstreamDir, "docs/beta.md")
+}
+
+// TestMv_downstream_exact runs gitspork mv on an exact path, commits, then integrates
+// and verifies the file moved in downstream.
+func TestMv_downstream_exact(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/old.md":  "# old doc\n",
+		"docs/keep.md": "# keep\n",
+	}, mvRmGitsporkYML)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "post-integrate baseline")
+
+	AssertFileContains(t, downstreamDir, "docs/old.md", "old doc")
+
+	// Run gitspork mv in upstream, then commit the result.
+	upstreamRunner := resolveRunner(t, upstreamDir, "")
+	out, code = upstreamRunner.Run(t, []string{"mv", "docs/old.md", "docs/new.md"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork mv failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, upstreamDir), upstreamDir, "rename docs/old.md to docs/new.md")
+
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate after mv failed:\n%s", out)
+
+	AssertFileAbsent(t, downstreamDir, "docs/old.md")
+	AssertFileContains(t, downstreamDir, "docs/new.md", "old doc")
+}
+
+// TestMv_downstream_glob runs gitspork mv on a directory covered by a glob entry,
+// commits, then integrates and verifies all files moved in downstream.
+func TestMv_downstream_glob(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/alpha.md": "# alpha\n",
+		"docs/beta.md":  "# beta\n",
+	}, globDirGitsporkYML)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "post-integrate baseline")
+
+	AssertFileContains(t, downstreamDir, "docs/alpha.md", "alpha")
+	AssertFileContains(t, downstreamDir, "docs/beta.md", "beta")
+
+	// Move the entire docs/ directory to guides/ in upstream.
+	upstreamRunner := resolveRunner(t, upstreamDir, "")
+	out, code = upstreamRunner.Run(t, []string{"mv", "docs/", "guides/"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork mv glob dir failed:\n%s", out)
+	CommitAll(t, OpenRepo(t, upstreamDir), upstreamDir, "rename docs/ to guides/")
+
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate after glob mv failed:\n%s", out)
+
+	AssertFileAbsent(t, downstreamDir, "docs/alpha.md")
+	AssertFileAbsent(t, downstreamDir, "docs/beta.md")
+	AssertFileContains(t, downstreamDir, "guides/alpha.md", "alpha")
+	AssertFileContains(t, downstreamDir, "guides/beta.md", "beta")
 }

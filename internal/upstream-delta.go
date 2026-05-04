@@ -39,7 +39,15 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		return delta, fmt.Errorf("error resolving new upstream commit %s: %v", newHash, err)
 	}
 
-	managedGlobs, err := buildManagedGlobs(config)
+	// Deletions/renames must be checked against the OLD config: a file removed by
+	// "gitspork rm" is stripped from .gitspork.yml in the same commit, so the new
+	// config no longer lists it. Using the prev config ensures those removals still
+	// propagate to downstream repos.
+	prevConfig, err := readConfigFromCommit(prevCommit, upstreamSubpath)
+	if err != nil {
+		prevConfig = config // fall back to new config if prev has none
+	}
+	prevManagedGlobs, err := buildManagedGlobs(prevConfig)
 	if err != nil {
 		return delta, err
 	}
@@ -67,7 +75,7 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		switch action {
 		case merkletrie.Delete:
 			fromPath := stripSubpath(change.From.Name, upstreamSubpath)
-			if matchesAnyGlob(fromPath, managedGlobs) {
+			if matchesAnyGlob(fromPath, prevManagedGlobs) {
 				delta.Deletions = append(delta.Deletions, fromPath)
 			}
 		case merkletrie.Modify:
@@ -75,7 +83,7 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 			if change.From.Name != change.To.Name {
 				fromPath := stripSubpath(change.From.Name, upstreamSubpath)
 				toPath := stripSubpath(change.To.Name, upstreamSubpath)
-				if matchesAnyGlob(fromPath, managedGlobs) {
+				if matchesAnyGlob(fromPath, prevManagedGlobs) {
 					delta.Renames = append(delta.Renames, upstreamRename{OldPath: fromPath, NewPath: toPath})
 				}
 			}

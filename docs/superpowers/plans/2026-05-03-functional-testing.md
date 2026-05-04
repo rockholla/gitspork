@@ -6,7 +6,7 @@
 
 **Architecture:** A `test/functional/` package gated behind build tags (`functional` / `functional_docker`). A `Runner` interface abstracts binary-vs-container execution; `TestMain` builds the artifact once and stores it in a package-level var; each test constructs fresh upstream/downstream repos using go-git, runs the binary via `exec.Command` or `docker run`, and asserts on filesystem state and exit codes.
 
-**Tech Stack:** Go 1.25, `go-git/go-git/v6`, `stretchr/testify`, `exec.Command`, Docker CLI (for container variant), build tags `functional` and `functional_docker`.
+**Tech Stack:** Go 1.26, `go-git/go-git/v6`, `stretchr/testify`, `exec.Command`, Docker CLI (for container variant), build tags `functional` and `functional_docker`.
 
 ---
 
@@ -192,6 +192,8 @@ git add test/functional/harness.go
 git commit -m "feat(functional-tests): add Runner interface, BinaryRunner, and repo helpers"
 ```
 
+> **Note:** The repo helper implementations (`NewUpstreamRepo`, `NewDownstreamRepo`, `WriteFiles`, `CommitAll`, `OpenRepo`, `ReadFile`, `AssertFileContains`, `AssertFileAbsent`) were subsequently extracted to `internal/testharness/testharness.go` so that both `test/functional/` and `test/examples/` can share them. After that extraction, `test/functional/harness.go` contains thin wrapper functions that delegate to `internal/testharness/`, while `Runner`, `BinaryRunner`, and `resolveRunner` remain in `harness.go` directly.
+
 ---
 
 ### Task 2: Harness — DockerRunner
@@ -209,56 +211,65 @@ The DockerRunner mounts the upstream and downstream host dirs into the container
 package functional
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
-// DockerRunner runs gitspork commands inside the gitspork:functional-test Docker image.
-// It mounts upstreamDir -> /upstream and downstreamDir -> /downstream.
-// Path args that begin with upstreamDir or downstreamDir are rewritten to container paths.
+// DockerRunner runs gitspork commands inside a Docker image specified by ImageTag.
+// It mounts UpstreamDir -> /upstream and DownstreamDir -> /downstream.
 type DockerRunner struct {
 	ImageTag      string
 	UpstreamDir   string
 	DownstreamDir string
 }
 
-// NewDockerRunner constructs a DockerRunner for a specific test scenario.
-// upstreamDir and downstreamDir are host paths that will be mounted into the container.
-func NewDockerRunner(t *testing.T, imageTag, upstreamDir, downstreamDir string) *DockerRunner {
-	t.Helper()
-	return &DockerRunner{
-		ImageTag:      imageTag,
-		UpstreamDir:   upstreamDir,
-		DownstreamDir: downstreamDir,
-	}
-}
-
 func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int) {
 	t.Helper()
+	if r.ImageTag == "" {
+		t.Fatal("DockerRunner: ImageTag must be set")
+	}
 
-	// Rewrite host path args to container paths.
+	// Rewrite host path args to container paths, handling both bare paths and
+	// file:// URLs (e.g. --upstream-repo-url file:///host/tmp/... becomes
+	// file:///upstream since that path is volume-mounted at /upstream).
 	rewritten := make([]string, len(args))
 	for i, a := range args {
-		if r.UpstreamDir != "" && strings.HasPrefix(a, r.UpstreamDir) {
+		switch {
+		case r.UpstreamDir != "" && strings.HasPrefix(a, r.UpstreamDir):
 			a = "/upstream" + strings.TrimPrefix(a, r.UpstreamDir)
-		} else if r.DownstreamDir != "" && strings.HasPrefix(a, r.DownstreamDir) {
+		case r.UpstreamDir != "" && strings.HasPrefix(a, "file://"+r.UpstreamDir):
+			a = "file:///upstream" + strings.TrimPrefix(a, "file://"+r.UpstreamDir)
+		case r.DownstreamDir != "" && strings.HasPrefix(a, r.DownstreamDir):
 			a = "/downstream" + strings.TrimPrefix(a, r.DownstreamDir)
+		case r.DownstreamDir != "" && strings.HasPrefix(a, "file://"+r.DownstreamDir):
+			a = "file:///downstream" + strings.TrimPrefix(a, "file://"+r.DownstreamDir)
 		}
 		rewritten[i] = a
 	}
 
 	// Determine working dir inside container.
 	containerDir := "/"
-	if r.UpstreamDir != "" && dir == r.UpstreamDir {
-		containerDir = "/upstream"
-	} else if r.DownstreamDir != "" && dir == r.DownstreamDir {
-		containerDir = "/downstream"
+	if r.UpstreamDir != "" && strings.HasPrefix(dir, r.UpstreamDir) {
+		containerDir = "/upstream" + strings.TrimPrefix(dir, r.UpstreamDir)
+	} else if r.DownstreamDir != "" && strings.HasPrefix(dir, r.DownstreamDir) {
+		containerDir = "/downstream" + strings.TrimPrefix(dir, r.DownstreamDir)
 	}
 
 	dockerArgs := []string{"run", "--rm"}
+	// Run as the current host user so files written by the container into mounted
+	// volumes are owned by the same uid/gid as the test process. Without this,
+	// root-owned files are left in t.TempDir() and cleanup fails with "permission
+	// denied". Also trust all mounted directories to suppress git's safe.directory
+	// check, which fires when the directory owner doesn't match the running user.
+	dockerArgs = append(dockerArgs,
+		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+		"-e", "GIT_CONFIG_COUNT=1",
+		"-e", "GIT_CONFIG_KEY_0=safe.directory",
+		"-e", "GIT_CONFIG_VALUE_0=*",
+	)
 	if r.UpstreamDir != "" {
 		dockerArgs = append(dockerArgs, "-v", r.UpstreamDir+":/upstream")
 	}
@@ -276,21 +287,15 @@ func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			code = exitErr.ExitCode()
 		} else {
-			t.Logf("docker runner exec error: %v\noutput: %s", err, out)
-			code = -1
+			t.Fatalf("docker runner: failed to launch docker: %v\noutput: %s", err, out)
 		}
 	}
 	return string(out), code
 }
 
-// BuildDockerImage builds the gitspork Docker image with the given tag.
-// Called once from TestMain when running under the functional_docker build tag.
-func BuildDockerImage(t *testing.T, tag, contextDir string) {
-	t.Helper()
-	cmd := exec.Command("docker", "build", "-t", tag, contextDir)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, "docker build failed:\n%s", string(out))
-}
+// isDockerBuild is read by TestMain (main_test.go) to decide whether to build
+// the Docker image instead of the native binary.
+const isDockerBuild = true
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -390,12 +395,14 @@ const isDockerBuild = true
 And add the inverse to a new file `test/functional/harness_native.go`:
 
 ```go
-//go:build functional
+//go:build functional && !functional_docker
 
 package functional
 
 const isDockerBuild = false
 ```
+
+Note: the `!functional_docker` exclusion avoids gopls "duplicate declaration" errors when both tags are active simultaneously in an IDE.
 
 - [ ] **Step 2: Verify both tags compile**
 
@@ -570,8 +577,7 @@ import (
 // NOTE: integrate_test.go does not import "path/filepath" — remove it from the import block.
 // The file:// URL is constructed inline as "file://" + upstreamDir.
 
-const simpleGitsporkYML = `version: dev
-upstream_owned:
+const simpleGitsporkYML = `upstream_owned:
 - upstream-owned/**
 - upstream-owned.mk
 downstream_owned:
@@ -808,6 +814,8 @@ func TestIntegrate_upstream_delta_delete(t *testing.T) {
 // (end of integrate_test.go)
 ```
 
+> **Note:** `simpleGitsporkYML`, `metaTemplate`, `buildSimpleUpstream`, `prepDownstreamWithInputData`, and the `integrateArgs` helper were subsequently moved out of `integrate_test.go` into a shared `helpers_test.go` file in the same `functional` package so they could be reused by `check_drift_test.go` and `mv_rm_test.go`. The final `integrate_test.go` only contains the test functions.
+
 Note: the `gogit.ErrWorktreeNotProvided` import trick will cause a compile error — remove that line. The correct import is just using `upstreamWt.Move`. The `resolveFileURL` helper at the bottom is used for the file:// URL so paths work on all platforms.
 
 - [ ] **Step 2: Fix the spurious `ErrWorktreeNotProvided` reference** — remove this line from `TestIntegrate_upstream_delta_rename`:
@@ -1013,50 +1021,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const mvRmGitsporkYML = `version: dev
-upstream_owned:
+const mvRmGitsporkYML = `upstream_owned:
 - docs/old.md
 - docs/keep.md
 `
-
-// gitIndexContains returns true if path appears in the git index of dir.
-func gitIndexContains(t *testing.T, dir, path string) bool {
-	t.Helper()
-	cmd := exec.Command("git", "diff", "--cached", "--name-only")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	require.NoError(t, err)
-	return assert.ObjectsExportedFieldsAreEqual != nil && // dummy to use assert import
-		containsLine(string(out), path)
-}
-
-func containsLine(output, target string) bool {
-	for _, line := range splitLines(output) {
-		if line == target {
-			return true
-		}
-	}
-	return false
-}
-
-func splitLines(s string) []string {
-	var lines []string
-	cur := ""
-	for _, c := range s {
-		if c == '\n' {
-			if cur != "" {
-				lines = append(lines, cur)
-			}
-			cur = ""
-		} else {
-			cur += string(c)
-		}
-	}
-	if cur != "" {
-		lines = append(lines, cur)
-	}
-	return lines
-}
 
 func TestMv_updates_config_and_stages(t *testing.T) {
 	upstreamDir := NewUpstreamRepo(t, map[string]string{
@@ -1115,9 +1083,17 @@ func TestRm_updates_config_and_stages(t *testing.T) {
 }
 ```
 
-Note: `gitIndexContains` is defined but the final implementation just uses `exec.Command("git", "diff", "--cached", ...)` inline in the tests for clarity. Remove the `gitIndexContains` function and the `assert.ObjectsExportedFieldsAreEqual != nil` dummy expression — it's a placeholder that won't compile. Use the inline approach shown in each test instead. Final `mv_rm_test.go` should not contain `gitIndexContains`.
+The dead helper functions (`gitIndexContains`, `containsLine`, `splitLines`) and the non-compiling dummy expression are removed from the final file. The two test functions above use inline `exec.Command("git", "diff", "--cached", ...)` instead.
 
-- [ ] **Step 2: Remove the dead helpers** — the file as written above has a non-compiling dummy expression. The clean version omits `gitIndexContains`, `containsLine`, and `splitLines` entirely (they were pre-draft scaffolding). The two test functions `TestMv_updates_config_and_stages` and `TestRm_updates_config_and_stages` are correct and self-contained using inline `exec.Command`.
+The final `mv_rm_test.go` also includes four additional end-to-end downstream propagation tests that were added during implementation:
+- `TestRm_downstream_exact` — runs `gitspork rm` on an exact path, commits upstream, re-integrates, verifies file removed from downstream
+- `TestRm_downstream_glob` — runs `gitspork rm -r` on a glob-covered directory, same flow
+- `TestMv_downstream_exact` — runs `gitspork mv` on an exact path, verifies file moved in downstream
+- `TestMv_downstream_glob` — runs `gitspork mv` on a glob-covered directory, verifies all files moved
+
+The `mvRmGitsporkYML` constant does NOT have `version: dev` (the `version` field was removed from `GitSporkConfig` entirely).
+
+- [ ] **Step 2: Verify compile and run**
 
 - [ ] **Step 3: Run mv/rm tests (binary)**
 

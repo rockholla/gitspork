@@ -16,7 +16,6 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 When getting started, you can run `gitspork init --help` to see the schema and documentation for `.gitspork.yml`:
 
 ```yaml
-version: "v0.1.0" # version of gitspork relevant to the config
 upstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo
 - "upstream-owned.txt"
 downstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated

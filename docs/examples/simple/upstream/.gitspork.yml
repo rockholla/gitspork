@@ -1,4 +1,3 @@
-version: dev
 upstream_owned:
 - upstream-owned/**
 - upstream-owned.mk

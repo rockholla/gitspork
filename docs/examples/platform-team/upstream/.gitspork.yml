@@ -1,4 +1,3 @@
-version: dev
 upstream_owned:
   - ci/**
   - scripts/shared-bootstrap.sh

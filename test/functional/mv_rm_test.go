@@ -12,19 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const mvRmGitsporkYML = `version: dev
-upstream_owned:
+const mvRmGitsporkYML = `upstream_owned:
 - docs/old.md
 - docs/keep.md
 `
 
-const globDirGitsporkYML = `version: dev
-upstream_owned:
+const globDirGitsporkYML = `upstream_owned:
 - docs/**
 `
 
-const mvMultiSourceGitsporkYML = `version: dev
-upstream_owned:
+const mvMultiSourceGitsporkYML = `upstream_owned:
 - docs/first.md
 - docs/second.md
 - docs/keep.md

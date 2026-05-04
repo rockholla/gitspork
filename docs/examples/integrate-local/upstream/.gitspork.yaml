@@ -1,4 +1,3 @@
-version: dev
 upstream_owned:
   - app-config.yaml
 templated:

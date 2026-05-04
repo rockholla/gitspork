@@ -6,8 +6,7 @@ import "testing"
 
 // simpleGitsporkYML is the shared upstream config used across integrate,
 // check-drift, and any other scenario that needs a realistic upstream repo.
-const simpleGitsporkYML = `version: dev
-upstream_owned:
+const simpleGitsporkYML = `upstream_owned:
 - upstream-owned/**
 - upstream-owned.mk
 downstream_owned:

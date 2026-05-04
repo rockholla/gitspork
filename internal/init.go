@@ -11,7 +11,7 @@ const (
 )
 
 // Init will initialize a path for use as a gitspork upstream
-func Init(initPath string, gitSporkVersion string, logger *Logger) error {
+func Init(initPath string, logger *Logger) error {
 	var err error
 
 	logger.Log("initializing gitspork upstream at %s", initPath)
@@ -26,9 +26,7 @@ func Init(initPath string, gitSporkVersion string, logger *Logger) error {
 			return fmt.Errorf("error determining init path: %v", err)
 		}
 	}
-	initConfig := &GitSporkConfig{
-		Version: gitSporkVersion,
-	}
+	initConfig := &GitSporkConfig{}
 	if err := WriteGitSporkConfig(filepath.Join(initPath, gitSporkConfigFileName), initConfig, gitSporkConfigHeader); err != nil {
 		return fmt.Errorf("error initializing gitspork config: %v", err)
 	}

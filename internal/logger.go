@@ -58,12 +58,12 @@ func (l *Logger) Diff(r io.Reader) error {
 	return scanner.Err()
 }
 
-// ColorizeYAMLSchema applies syntax highlighting to a YAML schema string using the
-// go-yaml lexer for token-accurate coloring of keys, string values, and comments.
+// ColorizeYAML applies syntax highlighting to a YAML string using the go-yaml lexer
+// for token-accurate coloring of keys, string values, and comments.
 // When color output is disabled (non-TTY or NO_COLOR), the string is returned unchanged.
-func ColorizeYAMLSchema(schema string) string {
+func ColorizeYAML(src string) string {
 	if color.NoColor {
-		return schema
+		return src
 	}
 	p := printer.Printer{
 		MapKey: func() *printer.Property {
@@ -76,7 +76,7 @@ func ColorizeYAMLSchema(schema string) string {
 			return &printer.Property{Prefix: "\x1b[2m", Suffix: "\x1b[0m"}
 		},
 	}
-	tokens := lexer.Tokenize(schema)
+	tokens := lexer.Tokenize(src)
 	return strings.TrimRight(p.PrintTokens(tokens), "\n")
 }
 

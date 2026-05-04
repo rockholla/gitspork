@@ -29,8 +29,8 @@ func (s *SchemaSubcommand) GetCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Main .gitspork.yml schema:\n---------------------------------------------\n%s\n\nMigration YAML schema:\n---------------------------------------------\n%s\n",
-				internal.ColorizeYAMLSchema(configSchema),
-				internal.ColorizeYAMLSchema(migrationsSchema),
+				internal.ColorizeYAML(configSchema),
+				internal.ColorizeYAML(migrationsSchema),
 			)
 			return nil
 		},

@@ -3,6 +3,7 @@
 package functional
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,7 @@ func buildBinary(repoRoot string) string {
 func buildDockerImageForTests(repoRoot string) {
 	// Build the linux/amd64 binary first, then use the release Dockerfile
 	// (which expects a pre-built binary named "gitspork" in the build context).
+	fmt.Println("=== docker test setup: compiling linux/amd64 binary...")
 	dir, err := os.MkdirTemp("", "gitspork-docker-build-")
 	if err != nil {
 		panic("cannot create temp dir for docker build context: " + err.Error())
@@ -74,10 +76,12 @@ func buildDockerImageForTests(repoRoot string) {
 		panic("cannot copy Dockerfile to build context: " + err.Error())
 	}
 
+	fmt.Printf("=== docker test setup: building image %s...\n", dockerImageTag)
 	cmd := exec.Command("docker", "build", "-t", dockerImageTag, dir)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		panic("docker build failed:\n" + string(b))
 	}
+	fmt.Println("=== docker test setup: image ready, running tests...")
 }
 
 // isFunctionalDocker returns true when compiled with -tags functional_docker.

@@ -22,13 +22,20 @@ func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int
 		t.Fatal("DockerRunner: ImageTag must be set")
 	}
 
-	// Rewrite host path args to container paths.
+	// Rewrite host path args to container paths, handling both bare paths and
+	// file:// URLs (e.g. --upstream-repo-url file:///host/tmp/... becomes
+	// file:///upstream since that path is volume-mounted at /upstream).
 	rewritten := make([]string, len(args))
 	for i, a := range args {
-		if r.UpstreamDir != "" && strings.HasPrefix(a, r.UpstreamDir) {
+		switch {
+		case r.UpstreamDir != "" && strings.HasPrefix(a, r.UpstreamDir):
 			a = "/upstream" + strings.TrimPrefix(a, r.UpstreamDir)
-		} else if r.DownstreamDir != "" && strings.HasPrefix(a, r.DownstreamDir) {
+		case r.UpstreamDir != "" && strings.HasPrefix(a, "file://"+r.UpstreamDir):
+			a = "file:///upstream" + strings.TrimPrefix(a, "file://"+r.UpstreamDir)
+		case r.DownstreamDir != "" && strings.HasPrefix(a, r.DownstreamDir):
 			a = "/downstream" + strings.TrimPrefix(a, r.DownstreamDir)
+		case r.DownstreamDir != "" && strings.HasPrefix(a, "file://"+r.DownstreamDir):
+			a = "file:///downstream" + strings.TrimPrefix(a, "file://"+r.DownstreamDir)
 		}
 		rewritten[i] = a
 	}

@@ -40,7 +40,7 @@ this_dir=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 version=""
 description=""
 
-semver_regex='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+semver_regex='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
 
 require_binary "git"
 
@@ -49,14 +49,28 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 handle_errors "exit 1"
 
-latest_tag="$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' \
+if [[ ! -t 0 ]]; then
+  err "This script must be run interactively (stdin is not a terminal)"
+  exit 1
+fi
+
+if ! git remote get-url origin &>/dev/null; then
+  err "No 'origin' remote configured"
+  exit 1
+fi
+
+remote_tags="$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' \
   | grep -v '\^{}' \
-  | head -1 \
   | sed 's|.*refs/tags/||')"
-if [ -n "$latest_tag" ]; then
-  info "Most recent remote tag: ${latest_tag}"
+latest_stable_tag="$(echo "$remote_tags" | grep -v -- '-' | head -1)"
+latest_prerelease_tag="$(echo "$remote_tags" | grep -- '-' | head -1)"
+if [ -n "$latest_stable_tag" ]; then
+  info "Most recent stable tag: ${latest_stable_tag}"
 else
-  info "No remote tags found yet"
+  info "No stable remote tags found yet"
+fi
+if [ -n "$latest_prerelease_tag" ]; then
+  info "Most recent pre-release tag: ${latest_prerelease_tag}"
 fi
 
 while true; do
@@ -64,13 +78,19 @@ while true; do
   if [[ "$version" =~ $semver_regex ]]; then
     break
   fi
-  warn "Please enter a valid semver"
+  warn "Please enter a valid semver with v prefix (e.g. v1.2.3)"
 done
+
+current_branch="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$current_branch" != "main" && ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+  err "Stable releases require the main branch. Current branch: ${current_branch}. Use a pre-release version (e.g. ${version}-rc.1) or switch to main."
+  handle_errors "exit 1"
+fi
 
 if [ -n "$(git tag -l "${version}")" ]; then
   err "git tag for version ${version} already exists locally"
 fi
-if git ls-remote --tags "$(git config --get remote.origin.url)" | grep -E '\trefs/tags/'"${version}"'$' &>/dev/null; then
+if git ls-remote --exit-code --tags origin "${version}" &>/dev/null; then
   err "git tag for version ${version} already exists in remote origin repo"
 fi
 handle_errors "exit 1"
@@ -93,7 +113,8 @@ fi
 git tag -a "${version}" -m "${description}"
 git push origin "${version}" || { git tag -d "${version}" 2>/dev/null || true; exit 1; }
 
-info "Tag ${version} pushed. GitHub Actions will now run tests and publish the release."
+repo_url="$(git remote get-url origin | sed 's|git@github.com:|https://github.com/|; s|\.git$||')"
+info "Tag ${version} pushed. Watch the release workflow at: ${repo_url}/actions?query=branch%3A${version}"
 ```
 
 - [ ] **Step 2: Verify the script is executable and parses without error**
@@ -133,7 +154,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Unit Tests
       run: make test-unit
 
@@ -144,7 +165,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Functional Tests
       run: make test-functional
 
@@ -155,7 +176,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
     - name: Functional Container/Docker Tests
@@ -168,7 +189,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
     - name: Examples Tests
       run: make test-examples
 ```
@@ -241,6 +262,8 @@ jobs:
   release:
     needs: tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
       with:
@@ -249,7 +272,7 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26'
+        go-version-file: 'go.mod'
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
@@ -378,21 +401,34 @@ git commit -m "feat: update goreleaser for CI execution and add Homebrew tap"
 ### Task 6: Document the manual setup prerequisites
 
 **Files:**
-- Modify: `docs/README.md` — add a "Releasing" section
+- Modify: `docs/README.md` — add Homebrew install snippet
+- Create: `CONTRIBUTING.md` — add releasing workflow and pre-release setup prerequisites
 
-- [ ] **Step 1: Add releasing section to docs/README.md**
+- [ ] **Step 1: Add Homebrew install snippet to `docs/README.md`**
 
 Add at the end of the file:
+
+```markdown
+### Installing via Homebrew
+
+```bash
+brew tap rockholla/gitspork
+brew install gitspork
+```
+```
+
+- [ ] **Step 2: Create `CONTRIBUTING.md` with releasing and prerequisites content**
 
 ```markdown
 ## Releasing
 
 Releases are published via `make release`. This will:
 
-1. Show the most recent remote tag for context
-2. Prompt for the new version (must be valid semver, e.g. `v1.2.3`)
-3. Prompt for a release description (used as the annotated tag message and GitHub Release notes)
-4. Push the tag to GitHub
+1. Show the most recent stable and pre-release remote tags for context
+2. Prompt for the new version (must be valid semver with `v` prefix, e.g. `v1.2.3`)
+3. Enforce branch guard: stable releases require the `main` branch; pre-release versions (e.g. `v1.2.3-rc.1`) may be released from any branch
+4. Prompt for a release description (used as the annotated tag message and GitHub Release notes)
+5. Push the tag to GitHub
 
 GitHub Actions then takes over: runs all test suites, builds multi-arch binaries and Docker images, publishes a GitHub Release, pushes Docker images to Docker Hub, and updates the Homebrew formula in `rockholla/homebrew-gitspork`.
 
@@ -403,18 +439,11 @@ Before the first release, ensure the following are in place:
 1. **`rockholla/homebrew-gitspork` repo exists** on GitHub (public) with a `Formula/` directory.
 2. **`HOMEBREW_TAP_GITHUB_TOKEN`** — a GitHub PAT with `Contents: write` on `rockholla/homebrew-gitspork`, added to this repo's Actions secrets.
 3. **`DOCKER_HUB_TOKEN`** — already configured.
-
-### Installing via Homebrew
-
-```bash
-brew tap rockholla/gitspork
-brew install gitspork
-```
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add docs/README.md
-git commit -m "docs: add releasing section with setup prerequisites"
+git add docs/README.md CONTRIBUTING.md
+git commit -m "docs: add homebrew install snippet to README; add releasing/prerequisites to CONTRIBUTING.md"
 ```

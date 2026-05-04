@@ -1,0 +1,11 @@
+version: dev
+upstream_owned:
+  - app-config.yaml
+templated:
+  - template: .gitspork-templates/config.yml.go.tmpl
+    destination: config.yml
+    inputs:
+      - name: app_name
+        json_data_path: input-data.json
+      - name: environment
+        json_data_path: input-data.json

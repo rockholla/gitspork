@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/fatih/color"
@@ -54,6 +55,46 @@ func (l *Logger) Diff(r io.Reader) error {
 		}
 	}
 	return scanner.Err()
+}
+
+var (
+	yamlCommentRe = regexp.MustCompile(`(#.*)$`)
+	yamlKeyRe     = regexp.MustCompile(`^(\s*-?\s*)([a-zA-Z_][a-zA-Z0-9_]*\s*:)`)
+	yamlValueRe   = regexp.MustCompile(`:\s*(".*")`)
+
+	colorYAMLKey     = color.New(color.FgCyan)
+	colorYAMLValue   = color.New(color.FgGreen)
+	colorYAMLComment = color.New(color.Faint)
+)
+
+// ColorizeYAMLSchema applies syntax highlighting to a YAML schema string (keys, values, comments).
+// When color output is disabled (non-TTY or NO_COLOR), the string is returned unchanged.
+func ColorizeYAMLSchema(schema string) string {
+	if color.NoColor {
+		return schema
+	}
+	var sb strings.Builder
+	for _, line := range strings.Split(schema, "\n") {
+		// extract and strip comment first so it isn't re-colored by key/value rules
+		comment := ""
+		if loc := yamlCommentRe.FindStringIndex(line); loc != nil {
+			comment = colorYAMLComment.Sprint(line[loc[0]:])
+			line = line[:loc[0]]
+		}
+		// color inline value (quoted string after colon)
+		line = yamlValueRe.ReplaceAllStringFunc(line, func(m string) string {
+			sub := yamlValueRe.FindStringSubmatch(m)
+			return strings.Replace(m, sub[1], colorYAMLValue.Sprint(sub[1]), 1)
+		})
+		// color key
+		line = yamlKeyRe.ReplaceAllStringFunc(line, func(m string) string {
+			sub := yamlKeyRe.FindStringSubmatch(m)
+			return sub[1] + colorYAMLKey.Sprint(sub[2])
+		})
+		sb.WriteString(line + comment + "\n")
+	}
+	// trim the trailing newline added by the loop
+	return strings.TrimSuffix(sb.String(), "\n")
 }
 
 // NewLogger will return a new instance of a logger

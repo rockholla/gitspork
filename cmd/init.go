@@ -35,7 +35,7 @@ func (isc *InitSubcommand) GetCmd() *cobra.Command {
 	var cmd = &cobra.Command{
 		Use:   "init",
 		Short: initHelpShort,
-		Long:  fmt.Sprintf("%s\n\n%s", initHelpShort, fmt.Sprintf(initHelpLongTemplate, configSchema, migrationsSchema)),
+		Long:  fmt.Sprintf("%s\n\n%s", initHelpShort, fmt.Sprintf(initHelpLongTemplate, internal.ColorizeYAMLSchema(configSchema), internal.ColorizeYAMLSchema(migrationsSchema))),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return internal.Init(initPath, logger)
 		},

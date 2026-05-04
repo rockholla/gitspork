@@ -19,7 +19,7 @@ templated:
     inputs:
       - name: service_name
         previous_input:
-          template: service-info.txt.go.tmpl
+          template: .gitspork-templates/service-info.txt.go.tmpl
           name: service_name
 migrations:
   - .gitspork/migrations/0001-policy-init.yml

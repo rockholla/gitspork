@@ -3,6 +3,8 @@
 package functional
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -49,9 +51,13 @@ func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int
 	}
 
 	dockerArgs := []string{"run", "--rm"}
-	// Trust all mounted directories — volume mounts are owned by the host user
-	// but the container runs as root, which triggers git's safe.directory check.
+	// Run as the current host user so files written by the container into mounted
+	// volumes are owned by the same uid/gid as the test process. Without this,
+	// root-owned files are left in t.TempDir() and cleanup fails with "permission
+	// denied". Also trust all mounted directories to suppress git's safe.directory
+	// check, which fires when the directory owner doesn't match the running user.
 	dockerArgs = append(dockerArgs,
+		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 		"-e", "GIT_CONFIG_COUNT=1",
 		"-e", "GIT_CONFIG_KEY_0=safe.directory",
 		"-e", "GIT_CONFIG_VALUE_0=*",

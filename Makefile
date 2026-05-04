@@ -11,8 +11,7 @@ test-functional-docker: ## Run tests specific to testing the containerized versi
 	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
 
 .PHONY: test-all
-test-all: test test-functional test-functional-docker
-test-all: ## Run all test suite types
+test-all: test-unit test-functional test-functional-docker ## Run all test suite types
 
 # NOTE: recommended way to run all of this to support multi-arch image builds along w/ release artifacts through goreleaser:
 #   1. Default macOS Docker desktop

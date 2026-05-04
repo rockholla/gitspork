@@ -63,7 +63,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 				warnings = append(warnings, w...)
 			}
 
-			gitCmd := exec.Command("git", append([]string{"rm"}, args...)...)
+			gitCmd := exec.Command("git", append([]string{"-c", "safe.directory=*", "rm"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git rm failed: %v\n%s", err, out)
@@ -72,7 +72,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 			if err := internal.WriteGitSporkConfig(configPath, config); err != nil {
 				return fmt.Errorf("error writing .gitspork.yml: %v", err)
 			}
-			if out, err := exec.Command("git", "add", configPath).CombinedOutput(); err != nil {
+			if out, err := exec.Command("git", "-c", "safe.directory=*", "add", configPath).CombinedOutput(); err != nil {
 				return fmt.Errorf("git add .gitspork.yml failed: %v\n%s", err, out)
 			}
 

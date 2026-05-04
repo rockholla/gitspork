@@ -166,7 +166,7 @@ func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*objec
 }
 
 func checkCleanWorkingTree(repoPath string) error {
-	out, err := exec.Command("git", "-C", repoPath, "status", "--porcelain").Output()
+	out, err := exec.Command("git", "-c", "safe.directory=*", "-C", repoPath, "status", "--porcelain").Output()
 	if err != nil {
 		return fmt.Errorf("error checking working tree status: %v", err)
 	}

@@ -31,7 +31,7 @@ What `gitspork` provides for upstream -> downstream integrations
 
 ## Getting Started
 
-## Install
+### Install
 
 ### Via Homebrew
 
@@ -54,9 +54,9 @@ Download the appropriate binary from the [Github releases](https://github.com/ro
 gitspork init
 ```
 
-This will initialize a `.gitspork.yml` file so you can begin configuring how your upstream should share out and integrate w/ downstreams.
+This will initialize a `.gitspork.yml` file so you can begin configuring how your upstream should share out and integrate w/ downstreams. Run `gitspork schema` at any time to see the full annotated config reference.
 
-## And Downstreams then Integrate with your Upstream
+## Downstream Integration
 
 From the root of a downstream repo clone:
 

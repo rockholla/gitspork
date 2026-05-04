@@ -199,11 +199,11 @@ func GetGitSporkConfigSchema() (string, string, error) {
 			Exec: "./.gitspork/migrations/0001/post-integrate.sh",
 		},
 	}
-	renderedMain, err := marshal.YAMLWithComments(gitSporkExampleConfig, 2)
+	renderedMain, err := marshal.YAMLWithComments(gitSporkExampleConfig, 0)
 	if err != nil {
 		return "", "", err
 	}
-	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 2)
+	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 0)
 	if err != nil {
 		return "", "", err
 	}

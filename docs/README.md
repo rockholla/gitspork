@@ -84,10 +84,18 @@ gitspork integrate \
   --downstream-repo-path [optional subpath in your repo where you want to integrate, defaults to pwd]
 ```
 
-Once you've integrated, gitspork stashes awareness of the last state at which you integrated (upstream commit hash etc.), and you can check drift from upstream at any time by:
+If your upstream is a local directory rather than a remote repo (e.g. a monorepo or co-located tooling), use `integrate-local` instead:
 
 ```
-gitspork check-drift [ --verbose ]
+gitspork integrate-local \
+  --upstream-path [local path to the upstream directory containing .gitspork.yml] \
+  --downstream-path [local path to the downstream repo, defaults to pwd]
 ```
 
-`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. It exits `0` if no drift is detected, `1` if drift is detected, and other non-zero codes on error.
+Once you've integrated, gitspork records awareness of the last state at which you integrated (upstream commit hash etc.), and you can check drift from upstream at any time by:
+
+```
+gitspork check-drift [ --verbose ] [ --upstream-repo-url <override-url> ]
+```
+
+`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. The `--upstream-repo-url` flag overrides the stored upstream URL, useful when running in an environment where the original URL protocol (SSH vs HTTPS) needs to differ. It exits `0` if no drift is detected, `1` if drift is detected, and other non-zero codes on error.

@@ -63,6 +63,8 @@ type upstreamDelta struct {
 
 // computeUpstreamDelta returns the set of downstream mutations needed before integration.
 // Returns an empty delta (no error) when prevHash is empty.
+// Managed globs are built from the PREV commit's .gitspork.yml (via readConfigFromCommit),
+// falling back to config (the new commit's config) if the prev commit has no .gitspork.yml.
 func computeUpstreamDelta(
     repo *gogit.Repository,
     prevHash, newHash string,
@@ -78,13 +80,13 @@ func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger *Log
 
 **Part 1: File-level delta** (covers `upstream_owned`, `shared_ownership`)
 
-Walk go-git commit history `prevHash..newHash`. For each commit, diff parent→child and collect:
-- `D` (deleted) entries whose paths match any glob in `upstream_owned`, `shared_ownership.merged`, `shared_ownership.structured.prefer_upstream`, or `shared_ownership.structured.prefer_downstream`
-- `R` (renamed) entries matching the same globs
+Diff the trees at `prevHash` and `newHash` directly (single tree diff, not a history walk) and collect:
+- `Delete` actions whose paths match any glob in `upstream_owned`, `shared_ownership.merged`, `shared_ownership.structured.prefer_upstream`, or `shared_ownership.structured.prefer_downstream`
+- `Modify` actions where `From.Name != To.Name` (renamed files) matching the same globs
+
+Globs are built from the **prev commit's config** (read via `readConfigFromCommit`), with fallback to the new config if the prev commit has no `.gitspork.yml`. This ensures files removed by `gitspork rm` (which also removes them from `.gitspork.yml` in the same commit) still propagate to downstream repos.
 
 Map upstream-relative paths to downstream-relative paths (accounting for `UpstreamRepoSubpath` if set).
-
-Use go-git's built-in rename detection (default 50% similarity threshold — same as git).
 
 **Part 2: Config-level delta** (covers `templated`)
 

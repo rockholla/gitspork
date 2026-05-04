@@ -1,0 +1,22 @@
+version: dev
+upstream_owned:
+  - ci/**
+  - scripts/shared-bootstrap.sh
+downstream_owned:
+  - README.md
+shared_ownership:
+  merged:
+    - Makefile
+  structured:
+    prefer_upstream:
+      - deploy-config.yaml
+templated:
+  - template: .gitspork-templates/service-manifest.yml.go.tmpl
+    destination: service-manifest.yml
+    inputs:
+      - name: service_name
+        json_data_path: service-input-data.json
+      - name: team_name
+        json_data_path: service-input-data.json
+migrations:
+  - .gitspork/migrations/0001-init.yml

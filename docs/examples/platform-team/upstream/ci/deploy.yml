@@ -1,0 +1,12 @@
+# Managed by platform team via gitspork — do not edit directly.
+name: Deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: make deploy

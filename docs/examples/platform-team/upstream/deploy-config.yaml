@@ -1,0 +1,4 @@
+# Upstream platform defaults — prefer_upstream means upstream values win on re-integrate.
+region: us-east-1
+replicas: 2
+rolling_update: true

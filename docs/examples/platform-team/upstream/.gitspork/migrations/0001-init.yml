@@ -1,0 +1,2 @@
+post_integrate:
+  exec: ./.gitspork/migrations/scripts/0001-init.sh

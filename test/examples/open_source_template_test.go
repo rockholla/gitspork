@@ -33,9 +33,10 @@ func TestOpenSourceTemplateExample(t *testing.T) {
 	testharness.AssertFileContains(t, downstreamDir, "LICENSE", "MIT License")
 	testharness.AssertFileContains(t, downstreamDir, "CONTRIBUTING.md", "Contributing")
 
-	// downstream-owned files seeded
+	// downstream-owned files seeded; project-meta.json seeded from upstream
 	testharness.AssertFileContains(t, downstreamDir, "README.md", "Seeded by gitspork")
-	testharness.AssertFileContains(t, downstreamDir, "CHANGELOG.md", "Changelog")
+	testharness.AssertFileContains(t, downstreamDir, "CHANGELOG.md", "Seeded by gitspork")
+	testharness.AssertFileContains(t, downstreamDir, "project-meta.json", "my-project")
 
 	// template rendered using project-meta.json
 	testharness.AssertFileContains(t, downstreamDir, "CODE_OF_CONDUCT.md", "my-project")
@@ -87,4 +88,7 @@ func TestOpenSourceTemplateExample(t *testing.T) {
 
 	meta := testharness.ReadFile(t, downstreamDir, "project-meta.json")
 	assert.Contains(t, meta, "forked-project", "project-meta.json downstream value should survive (prefer_downstream)")
+
+	coc := testharness.ReadFile(t, downstreamDir, "CODE_OF_CONDUCT.md")
+	assert.Contains(t, coc, "forked-project", "CODE_OF_CONDUCT.md should re-render with downstream project_name")
 }

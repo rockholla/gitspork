@@ -111,6 +111,7 @@ docker_manifests:
 
 brews:
   - name: gitspork
+    directory: Formula
     repository:
       owner: rockholla
       name: homebrew-gitspork

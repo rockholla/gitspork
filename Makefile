@@ -1,59 +1,40 @@
-.PHONY: test
-test:
-	@go test -v ./...
+.PHONY: build
+build: ## Builds gitspork to dist/gitspork and builds Docker image tagged gitspork:local
+	@mkdir -p dist dist/.docker-build
+	@go build -o dist/gitspork .
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork .
+	@cp Dockerfile dist/.docker-build/Dockerfile
+	@docker build -t gitspork:local dist/.docker-build/
+	@rm -rf dist/.docker-build
 
-.PHONY: ensure-local-test-downstream
-ensure-local-test-downstream:
-	@if [ ! -d /tmp/gitspork-downstream ]; then \
-		mkdir /tmp/gitspork-downstream; \
-		cd /tmp/gitspork-downstream; \
-		git init; \
-		cd $(PWD); \
-	fi; \
-	cp docs/examples/simple/templated-json-input-data.json /tmp/;
+.PHONY: test-unit
+test-unit: ## Run unit tests
+	@go vet ./... && go test -v ./...
 
-# A useful tests while developing locally
-.PHONY: dev-test-integrate
-dev-test-integrate: ensure-local-test-downstream
-	@go run main.go integrate \
-		--upstream-repo-url file://$(PWD) \
-		--upstream-repo-subpath ./docs/examples/simple/upstream \
-		--upstream-repo-version $$(git rev-parse --abbrev-ref HEAD) \
-		--downstream-repo-path /tmp/gitspork-downstream;
+.PHONY: test-functional
+test-functional: ## Run functional tests, compiles the tool and executes in real, functional scenarios using synthetic/dynamic repos
+	@go test -tags functional -timeout 120s -v ./test/functional/...
 
-.PHONY: dev-test-container-integrate
-dev-test-container-integrate: ensure-local-test-downstream
-	@docker rmi gitspork:local && docker system prune -f; \
-	docker build -t gitspork:local .; \
-	docker run -it --rm -v /tmp/gitspork-downstream:/downstream -v $(PWD):/upstream \
-		gitspork:local \
-			integrate \
-				--upstream-repo-url file:///upstream \
-				--upstream-repo-subpath ./docs/examples/simple/upstream \
-				--upstream-repo-version $$(git rev-parse --abbrev-ref HEAD) \
-				--downstream-repo-path /downstream;
+.PHONY: test-functional-docker
+test-functional-docker: ## Run tests specific to testing the containerized version of the tool
+	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
 
-.PHONY: dev-test-integrate-local
-dev-test-integrate-local:
-	@go run main.go integrate-local \
-		--upstream-path ./docs/examples/local/upstream \
-		--downstream-path ./docs/examples/local/downstream
+.PHONY: test-examples
+test-examples: ## Run example scenario tests
+	@go test -tags examples -timeout 120s -v ./test/examples/...
 
-.PHONY: release
-version ?=
-description ?=
-latest ?= false
+.PHONY: test-all
+test-all: test-unit test-functional test-functional-docker ## Run all test suite types
+
 # NOTE: recommended way to run all of this to support multi-arch image builds along w/ release artifacts through goreleaser:
 #   1. Default macOS Docker desktop
 #   2. enabled the containerd image store
 #   3. `docker buildx use desktop-linux`
-release:
-	@if [ -n "$$(git status -s)" ]; then echo "error: releasing only allowed on a clean working tree"; exit 1; fi; \
-	if [ -z "$(version)" ]; then echo "error: please provide the 'version' for the release"; exit 1; fi; \
-	if [ -z "$(description)" ]; then echo "error: please provide the 'description' for the release"; exit 1; fi; \
-	if git ls-remote --tags "$$(git config --get remote.origin.url)" | grep -E '\trefs/tags/$(version)$$' &>/dev/null; then echo "error: git tag for version $(version) already exists in origin repo"; exit 1; fi; \
-	if [ -n "$$(git tag -l $(version))" ]; then echo "error: git tag for version $(version) already exists locally"; exit 1; fi; \
-	echo "releasing gitspork version: $(version), description: $(description)"; \
-	git tag -a $(version) -m "$(description)"; \
-	git push origin $(version) || (git tag -d $(version); exit 1); \
-	GITSPORK_VERSION=$(version) IS_LATEST=$(latest) goreleaser release --verbose --clean || (git tag -d $(version); git push origin --delete $(version); exit 1);
+.PHONY: release
+release: ## For releasing a version of the tool, will prompt for input for version, description etc.
+	@./scripts/release.sh
+
+## Provide help, explained at https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html.
+.PHONY: help
+help: ## display this help
+	@grep -h -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort -u | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

@@ -1,0 +1,4 @@
+# Managed by upstream via gitspork integrate-local — do not edit directly.
+log_level: info
+metrics_enabled: true
+tracing_enabled: true

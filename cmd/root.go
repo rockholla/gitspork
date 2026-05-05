@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/fatih/color"
 	"github.com/rockholla/gitspork/internal"
 	"github.com/spf13/cobra"
 )
@@ -35,13 +36,31 @@ func Execute(ver string) {
 }
 
 func init() {
+	var forceColor bool
+	rootCmd.PersistentFlags().BoolVar(&forceColor, "color", false, "force color output even when stdout is not a TTY (useful in Docker)")
+	cobra.OnInitialize(func() {
+		if forceColor {
+			color.NoColor = false
+		}
+		logger = internal.NewLogger()
+	})
+
 	logger = internal.NewLogger()
 
 	integrateSubcommand := &IntegrateSubcommand{}
 	integrateLocalSubcommand := &IntegrateLocalSubcommand{}
 	InitSubcommand := &InitSubcommand{}
+	checkDriftSubcommand := &CheckDriftSubcommand{}
+
+	mvSubcommand := &MvSubcommand{}
+	rmSubcommand := &RmSubcommand{}
+	schemaSubcommand := &SchemaSubcommand{}
 
 	rootCmd.AddCommand(integrateSubcommand.GetCmd())
 	rootCmd.AddCommand(integrateLocalSubcommand.GetCmd())
 	rootCmd.AddCommand(InitSubcommand.GetCmd())
+	rootCmd.AddCommand(checkDriftSubcommand.GetCmd())
+	rootCmd.AddCommand(mvSubcommand.GetCmd())
+	rootCmd.AddCommand(rmSubcommand.GetCmd())
+	rootCmd.AddCommand(schemaSubcommand.GetCmd())
 }

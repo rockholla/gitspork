@@ -1,0 +1,6 @@
+# Upstream values win on re-integrate (prefer_upstream).
+require_mfa: true
+allowed_regions:
+  - us-east-1
+  - us-west-2
+scan_on_push: true

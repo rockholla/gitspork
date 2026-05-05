@@ -28,7 +28,7 @@ builds:
       - "6"
       - "7"
     ldflags:
-      - -s -w -X main.version={{ .Env.GITSPORK_VERSION }}
+      - -s -w -X main.version={{ .Tag }}
   - id: darwin
     env:
       - CGO_ENABLED=0
@@ -38,7 +38,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{ .Env.GITSPORK_VERSION }}
+      - -s -w -X main.version={{ .Tag }}
 
 archives:
   - formats: [tar.gz]
@@ -57,42 +57,38 @@ archives:
 
 changelog:
   sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
 
 dockers:
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-amd64"]
     goarch: amd64
-    dockerfile: Dockerfile.release
+    dockerfile: Dockerfile
     use: buildx
     build_flag_templates: ["--platform=linux/amd64", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-arm64"]
     goarch: arm64
-    dockerfile: Dockerfile.release
+    dockerfile: Dockerfile
     use: buildx
     build_flag_templates: ["--platform=linux/arm64", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-armv7"]
     goarch: arm
     goarm: "7"
-    dockerfile: Dockerfile.release
+    dockerfile: Dockerfile
     use: buildx
     build_flag_templates: ["--platform=linux/arm/v7", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-armv6"]
     goarch: arm
     goarm: "6"
-    dockerfile: Dockerfile.release
+    dockerfile: Dockerfile
     use: buildx
     build_flag_templates: ["--platform=linux/arm/v6", "--provenance=false"]
   - ids: [linux]
     image_templates: ["rockholla/gitspork:{{ .Tag }}-386"]
     goarch: "386"
-    dockerfile: Dockerfile.release
+    dockerfile: Dockerfile
     use: buildx
     build_flag_templates: ["--platform=linux/386", "--provenance=false"]
 
@@ -105,7 +101,7 @@ docker_manifests:
       - "rockholla/gitspork:{{ .Tag }}-armv6"
       - "rockholla/gitspork:{{ .Tag }}-386"
   - name_template: "rockholla/gitspork:latest"
-    skip_push: '{{ ne .Env.IS_LATEST "true" }}'
+    skip_push: '{{ if .Prerelease }}true{{ else }}false{{ end }}'
     image_templates:
       - "rockholla/gitspork:{{ .Tag }}-amd64"
       - "rockholla/gitspork:{{ .Tag }}-arm64"
@@ -113,7 +109,23 @@ docker_manifests:
       - "rockholla/gitspork:{{ .Tag }}-armv6"
       - "rockholla/gitspork:{{ .Tag }}-386"
 
+brews:
+  - name: gitspork
+    directory: Formula
+    repository:
+      owner: rockholla
+      name: homebrew-gitspork
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/rockholla/gitspork"
+    description: "When a fork just ain't good enough — a tool for managing upstream/downstream git repo relationships"
+    license: "MIT"
+    install: |
+      bin.install "gitspork"
+    test: |
+      system "#{bin}/gitspork", "--version"
+
 release:
   prerelease: auto
+  replace_existing_artifacts: true
   footer: >-
     Container image containing a usable gitspork binary available at https://hub.docker.com/r/rockholla/gitspork/tags?name={{ .Tag }}

@@ -12,7 +12,7 @@ func TestInit(t *testing.T) {
 	initPath, err := os.MkdirTemp("", "gitspork-tests")
 	defer os.RemoveAll(initPath)
 	assert.Nil(t, err)
-	err = Init(initPath, "tests", NewLogger())
+	err = Init(initPath, NewLogger())
 	assert.Nil(t, err)
 	initedConfigBytes, err := os.ReadFile(filepath.Join(initPath, gitSporkConfigFileName))
 	assert.Nil(t, err)

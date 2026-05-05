@@ -3,9 +3,10 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/goccy/go-yaml"
 	"github.com/rockholla/go-lib/marshal"
-	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -28,6 +29,9 @@ type GitSporkConfig struct {
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
 	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
 	Migrations      []string                      `yaml:"migrations" comment:"list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions"`
+
+	// comments holds user-written YAML comments captured on parse, re-injected on write.
+	comments yaml.CommentMap `yaml:"-"`
 }
 
 // GitSporkConfigSharedOwnership represents config for what files will have shared ownership
@@ -56,7 +60,10 @@ type GitSporkConfigMigrationInstructions struct {
 
 // GitSporkDownstreamState represents state stored in the downstream repo to track integrations, etc.
 type GitSporkDownstreamState struct {
-	MigrationsComplete []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
+	MigrationsComplete      []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
+	LastUpstreamRepoURL     string   `json:"last_upstream_repo_url,omitempty"`
+	LastUpstreamRepoSubpath string   `json:"last_upstream_repo_subpath,omitempty"`
+	LastUpstreamCommitHash  string   `json:"last_upstream_commit_hash,omitempty"`
 }
 
 // GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
@@ -71,7 +78,7 @@ type GitSporkConfigTemplated struct {
 type GitSporkConfigTemplatedInput struct {
 	Name          string                                `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt        string                                `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
-	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'"`
+	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
 	PreviousInput *GitSporkConfigTemplatedInputPrevious `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
 }
 
@@ -87,13 +94,16 @@ type GitSporkConfigTemplatedMerged struct {
 
 // IntegrateOptions are options for the Integrate method
 type IntegrateOptions struct {
-	Logger              *Logger
-	UpstreamRepoURL     string
-	UpstreamRepoVersion string
-	UpstreamRepoSubpath string
-	UpstreamRepoToken   string
-	DownstreamRepoPath  string
-	ForceRePrompt       bool
+	Logger                 *Logger
+	UpstreamRepoURL        string
+	UpstreamRepoVersion    string
+	UpstreamRepoCommit     string
+	UpstreamRepoSubpath    string
+	UpstreamRepoToken      string
+	DownstreamRepoPath     string
+	ForceRePrompt          bool
+	ForDriftCheck          bool
+	PrevUpstreamCommitHash string
 }
 
 // IntegrateLocalOptions are options for the IntegrateLocal method
@@ -104,6 +114,15 @@ type IntegrateLocalOptions struct {
 	ForceRePrompt  bool
 }
 
+// CheckDriftOptions are options for the CheckDrift method
+type CheckDriftOptions struct {
+	Logger             *Logger
+	DownstreamRepoPath string
+	UpstreamRepoURL    string
+	UpstreamRepoToken  string
+	Verbose            bool
+}
+
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path
 func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error) {
 	config := &GitSporkConfig{}
@@ -111,10 +130,11 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 	if err != nil {
 		return config, fmt.Errorf("error reading gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
-	err = yaml.Unmarshal(f, config)
-	if err != nil {
+	cm := yaml.CommentMap{}
+	if err = yaml.UnmarshalWithOptions(f, config, yaml.CommentToMap(cm)); err != nil {
 		return config, fmt.Errorf("error parsing gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
+	config.comments = cm
 	return config, nil
 }
 
@@ -181,13 +201,54 @@ func GetGitSporkConfigSchema() (string, string, error) {
 			Exec: "./.gitspork/migrations/0001/post-integrate.sh",
 		},
 	}
-	renderedMain, err := marshal.YAMLWithComments(gitSporkExampleConfig, 2)
+	renderedMain, err := marshal.YAMLWithComments(gitSporkExampleConfig, 0)
 	if err != nil {
 		return "", "", err
 	}
-	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 2)
+	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 0)
 	if err != nil {
 		return "", "", err
 	}
 	return renderedMain, renderedMigration, nil
+}
+
+// WriteGitSporkConfig writes config to configPath, prepending header if non-empty.
+// User-written YAML comments captured during ParseGitSporkConfig are re-injected automatically.
+func WriteGitSporkConfig(configPath string, config *GitSporkConfig, header ...string) error {
+	var b []byte
+	var err error
+	if config.comments != nil {
+		b, err = yaml.MarshalWithOptions(config, yaml.WithComment(config.comments))
+	} else {
+		b, err = yaml.Marshal(config)
+	}
+	if err != nil {
+		return fmt.Errorf("error marshalling config: %v", err)
+	}
+	if len(header) > 0 && header[0] != "" {
+		b = append([]byte(header[0]), b...)
+	}
+	return os.WriteFile(configPath, b, 0644)
+}
+
+// FindGitSporkConfig walks up from startDir to find .gitspork.yml (or .gitspork.yaml) and returns its path.
+func FindGitSporkConfig(startDir string) (string, error) {
+	abs, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
+	dir := abs
+	for {
+		if p := filepath.Join(dir, gitSporkConfigFileName); fileExists(p) {
+			return p, nil
+		}
+		if p := filepath.Join(dir, gitSporkConfigFileNameAlt); fileExists(p) {
+			return p, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no .gitspork.yml found in %s or any parent directory", startDir)
+		}
+		dir = parent
+	}
 }

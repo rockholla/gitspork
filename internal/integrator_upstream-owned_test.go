@@ -21,7 +21,7 @@ func TestParseUpstreamOwnedEntry(t *testing.T) {
 		},
 		{
 			name:        "pattern with rename syntax",
-			entry:       "source.txt:destination.txt",
+			entry:       "source.txt=>destination.txt",
 			wantPattern: "source.txt",
 			wantDest:    "destination.txt",
 		},
@@ -33,15 +33,21 @@ func TestParseUpstreamOwnedEntry(t *testing.T) {
 		},
 		{
 			name:        "glob pattern with rename",
-			entry:       ".config-upstream.json:.config.json",
+			entry:       ".config-upstream.json=>.config.json",
 			wantPattern: ".config-upstream.json",
 			wantDest:    ".config.json",
 		},
 		{
-			name:        "path with multiple colons uses only first",
-			entry:       "source:dest:extra",
+			name:        "path with multiple arrows uses only first",
+			entry:       "source=>dest=>extra",
 			wantPattern: "source",
-			wantDest:    "dest:extra",
+			wantDest:    "dest=>extra",
+		},
+		{
+			name:        "path with colon is treated as simple pattern",
+			entry:       "path:with:colons",
+			wantPattern: "path:with:colons",
+			wantDest:    "path:with:colons",
 		},
 	}
 

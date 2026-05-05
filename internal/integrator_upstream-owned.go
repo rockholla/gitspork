@@ -11,10 +11,10 @@ type IntegratorUpstreamOwned struct{}
 
 // parseUpstreamOwnedEntry parses an upstream_owned entry which can be either:
 // - "file.txt" (simple pattern)
-// - "source.txt:destination.txt" (rename syntax)
+// - "source.txt=>destination.txt" (rename syntax)
 func parseUpstreamOwnedEntry(entry string) (pattern string, destPattern string) {
-	if strings.Contains(entry, ":") {
-		parts := strings.SplitN(entry, ":", 2)
+	if strings.Contains(entry, "=>") {
+		parts := strings.SplitN(entry, "=>", 2)
 		return parts[0], parts[1]
 	}
 	return entry, entry

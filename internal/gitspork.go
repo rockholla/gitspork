@@ -23,7 +23,7 @@ var (
 // GitSporkConfig represents the config an upstream repo defines in .gitspork.yml
 type GitSporkConfig struct {
 	Version         string                        `yaml:"version" comment:"version of gitspork relevant to the config"`
-	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo"`
+	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo; optionally use 'source=>destination' rename syntax to sync a file to a different path in the downstream"`
 	DownstreamOwned []string                      `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated"`
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
 	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
@@ -136,7 +136,7 @@ func ParseMigrationConfig(migrationConfigPath string) (*GitSporkConfigMigration,
 func GetGitSporkConfigSchema() (string, string, error) {
 	gitSporkExampleConfig := &GitSporkConfig{
 		Version:         "v0.1.0",
-		UpstreamOwned:   []string{"upstream-owned.txt"},
+		UpstreamOwned:   []string{"upstream-owned.txt", "source-file.txt=>destination-file.txt"},
 		DownstreamOwned: []string{"downstream-owned.md"},
 		SharedOwnership: GitSporkConfigSharedOwnership{
 			Merged: []string{"shared-ownership-merged.txt"},

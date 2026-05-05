@@ -1,0 +1,12 @@
+# Managed by upstream template via gitspork — do not edit directly.
+name: Release
+on:
+  push:
+    tags: ['v*']
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release
+        run: make release

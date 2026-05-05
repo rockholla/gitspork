@@ -17,8 +17,8 @@ integrate run, against an isolated copy of the downstream repo, and reports any 
 
 Exit codes:
   0 - no drift detected
-  1 - drift detected
-  non-zero (other) - error (missing state, unclean working tree, clone failure, etc.)
+  1 - error (missing state, unclean working tree, clone failure, etc.)
+  2 - drift detected
 
 See https://github.com/rockholla/gitspork/docs for more info.`
 )
@@ -46,7 +46,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				Verbose:            verbose,
 			})
 			if errors.Is(err, internal.ErrDriftDetected) {
-				os.Exit(1)
+				os.Exit(2)
 			}
 			return err
 		},

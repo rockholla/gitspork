@@ -1,0 +1,10 @@
+# Managed by upstream template via gitspork — do not edit directly.
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: make test

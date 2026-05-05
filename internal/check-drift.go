@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
@@ -59,7 +61,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		return fmt.Errorf("error accessing downstream worktree: %v", err)
 	}
 
-	if err := checkCleanWorkingTree(wt); err != nil {
+	if err := checkCleanWorkingTree(opts.DownstreamRepoPath); err != nil {
 		return err
 	}
 
@@ -156,19 +158,21 @@ func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*objec
 		return nil, fmt.Errorf("error loading new commit: %v", err)
 	}
 
-	patch, err := headCommit.Patch(newCommit)
+	// Reverse: show what drifted from clean (re-integrated) state to HEAD,
+	// not what integrate would do to correct it.
+	patch, err := newCommit.Patch(headCommit)
 	if err != nil {
 		return nil, fmt.Errorf("error computing patch: %v", err)
 	}
 	return patch, nil
 }
 
-func checkCleanWorkingTree(wt *gogit.Worktree) error {
-	status, err := wt.StatusWithOptions(gogit.StatusOptions{Strategy: gogit.Preload})
+func checkCleanWorkingTree(repoPath string) error {
+	out, err := exec.Command("git", "-c", "safe.directory=*", "-C", repoPath, "status", "--porcelain").Output()
 	if err != nil {
 		return fmt.Errorf("error checking working tree status: %v", err)
 	}
-	if !status.IsClean() {
+	if strings.TrimSpace(string(out)) != "" {
 		return fmt.Errorf("working tree is not clean — commit or stash changes before running check-drift")
 	}
 	return nil

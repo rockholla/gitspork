@@ -1,0 +1,17 @@
+upstream_owned:
+  - .github/**
+  - LICENSE
+  - CONTRIBUTING.md
+downstream_owned:
+  - README.md
+  - CHANGELOG.md
+shared_ownership:
+  structured:
+    prefer_downstream:
+      - project-meta.json
+templated:
+  - template: .gitspork-templates/CODE_OF_CONDUCT.md.go.tmpl
+    destination: CODE_OF_CONDUCT.md
+    inputs:
+      - name: project_name
+        json_data_path: project-meta.json

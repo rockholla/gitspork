@@ -1,0 +1,24 @@
+upstream_owned:
+  - .golangci.yml
+  - policies/**
+shared_ownership:
+  merged:
+    - .env.example
+  structured:
+    prefer_upstream:
+      - security-policy.yaml
+templated:
+  - template: .gitspork-templates/service-info.txt.go.tmpl
+    destination: service-info.txt
+    inputs:
+      - name: service_name
+        json_data_path: service-input-data.json
+  - template: .gitspork-templates/security-summary.md.go.tmpl
+    destination: security-summary.md
+    inputs:
+      - name: service_name
+        previous_input:
+          template: .gitspork-templates/service-info.txt.go.tmpl
+          name: service_name
+migrations:
+  - .gitspork/migrations/0001-policy-init.yml

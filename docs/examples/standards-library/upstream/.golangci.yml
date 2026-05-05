@@ -1,0 +1,10 @@
+# Managed by standards library via gitspork — do not edit directly.
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - staticcheck
+    - unused
+run:
+  timeout: 5m

@@ -57,12 +57,29 @@ type GitSporkConfigMigrationInstructions struct {
 	Exec string `yaml:"exec" comment:"command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation"`
 }
 
-// GitSporkDownstreamState represents state stored in the downstream repo to track integrations, etc.
+// GitSporkDownstreamState represents state stored in the downstream repo to track integrations.
 type GitSporkDownstreamState struct {
-	MigrationsComplete      []string `json:"migrations_complete" comment:"list of migration IDs that have completed successfully against the downstream repo"`
-	LastUpstreamRepoURL     string   `json:"last_upstream_repo_url,omitempty"`
-	LastUpstreamRepoSubpath string   `json:"last_upstream_repo_subpath,omitempty"`
-	LastUpstreamCommitHash  string   `json:"last_upstream_commit_hash,omitempty"`
+	MigrationsComplete []string                `json:"migrations_complete"`
+	Upstreams          []GitSporkUpstreamState `json:"upstreams,omitempty"`
+	// Deprecated: migrated to Upstreams on first load.
+	LastUpstreamRepoURL     string `json:"last_upstream_repo_url,omitempty"`
+	LastUpstreamRepoSubpath string `json:"last_upstream_repo_subpath,omitempty"`
+	LastUpstreamCommitHash  string `json:"last_upstream_commit_hash,omitempty"`
+}
+
+// UpstreamSpec is a parsed --upstream flag entry.
+type UpstreamSpec struct {
+	URL     string
+	Version string
+	Subpath string
+	Token   string
+}
+
+// GitSporkUpstreamState records the last integration for a single upstream.
+type GitSporkUpstreamState struct {
+	URL        string `json:"url"`
+	Subpath    string `json:"subpath,omitempty"`
+	CommitHash string `json:"commit_hash"`
 }
 
 // GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
@@ -103,12 +120,14 @@ type IntegrateOptions struct {
 	ForceRePrompt          bool
 	ForDriftCheck          bool
 	PrevUpstreamCommitHash string
+	Upstreams              []UpstreamSpec
 }
 
 // IntegrateLocalOptions are options for the IntegrateLocal method
 type IntegrateLocalOptions struct {
 	Logger         *Logger
 	UpstreamPath   string
+	UpstreamPaths  []string
 	DownstreamPath string
 	ForceRePrompt  bool
 }
@@ -117,8 +136,7 @@ type IntegrateLocalOptions struct {
 type CheckDriftOptions struct {
 	Logger             *Logger
 	DownstreamRepoPath string
-	UpstreamRepoURL    string
-	UpstreamRepoToken  string
+	Upstreams          []UpstreamSpec
 	Verbose            bool
 }
 

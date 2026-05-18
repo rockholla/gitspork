@@ -67,3 +67,25 @@ func integrateArgs(upstreamDir, downstreamDir string) []string {
 		"--downstream-repo-path", downstreamDir,
 	}
 }
+
+// buildSecondUpstream creates a minimal second upstream with a distinct file
+// so precedence tests can verify which upstream's content wins.
+func buildSecondUpstream(t *testing.T) string {
+	t.Helper()
+	return NewUpstreamRepo(t, map[string]string{
+		"upstream-owned/file.txt": "second upstream content\n",
+	}, `upstream_owned:
+- upstream-owned/**
+`)
+}
+
+// integrateArgsMulti returns integrate args using the repeatable --upstream flag
+// for two upstream directories.
+func integrateArgsMulti(upstreamDir1, upstreamDir2, downstreamDir string) []string {
+	return []string{
+		"integrate",
+		"--upstream", "url=file://" + upstreamDir1 + ",version=main",
+		"--upstream", "url=file://" + upstreamDir2 + ",version=main",
+		"--downstream-repo-path", downstreamDir,
+	}
+}

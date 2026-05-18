@@ -31,7 +31,7 @@ func TestCheckDrift_no_drift(t *testing.T) {
 	out, code := runner.Run(t, []string{
 		"check-drift",
 		"--downstream-repo-path", downstreamDir,
-		"--upstream-repo-url", "file://" + upstreamDir,
+		"--upstream", "url=file://" + upstreamDir,
 	}, downstreamDir)
 	require.Equal(t, 0, code, "expected no drift (exit 0):\n%s", out)
 }
@@ -107,7 +107,7 @@ func TestCheckDrift_drift_detected(t *testing.T) {
 	out, code := runner.Run(t, []string{
 		"check-drift",
 		"--downstream-repo-path", downstreamDir,
-		"--upstream-repo-url", "file://" + upstreamDir,
+		"--upstream", "url=file://" + upstreamDir,
 		"--verbose",
 	}, downstreamDir)
 	require.Equal(t, 2, code, "expected drift detected (exit 2):\n%s", out)

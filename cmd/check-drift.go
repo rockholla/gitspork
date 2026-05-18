@@ -65,7 +65,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&downstreamRepoPath, "downstream-repo-path", "d", "",
 		"local path to the downstream repo to check, defaults to the present working directory")
 	cmd.PersistentFlags().StringArrayVar(&upstreamFlags, "upstream", nil,
-		"override upstream(s) as comma-separated key=value pairs (url, subpath, token); repeatable")
+		"override upstream(s) as comma-separated key=value pairs (url, version, subpath, token); repeatable")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false,
 		"print full git diff output when drift is detected")
 

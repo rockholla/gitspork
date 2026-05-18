@@ -40,17 +40,12 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	if err != nil {
 		return fmt.Errorf("error loading downstream state: %v", err)
 	}
-	if state.LastUpstreamCommitHash == "" {
+	if len(state.Upstreams) == 0 {
 		return fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
 	}
 
-	upstreamURL := opts.UpstreamRepoURL
-	if upstreamURL == "" {
-		upstreamURL = state.LastUpstreamRepoURL
-	}
-	if upstreamURL == "" {
-		return fmt.Errorf("no upstream repo URL found in state — re-run 'gitspork integrate' or pass --upstream-repo-url")
-	}
+	// TODO: multi-upstream support added in Task 7; for now use empty string placeholder
+	upstreamURL := ""
 
 	repo, err := gogit.PlainOpen(opts.DownstreamRepoPath)
 	if err != nil {
@@ -95,7 +90,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 		UpstreamRepoURL:     upstreamURL,
 		UpstreamRepoCommit:  state.LastUpstreamCommitHash,
 		UpstreamRepoSubpath: state.LastUpstreamRepoSubpath,
-		UpstreamRepoToken:   opts.UpstreamRepoToken,
+		UpstreamRepoToken:   "",
 		DownstreamRepoPath:  opts.DownstreamRepoPath,
 		ForDriftCheck:       true,
 	}); err != nil {

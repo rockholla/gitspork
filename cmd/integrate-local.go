@@ -20,9 +20,9 @@ See https://github.com/rockholla/gitspork/docs for more info on configuration op
 // IntegrateLocalSubcommand represents the subcommand and all related functionality for `gitspork integrate-local`
 type IntegrateLocalSubcommand struct{}
 
-// GetCmd will return the native cobra command for the integrate subcommand
+// GetCmd will return the native cobra command for the integrate-local subcommand
 func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
-	var upstreamPath string
+	var upstreamPaths []string
 	var downstreamPath string
 	var forceRePrompt bool
 
@@ -33,19 +33,19 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return internal.IntegrateLocal(&internal.IntegrateLocalOptions{
 				Logger:         logger,
-				UpstreamPath:   upstreamPath,
+				UpstreamPaths:  upstreamPaths,
 				DownstreamPath: downstreamPath,
 				ForceRePrompt:  forceRePrompt,
 			})
 		},
 	}
 
-	cmd.PersistentFlags().StringVarP(&upstreamPath, "upstream-path", "u", "",
-		"local path that contains a template/gitspork upstream configuration")
+	cmd.PersistentFlags().StringArrayVarP(&upstreamPaths, "upstream-path", "u", nil,
+		"local path that contains a template/gitspork upstream configuration; repeatable for multiple upstreams")
 	cmd.PersistentFlags().StringVarP(&downstreamPath, "downstream-path", "d", "",
 		"local path to integrate/re-integrate w/ the standards set at the upstream-path")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
-		"If true, will disregard and previous prompt input value caches for templated instructions, requiring values to be re-input by the user")
+		"If true, will disregard any previous prompt input value caches for templated instructions")
 
 	return cmd
 }

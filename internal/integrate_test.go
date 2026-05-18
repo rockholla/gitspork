@@ -4,7 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,4 +154,62 @@ func Test_loadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoURL)
 	assert.Equal(t, "", state.LastUpstreamCommitHash)
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
+}
+
+// testCommitAll stages and commits all changes in dir, returning the commit hash.
+func testCommitAll(t *testing.T, repo *gogit.Repository, dir, message string) plumbing.Hash {
+	t.Helper()
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	sig := &object.Signature{Name: "gitspork-test", Email: "gitspork-test@localhost", When: time.Now()}
+	hash, err := wt.Commit(message, &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
+	return hash
+}
+
+func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
+	// Create a local upstream repo with two commits; verify that Integrate
+	// checks out the older commit (v1) when UpstreamRepoCommit is set.
+	upstreamDir := t.TempDir()
+	upstreamRepo, err := gogit.PlainInit(upstreamDir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+
+	const gitsporkYML = `upstream_owned:
+- upstream-owned/**
+`
+
+	// Commit v1: write version one content.
+	require.NoError(t, os.MkdirAll(filepath.Join(upstreamDir, "upstream-owned"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version one\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, ".gitspork.yml"), []byte(gitsporkYML), 0644))
+	commitV1 := testCommitAll(t, upstreamRepo, upstreamDir, "v1")
+
+	// Commit v2: update to version two content.
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version two\n"), 0644))
+	testCommitAll(t, upstreamRepo, upstreamDir, "v2")
+
+	// Create downstream repo.
+	downstreamDir := t.TempDir()
+	_, err = gogit.PlainInit(downstreamDir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+
+	logger := NewLogger()
+	err = Integrate(&IntegrateOptions{
+		Logger:             logger,
+		UpstreamRepoURL:    "file://" + upstreamDir,
+		UpstreamRepoCommit: commitV1.String(),
+		DownstreamRepoPath: downstreamDir,
+		ForDriftCheck:      true, // skip state write; we only care about file content
+	})
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned", "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "version one\n", string(content),
+		"Integrate with UpstreamRepoCommit set to v1 should produce v1 content, not HEAD (v2)")
 }

@@ -51,6 +51,61 @@ type TemplatedIntegrator interface {
 	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error
 }
 
+// ParseUpstreamFlag parses a comma-separated key=value --upstream flag value.
+// Valid keys: url (required), version, subpath, token.
+func ParseUpstreamFlag(val string) (UpstreamSpec, error) {
+	spec := UpstreamSpec{}
+	for _, part := range strings.Split(val, ",") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			return spec, fmt.Errorf("--upstream: invalid key=value pair %q", part)
+		}
+		switch kv[0] {
+		case "url":
+			spec.URL = kv[1]
+		case "version":
+			spec.Version = kv[1]
+		case "subpath":
+			spec.Subpath = kv[1]
+		case "token":
+			spec.Token = kv[1]
+		default:
+			return spec, fmt.Errorf("--upstream: unknown key %q", kv[0])
+		}
+	}
+	if spec.URL == "" {
+		return spec, fmt.Errorf("--upstream: missing required key \"url\"")
+	}
+	return spec, nil
+}
+
+func normalizeUpstreamURL(rawURL string, subpath string) string {
+	u := rawURL
+	// SSH git@host:org/repo -> host/org/repo
+	if re := regexp.MustCompile(`^git@([^:]+):(.+)$`); re.MatchString(u) {
+		u = re.ReplaceAllString(u, "$1/$2")
+	}
+	// strip https:// or http:// prefix
+	u = regexp.MustCompile(`^https?://`).ReplaceAllString(u, "")
+	// strip trailing .git
+	u = strings.TrimSuffix(u, ".git")
+	if subpath != "" {
+		u = u + "::" + subpath
+	}
+	return strings.ToLower(u)
+}
+
+func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamState) {
+	key := normalizeUpstreamURL(entry.URL, entry.Subpath)
+	for i, existing := range state.Upstreams {
+		if normalizeUpstreamURL(existing.URL, existing.Subpath) == key {
+			state.Upstreams[i] = entry
+			return
+		}
+	}
+	state.Upstreams = append(state.Upstreams, entry)
+}
+
 // Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
 func Integrate(opts *IntegrateOptions) error {
 	var err error

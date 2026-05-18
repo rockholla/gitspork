@@ -56,3 +56,79 @@ func Test_resolveUpstreamURL(t *testing.T) {
 		assert.Equal(t, "git@github.com:org/repo.git", result)
 	})
 }
+
+func Test_ParseUpstreamFlag(t *testing.T) {
+	t.Run("url only", func(t *testing.T) {
+		spec, err := ParseUpstreamFlag("url=git@github.com:org/repo.git")
+		require.NoError(t, err)
+		assert.Equal(t, "git@github.com:org/repo.git", spec.URL)
+		assert.Equal(t, "", spec.Version)
+		assert.Equal(t, "", spec.Subpath)
+		assert.Equal(t, "", spec.Token)
+	})
+	t.Run("all keys", func(t *testing.T) {
+		spec, err := ParseUpstreamFlag("url=https://github.com/org/repo.git,version=main,subpath=infra,token=tok")
+		require.NoError(t, err)
+		assert.Equal(t, "https://github.com/org/repo.git", spec.URL)
+		assert.Equal(t, "main", spec.Version)
+		assert.Equal(t, "infra", spec.Subpath)
+		assert.Equal(t, "tok", spec.Token)
+	})
+	t.Run("missing url returns error", func(t *testing.T) {
+		_, err := ParseUpstreamFlag("version=main")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "url")
+	})
+	t.Run("unknown key returns error", func(t *testing.T) {
+		_, err := ParseUpstreamFlag("url=git@github.com:org/repo.git,branch=main")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "branch")
+	})
+}
+
+func Test_normalizeUpstreamURL(t *testing.T) {
+	t.Run("SSH and HTTPS same repo match", func(t *testing.T) {
+		assert.Equal(t,
+			normalizeUpstreamURL("git@github.com:org/repo.git", ""),
+			normalizeUpstreamURL("https://github.com/org/repo.git", ""))
+	})
+	t.Run("subpath included in key", func(t *testing.T) {
+		assert.NotEqual(t,
+			normalizeUpstreamURL("git@github.com:org/repo.git", "infra"),
+			normalizeUpstreamURL("git@github.com:org/repo.git", ""))
+	})
+	t.Run("trailing .git stripped", func(t *testing.T) {
+		assert.Equal(t,
+			normalizeUpstreamURL("https://github.com/org/repo.git", ""),
+			normalizeUpstreamURL("https://github.com/org/repo", ""))
+	})
+}
+
+func Test_upsertUpstreamState_newEntry(t *testing.T) {
+	state := &GitSporkDownstreamState{}
+	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
+	require.Len(t, state.Upstreams, 1)
+	assert.Equal(t, "https://github.com/org/repo.git", state.Upstreams[0].URL)
+	assert.Equal(t, "abc", state.Upstreams[0].CommitHash)
+}
+
+func Test_upsertUpstreamState_updateExisting(t *testing.T) {
+	state := &GitSporkDownstreamState{Upstreams: []GitSporkUpstreamState{
+		{URL: "git@github.com:org/repo.git", CommitHash: "old"},
+	}}
+	// SSH and HTTPS forms of same repo — should match and update in place
+	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
+	require.Len(t, state.Upstreams, 1)
+	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
+}
+
+func Test_upsertUpstreamState_orderPreserved(t *testing.T) {
+	state := &GitSporkDownstreamState{Upstreams: []GitSporkUpstreamState{
+		{URL: "https://github.com/org/base.git", CommitHash: "b1"},
+		{URL: "https://github.com/org/platform.git", CommitHash: "p1"},
+	}}
+	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
+	require.Len(t, state.Upstreams, 2)
+	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
+	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)
+}

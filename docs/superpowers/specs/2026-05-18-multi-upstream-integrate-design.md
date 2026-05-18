@@ -141,7 +141,7 @@ Exit codes remain: `0` no drift, `1` error, `2` drift detected.
 
 - Providing both `--upstream` and old single flags together: immediate error before any work begins.
 - `--upstream` flag with missing `url` key: immediate parse error.
-- `--upstream` override entry with no matching state entry (no recorded commit hash): error with message naming the unmatched upstream.
+- `check-drift` `--upstream` override entry with no matching state entry (no recorded commit hash): error with message naming the unmatched upstream. This does not apply to `integrate`, where an `--upstream` entry with no prior state record is the normal first-time integration case.
 - Any upstream failing mid-loop in `integrate`: stop, return error, state reflects completed upstreams.
 - `check-drift` with no upstreams in state and no `--upstream` flags: error directing user to run `integrate` first.
 

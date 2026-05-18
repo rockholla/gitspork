@@ -32,6 +32,8 @@ const (
 var (
 	structuredDataYAMLExtensions []string = []string{".yaml", ".yml"}
 	structuredDataJSONExtensions []string = []string{".json"}
+	reSSHURL                               = regexp.MustCompile(`^git@([^:]+):(.+)$`)
+	reHTTPProto                            = regexp.MustCompile(`^https?://`)
 )
 
 // GitSporkIntegrator defines the common implementation requirements for any thing processing a list of glob patterns to integrate b/w upstream/downstream
@@ -71,11 +73,11 @@ func ParseUpstreamFlag(val string) (UpstreamSpec, error) {
 func normalizeUpstreamURL(rawURL string, subpath string) string {
 	u := rawURL
 	// SSH git@host:org/repo -> host/org/repo
-	if re := regexp.MustCompile(`^git@([^:]+):(.+)$`); re.MatchString(u) {
-		u = re.ReplaceAllString(u, "$1/$2")
+	if reSSHURL.MatchString(u) {
+		u = reSSHURL.ReplaceAllString(u, "$1/$2")
 	}
 	// strip https:// or http:// prefix
-	u = regexp.MustCompile(`^https?://`).ReplaceAllString(u, "")
+	u = reHTTPProto.ReplaceAllString(u, "")
 	// strip trailing .git
 	u = strings.TrimSuffix(u, ".git")
 	if subpath != "" {

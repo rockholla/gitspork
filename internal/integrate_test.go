@@ -156,8 +156,8 @@ func Test_loadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
-// testCommitAll stages and commits all changes in dir, returning the commit hash.
-func testCommitAll(t *testing.T, repo *gogit.Repository, dir, message string) plumbing.Hash {
+// testCommitAll stages and commits all changes in repo, returning the commit hash.
+func testCommitAll(t *testing.T, repo *gogit.Repository, message string) plumbing.Hash {
 	t.Helper()
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
@@ -185,11 +185,11 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(upstreamDir, "upstream-owned"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version one\n"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, ".gitspork.yml"), []byte(gitsporkYML), 0644))
-	commitV1 := testCommitAll(t, upstreamRepo, upstreamDir, "v1")
+	commitV1 := testCommitAll(t, upstreamRepo, "v1")
 
 	// Commit v2: update to version two content.
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version two\n"), 0644))
-	testCommitAll(t, upstreamRepo, upstreamDir, "v2")
+	testCommitAll(t, upstreamRepo, "v2")
 
 	// Create downstream repo.
 	downstreamDir := t.TempDir()

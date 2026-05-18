@@ -101,7 +101,6 @@ func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamS
 func Integrate(opts *IntegrateOptions) error {
 	var err error
 
-	// setup
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {
@@ -114,32 +113,69 @@ func Integrate(opts *IntegrateOptions) error {
 		}
 	}
 
+	// Normalize: synthesize Upstreams from single-upstream fields for backward compat.
+	if len(opts.Upstreams) == 0 && opts.UpstreamRepoURL != "" {
+		opts.Upstreams = []UpstreamSpec{{
+			URL:     opts.UpstreamRepoURL,
+			Version: opts.UpstreamRepoVersion,
+			Subpath: opts.UpstreamRepoSubpath,
+			Token:   opts.UpstreamRepoToken,
+		}}
+	}
+	if len(opts.Upstreams) == 0 {
+		return fmt.Errorf("no upstream specified: provide --upstream or --upstream-repo-url")
+	}
+
+	for _, upstream := range opts.Upstreams {
+		if err := integrateOne(opts, upstream); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 	prevHash := ""
 	if !opts.ForDriftCheck {
 		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
-		prevHash = existingState.LastUpstreamCommitHash
-		opts.PrevUpstreamCommitHash = prevHash
+		key := normalizeUpstreamURL(upstream.URL, upstream.Subpath)
+		for _, u := range existingState.Upstreams {
+			if normalizeUpstreamURL(u.URL, u.Subpath) == key {
+				prevHash = u.CommitHash
+				break
+			}
+		}
 	}
 
-	// clone the upstream git repo to a temporary local location to start
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
 		return fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
-	originalUpstreamURL := opts.UpstreamRepoURL
-	opts.Logger.Log("cloning gitspork upstream repo %s", opts.UpstreamRepoURL)
-	commitHash, err := cloneUpstreamForIntegrate(cloneDir, opts)
+
+	singleOpts := &IntegrateOptions{
+		Logger:                 opts.Logger,
+		UpstreamRepoURL:        upstream.URL,
+		UpstreamRepoVersion:    upstream.Version,
+		UpstreamRepoSubpath:    upstream.Subpath,
+		UpstreamRepoToken:      upstream.Token,
+		DownstreamRepoPath:     opts.DownstreamRepoPath,
+		ForceRePrompt:          opts.ForceRePrompt,
+		ForDriftCheck:          opts.ForDriftCheck,
+		PrevUpstreamCommitHash: prevHash,
+	}
+
+	originalUpstreamURL := upstream.URL
+	opts.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
+	commitHash, err := cloneUpstreamForIntegrate(cloneDir, singleOpts)
 	if err != nil {
 		return err
 	}
 
-	// now we can work our way through both the upstream clone and our local downstream source
-	// to begin integrating, merging, etc.
-	upstreamRootPath := filepath.Join(cloneDir, opts.UpstreamRepoSubpath)
+	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
 	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
@@ -151,7 +187,7 @@ func Integrate(opts *IntegrateOptions) error {
 		if err != nil {
 			return fmt.Errorf("error opening upstream clone for delta computation: %v", err)
 		}
-		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, opts.UpstreamRepoSubpath)
+		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, upstream.Subpath)
 		if err != nil {
 			return fmt.Errorf("error computing upstream delta: %v", err)
 		}
@@ -164,15 +200,16 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	// only persist upstream metadata and migration completions on a real integrate, not on a drift-check re-integrate
 	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		state.LastUpstreamRepoURL = originalUpstreamURL
-		state.LastUpstreamRepoSubpath = opts.UpstreamRepoSubpath
-		state.LastUpstreamCommitHash = commitHash
+		upsertUpstreamState(state, GitSporkUpstreamState{
+			URL:        originalUpstreamURL,
+			Subpath:    upstream.Subpath,
+			CommitHash: commitHash,
+		})
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
 			return fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}

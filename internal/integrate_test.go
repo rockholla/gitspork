@@ -132,3 +132,21 @@ func Test_upsertUpstreamState_orderPreserved(t *testing.T) {
 	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
 	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)
 }
+
+func Test_loadDownstreamState_migration(t *testing.T) {
+	dir := t.TempDir()
+	metaDir := filepath.Join(dir, ".gitspork")
+	require.NoError(t, os.MkdirAll(metaDir, 0755))
+	oldState := `{"migrations_complete":["m1"],"last_upstream_repo_url":"git@github.com:org/repo.git","last_upstream_repo_subpath":"infra","last_upstream_commit_hash":"abc123"}`
+	require.NoError(t, os.WriteFile(filepath.Join(metaDir, "downstream-state.json"), []byte(oldState), 0644))
+
+	state, err := loadDownstreamState(dir)
+	require.NoError(t, err)
+	require.Len(t, state.Upstreams, 1)
+	assert.Equal(t, "git@github.com:org/repo.git", state.Upstreams[0].URL)
+	assert.Equal(t, "infra", state.Upstreams[0].Subpath)
+	assert.Equal(t, "abc123", state.Upstreams[0].CommitHash)
+	// deprecated fields cleared
+	assert.Equal(t, "", state.LastUpstreamRepoURL)
+	assert.Equal(t, "", state.LastUpstreamCommitHash)
+}

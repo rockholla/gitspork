@@ -592,6 +592,17 @@ func loadDownstreamState(downstreamRepoPath string) (*GitSporkDownstreamState, e
 	if err != nil {
 		return state, err
 	}
+	// Migrate deprecated single-upstream fields to Upstreams slice.
+	if len(state.Upstreams) == 0 && state.LastUpstreamCommitHash != "" {
+		state.Upstreams = []GitSporkUpstreamState{{
+			URL:        state.LastUpstreamRepoURL,
+			Subpath:    state.LastUpstreamRepoSubpath,
+			CommitHash: state.LastUpstreamCommitHash,
+		}}
+		state.LastUpstreamRepoURL = ""
+		state.LastUpstreamRepoSubpath = ""
+		state.LastUpstreamCommitHash = ""
+	}
 	return state, nil
 }
 

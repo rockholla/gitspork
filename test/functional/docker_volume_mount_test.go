@@ -174,7 +174,7 @@ func TestDockerRootMount_check_drift(t *testing.T) {
 
 	out, code = runAsRoot(t, upstreamDir, downstreamDir, "/downstream", []string{
 		"check-drift",
-		"--upstream-repo-url", "file://" + upstreamDir,
+		"--upstream", "url=file://" + upstreamDir,
 		"--downstream-repo-path", "/downstream",
 	})
 	require.Equal(t, 0, code, "check-drift as root reported unexpected result:\n%s", out)

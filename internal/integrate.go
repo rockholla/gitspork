@@ -162,6 +162,7 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 		UpstreamRepoVersion:    upstream.Version,
 		UpstreamRepoSubpath:    upstream.Subpath,
 		UpstreamRepoToken:      upstream.Token,
+		UpstreamRepoCommit:     opts.UpstreamRepoCommit,
 		DownstreamRepoPath:     opts.DownstreamRepoPath,
 		ForceRePrompt:          opts.ForceRePrompt,
 		ForDriftCheck:          opts.ForDriftCheck,

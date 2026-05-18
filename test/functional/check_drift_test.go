@@ -167,3 +167,34 @@ func TestCheckDrift_upstream_override_explicit_url(t *testing.T) {
 	}, downstreamDir)
 	require.Equal(t, 0, code, "expected no drift with explicit --upstream:\n%s", out)
 }
+
+func TestCheckDrift_uses_stored_commit_not_head(t *testing.T) {
+	// Regression test: check-drift must re-integrate at the stored commit hash,
+	// not at HEAD. After integration, a new upstream commit changes an
+	// upstream-owned file. check-drift should still report no drift because
+	// it uses the commit that was actually integrated, not the new HEAD.
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+
+	// Integrate and commit the downstream at the current upstream HEAD.
+	integrateForDrift(t, runner, upstreamDir, downstreamDir)
+	// check-drift re-runs integrate internally and needs input-data.json.
+	prepDownstreamWithInputData(t, downstreamDir)
+
+	// Add a new commit to the upstream that changes an upstream-owned file.
+	// check-drift must NOT use this new commit — it must use the stored one.
+	WriteFiles(t, upstreamDir, map[string]string{
+		"upstream-owned/file.txt": "new upstream content after integration\n",
+	})
+	CommitAll(t, OpenRepo(t, upstreamDir), upstreamDir, "upstream advances past integrated commit")
+
+	out, code := runner.Run(t, []string{
+		"check-drift",
+		"--downstream-repo-path", downstreamDir,
+		"--upstream", "url=file://" + upstreamDir,
+	}, downstreamDir)
+	require.Equal(t, 0, code,
+		"check-drift should report no drift because it must use the stored commit, not the new upstream HEAD:\n%s", out)
+}

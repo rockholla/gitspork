@@ -149,4 +149,5 @@ func Test_loadDownstreamState_migration(t *testing.T) {
 	// deprecated fields cleared
 	assert.Equal(t, "", state.LastUpstreamRepoURL)
 	assert.Equal(t, "", state.LastUpstreamCommitHash)
+	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }

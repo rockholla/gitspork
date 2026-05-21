@@ -30,8 +30,8 @@ func TestIntegrate_fresh(t *testing.T) {
 	// shared-ownership: merged file present, structured prefer_upstream value wins
 	AssertFileContains(t, downstreamDir, "Makefile", "upstream makefile")
 	AssertFileContains(t, downstreamDir, "config.yaml", "upstream-value")
-	// state written
-	AssertFileContains(t, downstreamDir, ".gitspork/downstream-state.json", "last_upstream_commit_hash")
+	// state written (multi-upstream format)
+	AssertFileContains(t, downstreamDir, ".gitspork/downstream-state.json", "commit_hash")
 }
 
 func TestIntegrate_reintegrate_idempotent(t *testing.T) {
@@ -170,4 +170,67 @@ func TestIntegrate_structured_prefer_downstream(t *testing.T) {
 	content := ReadFile(t, downstreamDir, "info.json")
 	assert.Contains(t, content, "downstream",
 		"info.json (prefer_downstream) should retain downstream value after re-integrate")
+}
+
+func TestIntegrate_multi_upstream_precedence(t *testing.T) {
+	// Second upstream wins on file.txt because it comes last (left-to-right precedence).
+	upstreamDir1 := buildSimpleUpstream(t)
+	upstreamDir2 := buildSecondUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir1, downstreamDir)
+	if isDockerBuild {
+		t.Skip("multi-upstream path rewriting not supported in DockerRunner")
+	}
+
+	out, code := runner.Run(t, integrateArgsMulti(upstreamDir1, upstreamDir2, downstreamDir), downstreamDir)
+	require.Equal(t, 0, code, "multi-upstream integrate failed:\n%s", out)
+
+	AssertFileContains(t, downstreamDir, "upstream-owned/file.txt", "second upstream content")
+}
+
+func TestIntegrate_multi_upstream_backward_compat_old_flags(t *testing.T) {
+	// Single --upstream-repo-url flag still works (backward compat).
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, integrateArgs(upstreamDir, downstreamDir), downstreamDir)
+	require.Equal(t, 0, code, "backward-compat single flag integrate failed:\n%s", out)
+	AssertFileContains(t, downstreamDir, "upstream-owned/file.txt", "upstream content")
+}
+
+func TestIntegrate_multi_upstream_flag_conflict_error(t *testing.T) {
+	// Mixing --upstream and --upstream-repo-url returns exit code 1.
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, []string{
+		"integrate",
+		"--upstream", "url=file://" + upstreamDir + ",version=main",
+		"--upstream-repo-url", "file://" + upstreamDir,
+		"--downstream-repo-path", downstreamDir,
+	}, downstreamDir)
+	require.Equal(t, 1, code, "expected error exit code when mixing flags:\n%s", out)
+}
+
+func TestIntegrate_multi_upstream_state_records_all(t *testing.T) {
+	// Both upstream URLs appear in downstream-state.json after a multi-upstream integrate.
+	upstreamDir1 := buildSimpleUpstream(t)
+	upstreamDir2 := buildSecondUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir1, downstreamDir)
+	if isDockerBuild {
+		t.Skip("multi-upstream path rewriting not supported in DockerRunner")
+	}
+
+	out, code := runner.Run(t, integrateArgsMulti(upstreamDir1, upstreamDir2, downstreamDir), downstreamDir)
+	require.Equal(t, 0, code, "multi-upstream integrate failed:\n%s", out)
+
+	state := ReadFile(t, downstreamDir, ".gitspork/downstream-state.json")
+	assert.Contains(t, state, `"upstreams"`)
+	assert.Contains(t, state, `"commit_hash"`)
 }

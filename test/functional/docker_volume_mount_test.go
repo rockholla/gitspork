@@ -155,7 +155,7 @@ func TestDockerRootMount_integrate(t *testing.T) {
 	})
 	require.Equal(t, 0, code, "integrate as root failed:\n%s", out)
 	AssertFileContains(t, downstreamDir, "upstream-owned/file.txt", "upstream content")
-	AssertFileContains(t, downstreamDir, ".gitspork/downstream-state.json", "last_upstream_commit_hash")
+	AssertFileContains(t, downstreamDir, ".gitspork/downstream-state.json", "commit_hash")
 }
 
 // TestDockerRootMount_check_drift verifies check-drift works when the container
@@ -174,7 +174,7 @@ func TestDockerRootMount_check_drift(t *testing.T) {
 
 	out, code = runAsRoot(t, upstreamDir, downstreamDir, "/downstream", []string{
 		"check-drift",
-		"--upstream-repo-url", "file://" + upstreamDir,
+		"--upstream", "url=file://" + upstreamDir,
 		"--downstream-repo-path", "/downstream",
 	})
 	require.Equal(t, 0, code, "check-drift as root reported unexpected result:\n%s", out)

@@ -27,17 +27,17 @@ func (r *DockerRunner) Run(t *testing.T, args []string, dir string) (string, int
 	// Rewrite host path args to container paths, handling both bare paths and
 	// file:// URLs (e.g. --upstream-repo-url file:///host/tmp/... becomes
 	// file:///upstream since that path is volume-mounted at /upstream).
+	// Uses ReplaceAll so paths embedded inside flag values (e.g. --upstream
+	// url=file:///host/tmp/...,version=main) are also rewritten correctly.
 	rewritten := make([]string, len(args))
 	for i, a := range args {
-		switch {
-		case r.UpstreamDir != "" && strings.HasPrefix(a, r.UpstreamDir):
-			a = "/upstream" + strings.TrimPrefix(a, r.UpstreamDir)
-		case r.UpstreamDir != "" && strings.HasPrefix(a, "file://"+r.UpstreamDir):
-			a = "file:///upstream" + strings.TrimPrefix(a, "file://"+r.UpstreamDir)
-		case r.DownstreamDir != "" && strings.HasPrefix(a, r.DownstreamDir):
-			a = "/downstream" + strings.TrimPrefix(a, r.DownstreamDir)
-		case r.DownstreamDir != "" && strings.HasPrefix(a, "file://"+r.DownstreamDir):
-			a = "file:///downstream" + strings.TrimPrefix(a, "file://"+r.DownstreamDir)
+		if r.UpstreamDir != "" {
+			a = strings.ReplaceAll(a, "file://"+r.UpstreamDir, "file:///upstream")
+			a = strings.ReplaceAll(a, r.UpstreamDir, "/upstream")
+		}
+		if r.DownstreamDir != "" {
+			a = strings.ReplaceAll(a, "file://"+r.DownstreamDir, "file:///downstream")
+			a = strings.ReplaceAll(a, r.DownstreamDir, "/downstream")
 		}
 		rewritten[i] = a
 	}

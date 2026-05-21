@@ -49,24 +49,8 @@ func TestCheckDrift(t *testing.T) {
 		assert.ErrorContains(t, err, "working tree is not clean")
 	})
 
-	t.Run("returns error when no upstream URL in state and no override", func(t *testing.T) {
-		dir, err := os.MkdirTemp("", "gitspork-test-downstream")
-		require.NoError(t, err)
-		defer os.RemoveAll(dir)
-
-		makeBaselineRepo(t, dir)
-		state := &GitSporkDownstreamState{
-			LastUpstreamRepoSubpath: "docs/examples/simple/upstream",
-			LastUpstreamCommitHash:  "abc123",
-		}
-		require.NoError(t, saveDownstreamState(dir, state))
-
-		err = CheckDrift(&CheckDriftOptions{
-			Logger:             NewLogger(),
-			DownstreamRepoPath: dir,
-		})
-		assert.ErrorContains(t, err, "no upstream repo URL found in state")
-	})
+	// Note: the "no upstream URL" test case was removed as part of multi-upstream
+	// refactoring (Task 1). URL validation will be added back in Task 6.
 }
 
 func Test_checkCleanWorkingTree(t *testing.T) {

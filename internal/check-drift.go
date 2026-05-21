@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -40,16 +41,40 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	if err != nil {
 		return fmt.Errorf("error loading downstream state: %v", err)
 	}
-	if state.LastUpstreamCommitHash == "" {
-		return fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
-	}
 
-	upstreamURL := opts.UpstreamRepoURL
-	if upstreamURL == "" {
-		upstreamURL = state.LastUpstreamRepoURL
+	// Resolve which upstreams to check and their recorded commit hashes.
+	type upstreamCheckEntry struct {
+		spec       UpstreamSpec
+		commitHash string
 	}
-	if upstreamURL == "" {
-		return fmt.Errorf("no upstream repo URL found in state — re-run 'gitspork integrate' or pass --upstream-repo-url")
+	var entries []upstreamCheckEntry
+
+	if len(opts.Upstreams) > 0 {
+		// Override mode: match each override to its state entry for the commit hash.
+		for _, override := range opts.Upstreams {
+			key := normalizeUpstreamURL(override.URL, override.Subpath)
+			found := false
+			for _, su := range state.Upstreams {
+				if normalizeUpstreamURL(su.URL, su.Subpath) == key {
+					entries = append(entries, upstreamCheckEntry{spec: override, commitHash: su.CommitHash})
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("--upstream override %q has no matching state entry — run 'gitspork integrate' first", override.URL)
+			}
+		}
+	} else {
+		if len(state.Upstreams) == 0 {
+			return fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
+		}
+		for _, su := range state.Upstreams {
+			entries = append(entries, upstreamCheckEntry{
+				spec:       UpstreamSpec{URL: su.URL, Subpath: su.Subpath},
+				commitHash: su.CommitHash,
+			})
+		}
 	}
 
 	repo, err := gogit.PlainOpen(opts.DownstreamRepoPath)
@@ -74,39 +99,64 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	}
 	originalBranch := headRef.Name()
 
-	// create or reset the drift-check branch to the current HEAD
 	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(driftBranchRef, headRef.Hash())); err != nil {
 		return fmt.Errorf("error creating/resetting drift-check branch: %v", err)
 	}
-
 	if err := wt.Checkout(&gogit.CheckoutOptions{Branch: driftBranchRef}); err != nil {
 		return fmt.Errorf("error checking out drift-check branch: %v", err)
 	}
-
 	defer func() {
 		_ = wt.Checkout(&gogit.CheckoutOptions{Branch: originalBranch})
 		_ = repo.DeleteBranch(driftCheckBranch)
 	}()
 
-	opts.Logger.Log("re-integrating at upstream commit %s to check for drift", state.LastUpstreamCommitHash)
-	if err := Integrate(&IntegrateOptions{
-		Logger:              opts.Logger,
-		UpstreamRepoURL:     upstreamURL,
-		UpstreamRepoCommit:  state.LastUpstreamCommitHash,
-		UpstreamRepoSubpath: state.LastUpstreamRepoSubpath,
-		UpstreamRepoToken:   opts.UpstreamRepoToken,
-		DownstreamRepoPath:  opts.DownstreamRepoPath,
-		ForDriftCheck:       true,
-	}); err != nil {
-		return fmt.Errorf("error running integration for drift check: %v", err)
+	// Re-integrate each upstream; track which files each one last touched.
+	// fileOwner maps relative file path -> upstream URL that last wrote it.
+	fileOwner := map[string]string{}
+
+	for _, entry := range entries {
+		opts.Logger.Log("re-integrating upstream %s at commit %s", entry.spec.URL, entry.commitHash)
+
+		beforeFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
+		if err != nil {
+			return fmt.Errorf("error listing worktree files before integrate: %v", err)
+		}
+
+		if err := Integrate(&IntegrateOptions{
+			Logger:              opts.Logger,
+			UpstreamRepoURL:     entry.spec.URL,
+			UpstreamRepoSubpath: entry.spec.Subpath,
+			UpstreamRepoToken:   entry.spec.Token,
+			UpstreamRepoCommit:  entry.commitHash,
+			DownstreamRepoPath:  opts.DownstreamRepoPath,
+			ForDriftCheck:       true,
+		}); err != nil {
+			return fmt.Errorf("error running integration for drift check: %v", err)
+		}
+
+		afterFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
+		if err != nil {
+			return fmt.Errorf("error listing worktree files after integrate: %v", err)
+		}
+
+		// Any file that appeared or changed is attributed to this upstream.
+		for f, hash := range afterFiles {
+			if beforeFiles[f] != hash {
+				fileOwner[f] = entry.spec.URL
+			}
+		}
+		for f := range beforeFiles {
+			if _, stillPresent := afterFiles[f]; !stillPresent {
+				fileOwner[f] = entry.spec.URL
+			}
+		}
 	}
 
 	patch, err := diffWorktreeAgainstHEAD(repo, wt)
 	if err != nil {
 		return fmt.Errorf("error diffing downstream against HEAD: %v", err)
 	}
-
 	if patch == nil {
 		opts.Logger.Log("no drift detected")
 		return nil
@@ -115,7 +165,11 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	stats := patch.Stats()
 	opts.Logger.Log("drift detected: %d file(s) changed", len(stats))
 	for _, s := range stats {
-		opts.Logger.Log("  %s", s.Name)
+		owner := fileOwner[s.Name]
+		if owner == "" {
+			owner = "(unknown upstream)"
+		}
+		opts.Logger.Log("  %s (upstream: %s)", s.Name, owner)
 	}
 	if opts.Verbose {
 		pr, pw := io.Pipe()
@@ -176,4 +230,33 @@ func checkCleanWorkingTree(repoPath string) error {
 		return fmt.Errorf("working tree is not clean — commit or stash changes before running check-drift")
 	}
 	return nil
+}
+
+// listWorktreeFiles returns a map of relative path -> hex content hash for all
+// non-.git files under dir. Used to detect which files an integrate pass touched.
+func listWorktreeFiles(dir string) (map[string]string, error) {
+	result := map[string]string{}
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		h := fmt.Sprintf("%x", sha256.Sum256(b))
+		result[rel] = h
+		return nil
+	})
+	return result, err
 }

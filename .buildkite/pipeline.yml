@@ -1,0 +1,6 @@
+agents:
+  queue: build-platform-corp
+
+steps:
+  - label: ":pipeline:"
+    command: "buildkite-agent pipeline upload"

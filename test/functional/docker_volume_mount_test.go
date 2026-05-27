@@ -101,7 +101,7 @@ func runAsRootWithSSH(t *testing.T, upstreamDir, downstreamDir, workdir string, 
 		t.Cleanup(func() {
 			_ = exec.Command("docker", "run", "--rm",
 				"-v", d+":/mnt",
-				"alpine:3.23.4",
+				"docker.io/library/alpine:3.23.4",
 				"chown", "-R", fmt.Sprintf("%d:%d", uid, gid), "/mnt",
 			).Run()
 		})

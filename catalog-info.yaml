@@ -1,0 +1,11 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: gitspork
+  description: CLI tool for managing upstream/downstream git repo relationships
+  annotations:
+    buildkite.com/project-slug: twilio/gitspork
+spec:
+  type: tool
+  lifecycle: production
+  owner: devprod

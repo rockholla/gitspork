@@ -1,10 +1,10 @@
-# upstream_owned Rename Support Implementation Plan
+# upstream_owned / downstream_owned Rename Support Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let an `upstream_owned` entry be either a plain glob (unchanged) or a `{from, to}` map that renames a file as it syncs from upstream to downstream.
+**Goal:** Let an `upstream_owned` *or* `downstream_owned` entry be either a plain glob (unchanged) or a `{from, to}` map that renames a file as it syncs from upstream to downstream.
 
-**Architecture:** Introduce an `UpstreamOwnedEntry` type with custom goccy YAML (un)marshalers so the YAML list stays a heterogeneous scalar-or-map list. Integration, delta propagation, and `mv`/`rm` all consume entries via a small set of helper methods (`SourcePattern`, `IsRename`, `ResolveDest`). The reflection-based schema renderer is corrected with a post-processing pass that collapses plain entries back to scalars.
+**Architecture:** Introduce one shared, ownership-neutral `OwnedEntry` type (used by both flat ownership lists) with custom goccy YAML (un)marshalers so each YAML list stays a heterogeneous scalar-or-map list. Both integrators, delta propagation, and `mv`/`rm` consume entries via helper methods (`SourcePattern`, `IsRename`, `ResolveDest`). The reflection-based schema renderer is corrected with a post-processing pass that collapses plain entries back to scalars in both blocks.
 
 **Tech Stack:** Go 1.26, `github.com/goccy/go-yaml` (custom `BytesMarshaler`/`BytesUnmarshaler`), `github.com/gobwas/glob`, `github.com/rockholla/go-lib/marshal`, cobra, testify.
 
@@ -12,12 +12,13 @@
 
 ## Background (read before starting)
 
-The design spec is `docs/superpowers/specs/2026-06-03-upstream-owned-rename-syntax-design.md`. A de-risking spike already proved the marshaling approach; its tests live in `internal/upstream_owned_marshal_test.go` using **temporary fixture types** (`marshalTestEntry`/`marshalTestConfig`) and a **test-local** `collapsePlainUpstreamOwned`. This plan replaces those fixtures with the real type and promotes `collapsePlainUpstreamOwned` to production code.
+The design spec is `docs/superpowers/specs/2026-06-03-upstream-owned-rename-syntax-design.md`. A de-risking spike already proved the marshaling approach; its tests live in `internal/upstream_owned_marshal_test.go` using **temporary fixture types** (`marshalTestEntry`/`marshalTestConfig`) and a **test-local** `collapsePlainUpstreamOwned`. This plan replaces those fixtures with the real `OwnedEntry` type, renames the test file to `internal/owned_entry_test.go`, and promotes the collapse helper to production code as `collapsePlainOwnedEntries` (now covering both the `upstream_owned:` and `downstream_owned:` blocks).
 
 Key facts about the existing code:
-- `internal/gitspork.go:26` — `UpstreamOwned []string`. Custom marshalers will only be honored by goccy, not by `marshal.YAMLWithComments` (reflection-based, see `GetGitSporkConfigSchema` at `internal/gitspork.go:155`).
+- `internal/gitspork.go:26-27` — `UpstreamOwned []string` and `DownstreamOwned []string`. Custom marshalers will only be honored by goccy, not by `marshal.YAMLWithComments` (reflection-based, see `GetGitSporkConfigSchema` at `internal/gitspork.go:155`, render call at `:202`).
 - `globNonWildcardPrefix(pattern string) string` already exists in `internal/upstream-mv-rm.go:11` and returns the portion of a glob before the first `*`/`?`/`[` (e.g. `configs/**` → `configs`, `a.txt` → `a.txt`).
-- Consumers of `UpstreamOwned` that must change when the field type flips: `internal/integrate.go:178`, `internal/integrator_upstream-owned.go`, `internal/upstream-delta.go:102`, `internal/upstream-mv-rm.go:57,128`, the schema example at `internal/gitspork.go:157`, and unit-test fixtures in `internal/upstream-delta_test.go` and `internal/upstream-mv-rm_test.go`.
+- `downstream_owned` files are owned by the downstream: `IntegratorDownstreamOwned.Integrate` (`internal/integrator_downstream-owned.go`) seeds a file from upstream **only if the downstream destination does not already exist**. `downstream_owned` is deliberately **excluded** from delta propagation (`buildManagedGlobs` in `internal/upstream-delta.go:100` does not reference it), so rename support there needs **no** delta changes. The existing delta test "downstream_owned file deleted does not appear in delta" (`internal/upstream-delta_test.go:62`) asserts this and must keep passing.
+- Consumers that must change when the field types flip: `internal/integrate.go:178` (upstream) and `:184` (downstream), `internal/integrator_upstream-owned.go`, `internal/integrator_downstream-owned.go`, `internal/upstream-delta.go:102`, `internal/upstream-mv-rm.go:57-58,128-129`, the schema example at `internal/gitspork.go:157-158`, and unit-test fixtures in `internal/upstream-delta_test.go` and `internal/upstream-mv-rm_test.go`.
 
 Run unit tests with `make test-unit` (`go vet ./... && go test ./...`). Functional tests need a build tag: `make test-functional`.
 
@@ -25,27 +26,28 @@ Run unit tests with `make test-unit` (`go vet ./... && go test ./...`). Function
 
 ## File Structure
 
-- **Create** `internal/upstream-owned-entry.go` — the `UpstreamOwnedEntry` type, its marshalers, `SourcePattern`/`IsRename`/`ResolveDest`, and `collapsePlainUpstreamOwned`. One file, one responsibility: the entry abstraction.
-- **Modify** `internal/upstream_owned_marshal_test.go` — drop fixture types, point tests at the real type and production `collapsePlainUpstreamOwned`.
-- **Modify** `internal/gitspork.go` — flip the field type; update field comment; update schema example; wire `collapsePlainUpstreamOwned` into `GetGitSporkConfigSchema`.
+- **Create** `internal/owned-entry.go` — the `OwnedEntry` type, its marshalers, `SourcePattern`/`IsRename`/`ResolveDest`, and `collapsePlainOwnedEntries`. One file, one responsibility: the entry abstraction shared by both ownership lists.
+- **Rename + rewrite** `internal/upstream_owned_marshal_test.go` → `internal/owned_entry_test.go` — drop fixture types, point tests at the real `OwnedEntry` and production `collapsePlainOwnedEntries`.
+- **Modify** `internal/gitspork.go` — flip both field types; update field comments; update schema example (both blocks, each with a rename); wire `collapsePlainOwnedEntries` into `GetGitSporkConfigSchema`.
 - **Modify** `internal/integrator_upstream-owned.go` — per-entry integration using `ResolveDest`.
-- **Modify** `internal/upstream-mv-rm.go` — entry-aware rewrite/filter matching the source side.
-- **Modify** `internal/upstream-delta.go` — managed *matchers* that map upstream source paths to downstream destinations.
+- **Modify** `internal/integrator_downstream-owned.go` — per-entry seeding using `ResolveDest`, preserving one-time-seed semantics (skip when the destination already exists).
+- **Modify** `internal/upstream-mv-rm.go` — entry-aware rewrite/filter matching the source side, applied to both `UpstreamOwned` and `DownstreamOwned`.
+- **Modify** `internal/upstream-delta.go` — managed *matchers* that map upstream source paths to downstream destinations (`upstream_owned` + `shared_ownership.*` only).
 - **Modify** `internal/upstream-delta_test.go`, `internal/upstream-mv-rm_test.go` — fixture migration + new rename cases.
-- **Create** `test/functional/rename_test.go` — end-to-end integrate + delta scenarios for renames.
-- **Modify** `docs/README.md` — document the rename form.
+- **Create** `test/functional/rename_test.go` — end-to-end integrate + delta scenarios for renames (upstream and downstream).
+- **Modify** `docs/README.md` — document the rename form for both lists.
 
 ---
 
-## Task 1: `UpstreamOwnedEntry` type, helpers, and schema-collapse helper
+## Task 1: `OwnedEntry` type, helpers, and schema-collapse helper
 
 **Files:**
-- Create: `internal/upstream-owned-entry.go`
-- Test: `internal/upstream_owned_marshal_test.go` (rewrite existing spike tests onto the real type)
+- Create: `internal/owned-entry.go`
+- Rename + rewrite: `internal/upstream_owned_marshal_test.go` → `internal/owned_entry_test.go`
 
 - [ ] **Step 1: Create the entry type and helpers**
 
-Create `internal/upstream-owned-entry.go`:
+Create `internal/owned-entry.go`:
 
 ```go
 package internal
@@ -57,24 +59,26 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// UpstreamOwnedEntry is a single upstream_owned entry. It is either a plain glob
-// pattern (Pattern, from a YAML scalar) or a rename (From/To, from a {from, to}
-// YAML map). The forms are mutually exclusive.
+// OwnedEntry is a single entry in an ownership list (upstream_owned or
+// downstream_owned). It is either a plain glob pattern (Pattern, from a YAML
+// scalar) or a rename (From/To, from a {from, to} YAML map). The forms are
+// mutually exclusive. The type is ownership-neutral: it describes a path/rename,
+// not a policy — the difference between the two lists lives in their integrators.
 //
 // The yaml/comment struct tags are consumed ONLY by the reflection-based
 // marshal.YAMLWithComments schema renderer. goccy uses the custom
 // UnmarshalYAML/MarshalYAML below, which ignore tags.
-type UpstreamOwnedEntry struct {
-	Pattern string `yaml:"pattern,omitempty" comment:"a single glob file pattern fully owned by the upstream"`
+type OwnedEntry struct {
+	Pattern string `yaml:"pattern,omitempty" comment:"a single glob file pattern"`
 	From    string `yaml:"from,omitempty" comment:"(rename) upstream source glob/path"`
 	To      string `yaml:"to,omitempty" comment:"(rename) downstream destination glob/path"`
 }
 
 // IsRename reports whether the entry renames a file (From/To form).
-func (e UpstreamOwnedEntry) IsRename() bool { return e.From != "" }
+func (e OwnedEntry) IsRename() bool { return e.From != "" }
 
 // SourcePattern returns the glob matched against the upstream tree.
-func (e UpstreamOwnedEntry) SourcePattern() string {
+func (e OwnedEntry) SourcePattern() string {
 	if e.IsRename() {
 		return e.From
 	}
@@ -85,7 +89,7 @@ func (e UpstreamOwnedEntry) SourcePattern() string {
 // matched this entry's SourcePattern. Plain entries map to the same path; rename
 // entries swap the source pattern's non-wildcard prefix for the destination's,
 // preserving the remainder (prefix substitution).
-func (e UpstreamOwnedEntry) ResolveDest(matchedFile string) string {
+func (e OwnedEntry) ResolveDest(matchedFile string) string {
 	if !e.IsRename() {
 		return matchedFile
 	}
@@ -95,7 +99,7 @@ func (e UpstreamOwnedEntry) ResolveDest(matchedFile string) string {
 }
 
 // UnmarshalYAML accepts either a scalar (plain pattern) or a {from, to} map.
-func (e *UpstreamOwnedEntry) UnmarshalYAML(b []byte) error {
+func (e *OwnedEntry) UnmarshalYAML(b []byte) error {
 	var s string
 	if err := yaml.Unmarshal(b, &s); err == nil {
 		e.Pattern = s
@@ -113,7 +117,7 @@ func (e *UpstreamOwnedEntry) UnmarshalYAML(b []byte) error {
 }
 
 // MarshalYAML emits a scalar for plain entries and a {from, to} map for renames.
-func (e UpstreamOwnedEntry) MarshalYAML() ([]byte, error) {
+func (e OwnedEntry) MarshalYAML() ([]byte, error) {
 	if e.IsRename() {
 		return yaml.Marshal(yaml.MapSlice{
 			{Key: "from", Value: e.From},
@@ -123,17 +127,19 @@ func (e UpstreamOwnedEntry) MarshalYAML() ([]byte, error) {
 	return yaml.Marshal(e.Pattern)
 }
 
-// collapsePlainUpstreamOwned rewrites reflection-rendered `- pattern: "X"` lines
-// within the upstream_owned: block of schema output back to bare scalars `- "X"`,
-// leaving {from, to} rename entries and following sections untouched. Needed
-// because marshal.YAMLWithComments is reflection-based and ignores MarshalYAML.
-var upstreamOwnedPatternLineRE = regexp.MustCompile(`^(\s*)- pattern: (".*?"|\S+)(\s*#.*)?$`)
+// collapsePlainOwnedEntries rewrites reflection-rendered `- pattern: "X"` lines
+// within the upstream_owned: and downstream_owned: blocks of schema output back
+// to bare scalars `- "X"`, leaving {from, to} rename entries and other sections
+// untouched. Needed because marshal.YAMLWithComments is reflection-based and
+// ignores OwnedEntry.MarshalYAML. The block-start check below lists both keys and
+// runs before the block-end check, so each owned block is handled independently.
+var ownedEntryPatternLineRE = regexp.MustCompile(`^(\s*)- pattern: (".*?"|\S+)(\s*#.*)?$`)
 
-func collapsePlainUpstreamOwned(schema string) string {
+func collapsePlainOwnedEntries(schema string) string {
 	lines := strings.Split(schema, "\n")
 	inBlock := false
 	for i, line := range lines {
-		if strings.HasPrefix(line, "upstream_owned:") {
+		if strings.HasPrefix(line, "upstream_owned:") || strings.HasPrefix(line, "downstream_owned:") {
 			inBlock = true
 			continue
 		}
@@ -146,7 +152,7 @@ func collapsePlainUpstreamOwned(schema string) string {
 			inBlock = false
 			continue
 		}
-		if m := upstreamOwnedPatternLineRE.FindStringSubmatch(line); m != nil {
+		if m := ownedEntryPatternLineRE.FindStringSubmatch(line); m != nil {
 			lines[i] = m[1] + "- " + m[2]
 		}
 	}
@@ -154,18 +160,25 @@ func collapsePlainUpstreamOwned(schema string) string {
 }
 ```
 
-- [ ] **Step 2: Replace the spike tests with real-type tests**
+- [ ] **Step 2: Remove the spike test file and create the real-type test file**
 
-Overwrite `internal/upstream_owned_marshal_test.go` entirely:
+Remove the old spike file and create the renamed one:
+
+```bash
+git rm internal/upstream_owned_marshal_test.go
+```
+
+Create `internal/owned_entry_test.go`:
 
 ```go
 package internal
 
-// Verifies the scalar-or-map marshaling of UpstreamOwnedEntry across goccy
-// (the config read/write path) and the schema post-processing that corrects the
+// Verifies the scalar-or-map marshaling of OwnedEntry across goccy (the config
+// read/write path) and the schema post-processing that corrects the
 // reflection-based marshal.YAMLWithComments output.
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -176,18 +189,19 @@ import (
 )
 
 // test-local container so we can exercise list unmarshaling with the real type.
-type upstreamOwnedYAML struct {
-	UpstreamOwned []UpstreamOwnedEntry `yaml:"upstream_owned" comment:"plain pattern or {from,to} rename"`
+type ownedEntryYAML struct {
+	UpstreamOwned   []OwnedEntry `yaml:"upstream_owned" comment:"plain pattern or {from,to} rename"`
+	DownstreamOwned []OwnedEntry `yaml:"downstream_owned" comment:"plain pattern or {from,to} rename"`
 }
 
-func TestUpstreamOwnedEntry_UnmarshalUnion(t *testing.T) {
+func TestOwnedEntry_UnmarshalUnion(t *testing.T) {
 	src := `upstream_owned:
   - src/**
   - from: .markdownlint-downstream.jsonc
     to: .markdownlint.jsonc
   - configs/**
 `
-	var cfg upstreamOwnedYAML
+	var cfg ownedEntryYAML
 	require.NoError(t, yaml.Unmarshal([]byte(src), &cfg))
 	require.Len(t, cfg.UpstreamOwned, 3)
 	assert.Equal(t, "src/**", cfg.UpstreamOwned[0].Pattern)
@@ -198,8 +212,8 @@ func TestUpstreamOwnedEntry_UnmarshalUnion(t *testing.T) {
 	assert.Equal(t, "configs/**", cfg.UpstreamOwned[2].Pattern)
 }
 
-func TestUpstreamOwnedEntry_MarshalRoundTrip(t *testing.T) {
-	cfg := upstreamOwnedYAML{UpstreamOwned: []UpstreamOwnedEntry{
+func TestOwnedEntry_MarshalRoundTrip(t *testing.T) {
+	cfg := ownedEntryYAML{UpstreamOwned: []OwnedEntry{
 		{Pattern: "src/**"},
 		{From: "a.txt", To: "b.txt"},
 	}}
@@ -209,48 +223,85 @@ func TestUpstreamOwnedEntry_MarshalRoundTrip(t *testing.T) {
 	assert.Contains(t, string(out), "from: a.txt")
 	assert.Contains(t, string(out), "to: b.txt")
 
-	var back upstreamOwnedYAML
+	var back ownedEntryYAML
 	require.NoError(t, yaml.Unmarshal(out, &back))
 	assert.Equal(t, "src/**", back.UpstreamOwned[0].Pattern)
 	assert.Equal(t, "a.txt", back.UpstreamOwned[1].From)
 	assert.Equal(t, "b.txt", back.UpstreamOwned[1].To)
 }
 
-func TestUpstreamOwnedEntry_SourcePattern(t *testing.T) {
-	assert.Equal(t, "src/**", UpstreamOwnedEntry{Pattern: "src/**"}.SourcePattern())
-	assert.Equal(t, "a.txt", UpstreamOwnedEntry{From: "a.txt", To: "b.txt"}.SourcePattern())
+func TestOwnedEntry_SourcePattern(t *testing.T) {
+	assert.Equal(t, "src/**", OwnedEntry{Pattern: "src/**"}.SourcePattern())
+	assert.Equal(t, "a.txt", OwnedEntry{From: "a.txt", To: "b.txt"}.SourcePattern())
 }
 
-func TestUpstreamOwnedEntry_ResolveDest(t *testing.T) {
+func TestOwnedEntry_ResolveDest(t *testing.T) {
 	// plain entry: identity
-	assert.Equal(t, "x/y.txt", UpstreamOwnedEntry{Pattern: "x/**"}.ResolveDest("x/y.txt"))
+	assert.Equal(t, "x/y.txt", OwnedEntry{Pattern: "x/**"}.ResolveDest("x/y.txt"))
 	// exact rename
-	assert.Equal(t, "b.txt", UpstreamOwnedEntry{From: "a.txt", To: "b.txt"}.ResolveDest("a.txt"))
+	assert.Equal(t, "b.txt", OwnedEntry{From: "a.txt", To: "b.txt"}.ResolveDest("a.txt"))
 	// glob rename: prefix substitution
-	e := UpstreamOwnedEntry{From: "configs/**", To: ".configs/**"}
+	e := OwnedEntry{From: "configs/**", To: ".configs/**"}
 	assert.Equal(t, ".configs/app/db.yml", e.ResolveDest("configs/app/db.yml"))
 	assert.Equal(t, ".configs/x/y/z.txt", e.ResolveDest("configs/x/y/z.txt"))
 }
 
-func TestCollapsePlainUpstreamOwned(t *testing.T) {
-	cfg := &upstreamOwnedYAML{UpstreamOwned: []UpstreamOwnedEntry{
-		{Pattern: "upstream-owned.txt"},
-		{From: ".markdownlint-downstream.jsonc", To: ".markdownlint.jsonc"},
-	}}
+func TestCollapsePlainOwnedEntries_bothBlocks(t *testing.T) {
+	cfg := &ownedEntryYAML{
+		UpstreamOwned: []OwnedEntry{
+			{Pattern: "upstream-owned.txt"},
+			{From: ".markdownlint-downstream.jsonc", To: ".markdownlint.jsonc"},
+		},
+		DownstreamOwned: []OwnedEntry{
+			{Pattern: "downstream-owned.md"},
+			{From: "seed-from.md", To: "seed-to.md"},
+		},
+	}
 	raw, err := marshal.YAMLWithComments(cfg, 0)
 	require.NoError(t, err)
-	out := collapsePlainUpstreamOwned(raw)
+	out := collapsePlainOwnedEntries(raw)
+	// plain entries in both blocks collapse to scalars
 	assert.Contains(t, out, `- "upstream-owned.txt"`)
+	assert.Contains(t, out, `- "downstream-owned.md"`)
 	assert.NotContains(t, out, "- pattern:")
+	// rename entries in both blocks are preserved
 	assert.Contains(t, out, `from: ".markdownlint-downstream.jsonc"`)
 	assert.Contains(t, out, `to: ".markdownlint.jsonc"`)
+	assert.Contains(t, out, `from: "seed-from.md"`)
+	assert.Contains(t, out, `to: "seed-to.md"`)
+}
+
+func TestGitSporkConfig_RenameRoundTripPreservesComments(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.gitspork.yml"
+	src := `upstream_owned:
+# keep me
+- src/**
+- from: a.txt
+  to: b.txt
+`
+	require.NoError(t, os.WriteFile(path, []byte(src), 0644))
+	cfg, err := ParseGitSporkConfig(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.UpstreamOwned, 2)
+	assert.Equal(t, "src/**", cfg.UpstreamOwned[0].Pattern)
+	assert.Equal(t, "a.txt", cfg.UpstreamOwned[1].From)
+
+	require.NoError(t, WriteGitSporkConfig(path, cfg))
+	out, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "keep me")
+	assert.Contains(t, string(out), "- src/**")
+	assert.Contains(t, string(out), "from: a.txt")
 }
 ```
 
+Note: `TestGitSporkConfig_RenameRoundTripPreservesComments` depends on `GitSporkConfig.UpstreamOwned` already being `[]OwnedEntry`. It will not compile until Task 2 Step 1 flips the field. **In this task, comment it out** (or expect a build failure on it) and verify the other tests pass via the package build in Step 3; un-comment it at Task 2 Step 10. To keep Task 1 green and committable, **omit `TestGitSporkConfig_RenameRoundTripPreservesComments` from the file in this task** and add it in Task 2 Step 9 instead. Also omit the `"os"` import in this task (add it in Task 2 Step 9).
+
 - [ ] **Step 3: Run the tests, expect PASS**
 
-Run: `go test ./internal -run 'TestUpstreamOwnedEntry|TestCollapsePlainUpstreamOwned' -v`
-Expected: all PASS. (The field is still `[]string`; the type stands alone, so the whole package still builds.)
+Run: `go test ./internal -run 'TestOwnedEntry|TestCollapsePlainOwnedEntries' -v`
+Expected: all PASS. (The config fields are still `[]string`; `OwnedEntry` stands alone, so the package still builds.)
 
 - [ ] **Step 4: Verify the package builds and vets**
 
@@ -260,52 +311,60 @@ Expected: exit 0, no output.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/upstream-owned-entry.go internal/upstream_owned_marshal_test.go
-git commit -m "feat: add UpstreamOwnedEntry type with scalar-or-map YAML support"
+git add internal/owned-entry.go internal/owned_entry_test.go
+git commit -m "feat: add OwnedEntry type with scalar-or-map YAML support"
 ```
 
 ---
 
-## Task 2: Flip `UpstreamOwned` to entries; integrate, mv/rm, schema
+## Task 2: Flip both ownership lists to `[]OwnedEntry`; integrate, mv/rm, schema
 
-This task changes `GitSporkConfig.UpstreamOwned` to `[]UpstreamOwnedEntry`, which breaks compilation across the package until every consumer is updated. Do all steps before running the suite.
+This task changes `GitSporkConfig.UpstreamOwned` and `.DownstreamOwned` to `[]OwnedEntry`, which breaks compilation across the package until every consumer is updated. Do all steps before running the suite.
 
 **Files:**
-- Modify: `internal/gitspork.go` (field type @ line 26, field comment, schema example @ line 157, `GetGitSporkConfigSchema` @ ~line 202)
+- Modify: `internal/gitspork.go` (field types @ lines 26-27, comments, schema example @ lines 157-158, `GetGitSporkConfigSchema` render @ ~line 202)
 - Modify: `internal/integrator_upstream-owned.go`
+- Modify: `internal/integrator_downstream-owned.go`
 - Modify: `internal/upstream-mv-rm.go` (`ComputeUpstreamMvFromConfig`, `ComputeUpstreamRmFromConfig`)
 - Modify: `internal/upstream-delta.go` (`buildManagedGlobs` @ line 100)
 - Modify: `internal/upstream-mv-rm_test.go`, `internal/upstream-delta_test.go` (fixtures)
-- Test: add cases to `internal/upstream-mv-rm_test.go`; add a config round-trip test to `internal/upstream_owned_marshal_test.go`
+- Test: add cases to `internal/upstream-mv-rm_test.go`; add the config round-trip test to `internal/owned_entry_test.go`
 
-- [ ] **Step 1: Flip the field type and update its comment**
+- [ ] **Step 1: Flip both field types and update their comments**
 
-In `internal/gitspork.go`, change line 26 from:
+In `internal/gitspork.go`, change lines 26-27 from:
 
 ```go
 	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo"`
+	DownstreamOwned []string                      `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated"`
 ```
 
 to:
 
 ```go
-	UpstreamOwned   []UpstreamOwnedEntry          `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream"`
+	UpstreamOwned   []OwnedEntry                  `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream"`
+	DownstreamOwned []OwnedEntry                  `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path"`
 ```
 
-- [ ] **Step 2: Update the schema example to include a rename**
+- [ ] **Step 2: Update the schema example to include renames in both blocks**
 
-In `internal/gitspork.go` `GetGitSporkConfigSchema`, change the `UpstreamOwned` field of `gitSporkExampleConfig` (line ~157) from:
+In `internal/gitspork.go` `GetGitSporkConfigSchema`, change the `gitSporkExampleConfig` fields (lines 157-158) from:
 
 ```go
 		UpstreamOwned:   []string{"upstream-owned.txt"},
+		DownstreamOwned: []string{"downstream-owned.md"},
 ```
 
 to:
 
 ```go
-		UpstreamOwned: []UpstreamOwnedEntry{
+		UpstreamOwned: []OwnedEntry{
 			{Pattern: "upstream-owned.txt"},
 			{From: "upstream-owned-renamed-from.txt", To: "downstream-renamed-to.txt"},
+		},
+		DownstreamOwned: []OwnedEntry{
+			{Pattern: "downstream-owned.md"},
+			{From: "downstream-owned-seed-from.md", To: "downstream-owned-seed-to.md"},
 		},
 ```
 
@@ -327,7 +386,7 @@ to:
 	if err != nil {
 		return "", "", err
 	}
-	renderedMain = collapsePlainUpstreamOwned(renderedMain)
+	renderedMain = collapsePlainOwnedEntries(renderedMain)
 ```
 
 - [ ] **Step 4: Make the upstream-owned integrator per-entry and rename-aware**
@@ -347,7 +406,7 @@ type IntegratorUpstreamOwned struct{}
 
 // Integrate copies each upstream-owned file to the downstream, applying rename
 // entries' destination resolution.
-func (i *IntegratorUpstreamOwned) Integrate(entries []UpstreamOwnedEntry, upstreamPath string, downstreamPath string, logger *Logger) error {
+func (i *IntegratorUpstreamOwned) Integrate(entries []OwnedEntry, upstreamPath string, downstreamPath string, logger *Logger) error {
 	for _, entry := range entries {
 		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
 		if err != nil {
@@ -369,9 +428,58 @@ func (i *IntegratorUpstreamOwned) Integrate(entries []UpstreamOwnedEntry, upstre
 }
 ```
 
-(The call site `internal/integrate.go:178` already passes `gitSporkConfig.UpstreamOwned`; no change needed there once the signature accepts `[]UpstreamOwnedEntry`.)
+(The call site `internal/integrate.go:178` already passes `gitSporkConfig.UpstreamOwned`; no change needed there once the signature accepts `[]OwnedEntry`.)
 
-- [ ] **Step 5: Fix the delta managed-glob builder to compile (behavior-preserving)**
+- [ ] **Step 5: Make the downstream-owned integrator per-entry and rename-aware (preserve one-time-seed)**
+
+Replace the body of `internal/integrator_downstream-owned.go` with:
+
+```go
+package internal
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
+
+// IntegratorDownstreamOwned will process a list of files to be managed as owned by the downstream gitspork repo, just initially bootstrapped by the upstream
+type IntegratorDownstreamOwned struct{}
+
+// Integrate seeds each downstream-owned file from the upstream a single time,
+// applying rename entries' destination resolution. A file is only copied when
+// its downstream destination does not already exist — the downstream owns it
+// thereafter.
+func (i *IntegratorDownstreamOwned) Integrate(entries []OwnedEntry, upstreamPath string, downstreamPath string, logger *Logger) error {
+	for _, entry := range entries {
+		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
+		if err != nil {
+			return fmt.Errorf("error determining the list of files to integrate in %s from %q: %v", upstreamPath, entry.SourcePattern(), err)
+		}
+		for _, integrateFile := range integrateFiles {
+			dest := entry.ResolveDest(integrateFile)
+			destination := filepath.Join(downstreamPath, dest)
+			if _, err := os.Stat(destination); os.IsNotExist(err) {
+				if dest == integrateFile {
+					logger.Log("➡️ copying %s one time to downstream", integrateFile)
+				} else {
+					logger.Log("➡️ copying %s one time to downstream as %s", integrateFile, dest)
+				}
+				if err := syncFile(filepath.Join(upstreamPath, integrateFile), destination); err != nil {
+					return err
+				}
+			} else {
+				logger.Log("🔒 downstream-owned file %s exists, not doing anything", dest)
+			}
+		}
+	}
+	return nil
+}
+```
+
+(The call site `internal/integrate.go:184` already passes `gitSporkConfig.DownstreamOwned`; no change needed there once the signature accepts `[]OwnedEntry`.)
+
+- [ ] **Step 6: Fix the delta managed-glob builder to compile (behavior-preserving)**
 
 In `internal/upstream-delta.go` `buildManagedGlobs` (line ~100), change:
 
@@ -391,154 +499,116 @@ to:
 	patterns = append(patterns, config.SharedOwnership.Merged...)
 ```
 
-(Full destination-space delta handling is Task 3; this keeps the build green and current behavior for plain entries.)
+(Full destination-space delta handling is Task 3; this keeps the build green and current behavior for plain entries. `DownstreamOwned` is intentionally not referenced here.)
 
-- [ ] **Step 6: Make mv/rm operate on the entry source side**
+- [ ] **Step 7: Make mv/rm operate on the entry source side, for both lists**
 
-In `internal/upstream-mv-rm.go`, inside `ComputeUpstreamMvFromConfig`, replace the line:
+In `internal/upstream-mv-rm.go`, inside `ComputeUpstreamMvFromConfig`, add an entry-aware closure alongside the existing `rewritePatterns` closure (place it just after the `rewritePatterns := func(...) {...}` block, so it can capture `oldPath`, `newPath`, and `warnings`):
+
+```go
+	rewriteOwned := func(entries []OwnedEntry) []OwnedEntry {
+		result := make([]OwnedEntry, len(entries))
+		for i, e := range entries {
+			src := e.SourcePattern()
+			prefix := globNonWildcardPrefix(src)
+			var newSrc string
+			switch {
+			case prefix == "":
+				warnings = append(warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
+				newSrc = src
+			case src == oldPath:
+				newSrc = newPath
+			case prefix == oldPath || strings.HasPrefix(prefix, oldPath+"/"):
+				newSrc = newPath + src[len(oldPath):]
+			default:
+				newSrc = src
+			}
+			if e.IsRename() {
+				result[i] = OwnedEntry{From: newSrc, To: e.To}
+			} else {
+				result[i] = OwnedEntry{Pattern: newSrc}
+			}
+		}
+		return result
+	}
+```
+
+Then change the two owned-list assignments (lines 57-58) from:
 
 ```go
 	config.UpstreamOwned = rewritePatterns(config.UpstreamOwned)
+	config.DownstreamOwned = rewritePatterns(config.DownstreamOwned)
 ```
 
-with:
+to:
 
 ```go
-	config.UpstreamOwned = rewriteUpstreamOwned(config.UpstreamOwned, oldPath, newPath, &warnings)
+	config.UpstreamOwned = rewriteOwned(config.UpstreamOwned)
+	config.DownstreamOwned = rewriteOwned(config.DownstreamOwned)
 ```
 
-And add this helper function in the same file (after `ComputeUpstreamMvFromConfig`):
+(Leave the `rewritePatterns` closure and the three `SharedOwnership.*` assignments unchanged — those lists are still `[]string`.)
+
+In `ComputeUpstreamRmFromConfig`, add an entry-aware closure alongside `filterPatterns` (capturing `path`, `recursive`, `warnings`):
 
 ```go
-// rewriteUpstreamOwned applies a move rewrite to the source side of each entry
-// (Pattern for plain entries, From for renames); the rename destination (To) is
-// left untouched.
-func rewriteUpstreamOwned(entries []UpstreamOwnedEntry, oldPath, newPath string, warnings *[]string) []UpstreamOwnedEntry {
-	result := make([]UpstreamOwnedEntry, len(entries))
-	for i, e := range entries {
-		src := e.SourcePattern()
-		prefix := globNonWildcardPrefix(src)
-		var newSrc string
-		switch {
-		case prefix == "":
-			*warnings = append(*warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
-			newSrc = src
-		case src == oldPath:
-			newSrc = newPath
-		case prefix == oldPath || strings.HasPrefix(prefix, oldPath+"/"):
-			newSrc = newPath + src[len(oldPath):]
-		default:
-			newSrc = src
+	filterOwned := func(entries []OwnedEntry) []OwnedEntry {
+		var result []OwnedEntry
+		for _, e := range entries {
+			src := e.SourcePattern()
+			if src == path {
+				continue
+			}
+			if recursive {
+				prefix := globNonWildcardPrefix(src)
+				if prefix == "" {
+					warnings = append(warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
+					result = append(result, e)
+					continue
+				}
+				if prefix == path || strings.HasPrefix(prefix, path+"/") {
+					continue
+				}
+			}
+			result = append(result, e)
 		}
-		if e.IsRename() {
-			result[i] = UpstreamOwnedEntry{From: newSrc, To: e.To}
-		} else {
-			result[i] = UpstreamOwnedEntry{Pattern: newSrc}
-		}
+		return result
 	}
-	return result
-}
 ```
 
-In `ComputeUpstreamRmFromConfig`, replace:
+Then change the two owned-list assignments (lines 128-129) from:
 
 ```go
 	config.UpstreamOwned = filterPatterns(config.UpstreamOwned)
+	config.DownstreamOwned = filterPatterns(config.DownstreamOwned)
 ```
 
-with:
+to:
 
 ```go
-	config.UpstreamOwned = filterUpstreamOwned(config.UpstreamOwned, path, recursive, &warnings)
+	config.UpstreamOwned = filterOwned(config.UpstreamOwned)
+	config.DownstreamOwned = filterOwned(config.DownstreamOwned)
 ```
 
-And add this helper (after `ComputeUpstreamRmFromConfig`):
+(Leave the `filterPatterns` closure and the three `SharedOwnership.*` assignments unchanged.)
 
-```go
-// filterUpstreamOwned drops entries whose source side matches path (exact, or
-// non-wildcard-prefix under path when recursive).
-func filterUpstreamOwned(entries []UpstreamOwnedEntry, path string, recursive bool, warnings *[]string) []UpstreamOwnedEntry {
-	var result []UpstreamOwnedEntry
-	for _, e := range entries {
-		src := e.SourcePattern()
-		if src == path {
-			continue
-		}
-		if recursive {
-			prefix := globNonWildcardPrefix(src)
-			if prefix == "" {
-				*warnings = append(*warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
-				result = append(result, e)
-				continue
-			}
-			if prefix == path || strings.HasPrefix(prefix, path+"/") {
-				continue
-			}
-		}
-		result = append(result, e)
-	}
-	return result
-}
-```
+- [ ] **Step 8: Migrate existing unit-test fixtures to the new type**
 
-(Leave the existing `rewritePatterns`/`filterPatterns` closures in place — they are still used by `DownstreamOwned`, `SharedOwnership.*`.)
+In `internal/upstream-delta_test.go`, convert the four ownership fixtures:
+- Line 34: `UpstreamOwned: []string{"docs/**"}` → `UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}`
+- Line 68: `DownstreamOwned: []string{"docs/**"}` → `DownstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}`
+- Line 82: `UpstreamOwned: []string{"docs/**"}` → `UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}`
+- Line 97: `UpstreamOwned: []string{"docs/**"}` → `UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}`
 
-- [ ] **Step 7: Migrate existing unit-test fixtures to the new type**
+In `internal/upstream-mv-rm_test.go`, convert each `UpstreamOwned`/`DownstreamOwned` literal and assertion:
+- Inputs `UpstreamOwned: []string{"X"}` → `UpstreamOwned: []OwnedEntry{{Pattern: "X"}}` (and the same for `DownstreamOwned`); multi-element lists like `[]string{"a", "b"}` → `[]OwnedEntry{{Pattern: "a"}, {Pattern: "b"}}`.
+- Assertions `assert.Equal(t, []string{"X"}, result.UpstreamOwned)` → `assert.Equal(t, []OwnedEntry{{Pattern: "X"}}, result.UpstreamOwned)` (and the same for `DownstreamOwned`).
 
-In `internal/upstream-delta_test.go`, change each `UpstreamOwned: []string{"docs/**"}` (lines 34, 82, 97) to:
+Apply this to the following lines (input lines and their paired assertion lines): 23, 29 (upstream exact); 34, 40 (glob prefix); 45, 51 (leading-wildcard warning); 109, 115 (sub-prefix); 120, 126 (downstream_owned); 206, 212; 217, 223; 228, 234; 239, 245. Line 193 (`cfg.UpstreamOwned = append(cfg.UpstreamOwned, "docs/new.md")`) becomes `cfg.UpstreamOwned = append(cfg.UpstreamOwned, OwnedEntry{Pattern: "docs/new.md"})`.
 
-```go
-		config := &GitSporkConfig{UpstreamOwned: []UpstreamOwnedEntry{{Pattern: "docs/**"}}}
-```
+- [ ] **Step 9: Add the config round-trip test and rename-aware mv/rm test cases**
 
-In `internal/upstream-mv-rm_test.go`, convert each `UpstreamOwned` literal and assertion. The pattern for inputs:
-- `UpstreamOwned: []string{"docs/old.md"}` → `UpstreamOwned: []UpstreamOwnedEntry{{Pattern: "docs/old.md"}}`
-- `UpstreamOwned: []string{"docs/guide.md", "docs/other.md"}` → `UpstreamOwned: []UpstreamOwnedEntry{{Pattern: "docs/guide.md"}, {Pattern: "docs/other.md"}}`
-
-And for assertions:
-- `assert.Equal(t, []string{"docs/new.md"}, result.UpstreamOwned)` → `assert.Equal(t, []UpstreamOwnedEntry{{Pattern: "docs/new.md"}}, result.UpstreamOwned)`
-
-Apply this conversion to lines 23, 29, 34, 40, 45, 51, 109, 115, 206, 212, 217, 223, 228, 234, 239, 245. Line 193 (`cfg.UpstreamOwned = append(cfg.UpstreamOwned, "docs/new.md")`) becomes `cfg.UpstreamOwned = append(cfg.UpstreamOwned, UpstreamOwnedEntry{Pattern: "docs/new.md"})`.
-
-- [ ] **Step 8: Add rename-aware mv/rm test cases**
-
-Append to the `Test_UpstreamMv` function in `internal/upstream-mv-rm_test.go`:
-
-```go
-	t.Run("rename entry: mv rewrites source side, leaves destination", func(t *testing.T) {
-		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []UpstreamOwnedEntry{{From: "source.txt", To: "dest.txt"}},
-		})
-		warnings, err := UpstreamMv(cfg, "source.txt", "new-source.txt")
-		require.NoError(t, err)
-		assert.Empty(t, warnings)
-		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []UpstreamOwnedEntry{{From: "new-source.txt", To: "dest.txt"}}, result.UpstreamOwned)
-	})
-```
-
-Append to the `Test_UpstreamRm` function (rm subtests, at `internal/upstream-mv-rm_test.go:203`):
-
-```go
-	t.Run("rename entry: rm matches source side and removes entry", func(t *testing.T) {
-		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []UpstreamOwnedEntry{
-				{From: "source.txt", To: "dest.txt"},
-				{Pattern: "keep.txt"},
-			},
-		})
-		warnings, err := UpstreamRm(cfg, "source.txt", false)
-		require.NoError(t, err)
-		assert.Empty(t, warnings)
-		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []UpstreamOwnedEntry{{Pattern: "keep.txt"}}, result.UpstreamOwned)
-	})
-```
-
-
-- [ ] **Step 9: Add a full-config comment-preserving round-trip test**
-
-Append to `internal/upstream_owned_marshal_test.go`:
+Add the `"os"` import to `internal/owned_entry_test.go` and append the round-trip test that was deferred from Task 1:
 
 ```go
 func TestGitSporkConfig_RenameRoundTripPreservesComments(t *testing.T) {
@@ -566,7 +636,63 @@ func TestGitSporkConfig_RenameRoundTripPreservesComments(t *testing.T) {
 }
 ```
 
-Add `"os"` to that file's import block.
+Append to the `Test_UpstreamMv` function in `internal/upstream-mv-rm_test.go` (an upstream rename case and a downstream rename case):
+
+```go
+	t.Run("upstream rename entry: mv rewrites source side, leaves destination", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{From: "source.txt", To: "dest.txt"}},
+		})
+		warnings, err := UpstreamMv(cfg, "source.txt", "new-source.txt")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{From: "new-source.txt", To: "dest.txt"}}, result.UpstreamOwned)
+	})
+
+	t.Run("downstream rename entry: mv rewrites source side, leaves destination", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			DownstreamOwned: []OwnedEntry{{From: "seed-from.md", To: "seed-to.md"}},
+		})
+		warnings, err := UpstreamMv(cfg, "seed-from.md", "renamed-seed.md")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{From: "renamed-seed.md", To: "seed-to.md"}}, result.DownstreamOwned)
+	})
+```
+
+Append to the `Test_UpstreamRm` function (rm subtests, at `internal/upstream-mv-rm_test.go:203`):
+
+```go
+	t.Run("upstream rename entry: rm matches source side and removes entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{
+				{From: "source.txt", To: "dest.txt"},
+				{Pattern: "keep.txt"},
+			},
+		})
+		warnings, err := UpstreamRm(cfg, "source.txt", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "keep.txt"}}, result.UpstreamOwned)
+	})
+
+	t.Run("downstream rename entry: rm matches source side and removes entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			DownstreamOwned: []OwnedEntry{
+				{From: "seed-from.md", To: "seed-to.md"},
+				{Pattern: "keep.md"},
+			},
+		})
+		warnings, err := UpstreamRm(cfg, "seed-from.md", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "keep.md"}}, result.DownstreamOwned)
+	})
+```
 
 - [ ] **Step 10: Build, vet, and run the full unit suite**
 
@@ -575,21 +701,21 @@ Expected: PASS, no vet errors.
 
 - [ ] **Step 11: Sanity-check the schema output by eye**
 
-Run: `go run . schema | head -10`
-Expected: the `upstream_owned:` block shows `- "upstream-owned.txt"` (bare scalar) and a `- from: ... / to: ...` rename entry — no `- pattern:` line.
+Run: `go run . schema | head -20`
+Expected: both `upstream_owned:` and `downstream_owned:` blocks show their plain entry as a bare scalar (`- "upstream-owned.txt"` / `- "downstream-owned.md"`) followed by a `- from: ... / to: ...` rename entry — no `- pattern:` line anywhere.
 
 - [ ] **Step 12: Commit**
 
 ```bash
-git add internal/gitspork.go internal/integrator_upstream-owned.go internal/upstream-mv-rm.go internal/upstream-delta.go internal/upstream-mv-rm_test.go internal/upstream-delta_test.go internal/upstream_owned_marshal_test.go
-git commit -m "feat: rename-aware upstream_owned integration, mv/rm, and schema"
+git add internal/gitspork.go internal/integrator_upstream-owned.go internal/integrator_downstream-owned.go internal/upstream-mv-rm.go internal/upstream-delta.go internal/upstream-mv-rm_test.go internal/upstream-delta_test.go internal/owned_entry_test.go
+git commit -m "feat: rename-aware upstream_owned & downstream_owned integration, mv/rm, schema"
 ```
 
 ---
 
-## Task 3: Delta propagation in downstream-destination space
+## Task 3: Delta propagation in downstream-destination space (upstream_owned)
 
-Today the delta loop propagates deletions/renames using the upstream path directly. For rename entries the downstream file lives at the *destination*, so we map upstream source paths through the matching entry before propagating.
+Today the delta loop propagates deletions/renames using the upstream path directly. For `upstream_owned` rename entries the downstream file lives at the *destination*, so we map upstream source paths through the matching entry before propagating. `downstream_owned` remains excluded from delta (it is not added to the managed set).
 
 **Files:**
 - Modify: `internal/upstream-delta.go` (`buildManagedGlobs` → matchers; delta loop)
@@ -601,7 +727,7 @@ Add to `internal/upstream-delta_test.go`. This test calls the internal helpers d
 
 ```go
 func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {
-	cfg := &GitSporkConfig{UpstreamOwned: []UpstreamOwnedEntry{
+	cfg := &GitSporkConfig{UpstreamOwned: []OwnedEntry{
 		{From: "configs/**", To: ".configs/**"},
 		{Pattern: "docs/**"},
 	}}
@@ -633,7 +759,7 @@ In `internal/upstream-delta.go`, replace `buildManagedGlobs` (and `matchesAnyGlo
 ```go
 type managedMatcher struct {
 	glob  glob.Glob
-	entry *UpstreamOwnedEntry // non-nil only for rename entries; nil means identity dest
+	entry *OwnedEntry // non-nil only for rename entries; nil means identity dest
 }
 
 func buildManagedMatchers(config *GitSporkConfig) ([]managedMatcher, error) {
@@ -644,7 +770,7 @@ func buildManagedMatchers(config *GitSporkConfig) ([]managedMatcher, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", e.SourcePattern(), err)
 		}
-		var ref *UpstreamOwnedEntry
+		var ref *OwnedEntry
 		if e.IsRename() {
 			ref = &e
 		}
@@ -681,7 +807,7 @@ func resolveManagedDest(srcPath string, matchers []managedMatcher) (string, bool
 
 - [ ] **Step 4: Rewrite the delta loop to use destination space**
 
-In `computeUpstreamDelta`, replace the `prevManagedGlobs` setup and the `switch action` block. Change:
+In `computeUpstreamDelta`, replace the `prevManagedGlobs` setup. Change:
 
 ```go
 	prevManagedGlobs, err := buildManagedGlobs(prevConfig)
@@ -735,7 +861,7 @@ And replace the `switch action { case merkletrie.Delete: ... case merkletrie.Mod
 - [ ] **Step 5: Run the new and existing delta tests**
 
 Run: `go test ./internal -run 'Delta|buildManagedMatchers' -v`
-Expected: PASS (new matcher test + all pre-existing delta tests).
+Expected: PASS — the new matcher test, all pre-existing delta tests, and crucially the "downstream_owned file deleted does not appear in delta" test (downstream is not in the managed set).
 
 - [ ] **Step 6: Full unit suite**
 
@@ -758,11 +884,13 @@ git commit -m "feat: propagate upstream deletes/renames in downstream-destinatio
 
 - [ ] **Step 1: Update the schema example block**
 
-In `docs/README.md`, change the `upstream_owned` block (lines 19-20) from:
+In `docs/README.md`, update the `upstream_owned` and `downstream_owned` blocks (around lines 19-22) to show the rename form. Change:
 
 ```yaml
 upstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo
 - "upstream-owned.txt"
+downstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated
+- "downstream-owned.md"
 ```
 
 to:
@@ -772,29 +900,40 @@ upstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by 
 - "upstream-owned.txt"
 - from: "upstream-owned-renamed-from.txt" # (rename) upstream source glob/path
   to: "downstream-renamed-to.txt" # (rename) downstream destination glob/path
+downstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path
+- "downstream-owned.md"
+- from: "downstream-owned-seed-from.md"
+  to: "downstream-owned-seed-to.md"
 ```
+
+(If the exact comment text in the README differs from the above, match the README's existing wording for the lead-in and just add the `- from:/to:` lines and the rename note in the comment.)
 
 - [ ] **Step 2: Add a short prose explanation after the schema block**
 
-Find the prose immediately following the closing ```` ``` ```` of that schema block in `docs/README.md` and insert this paragraph before the next `##` heading:
+Find the prose immediately following the closing ```` ``` ```` of that schema block in `docs/README.md` and insert this section before the next `##` heading:
 
 ```markdown
 ### Renaming files on sync
 
-An `upstream_owned` entry is normally a glob string and the matched files land at
-the same relative path in the downstream. To have a file land at a *different*
-downstream path, use the `{from, to}` map form. `from` is matched against the
-upstream tree exactly like a plain pattern; `to` is the downstream destination.
-For glob renames (e.g. `from: configs/**`, `to: .configs/**`) the destination is
-computed by swapping the source's non-wildcard prefix for the destination's, so
-`configs/app/db.yml` lands at `.configs/app/db.yml`.
+An `upstream_owned` or `downstream_owned` entry is normally a glob string and the
+matched files land at the same relative path in the downstream. To have a file
+land at a *different* downstream path, use the `{from, to}` map form. `from` is
+matched against the upstream tree exactly like a plain pattern; `to` is the
+downstream destination. For glob renames (e.g. `from: configs/**`,
+`to: .configs/**`) the destination is computed by swapping the source's
+non-wildcard prefix for the destination's, so `configs/app/db.yml` lands at
+`.configs/app/db.yml`.
+
+The two lists differ only in *when* the copy happens: `upstream_owned` files are
+overwritten on every integrate, while `downstream_owned` files are seeded once
+(at the `to` path) and never overwritten afterward.
 ```
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add docs/README.md
-git commit -m "docs: document upstream_owned {from, to} rename form"
+git commit -m "docs: document upstream_owned/downstream_owned {from, to} rename form"
 ```
 
 ---
@@ -821,19 +960,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const renameGitsporkYML = `upstream_owned:
+const upstreamRenameGitsporkYML = `upstream_owned:
 - from: .markdownlint-cli2-downstream.jsonc
   to: .markdownlint-cli2.jsonc
 - from: configs/**
   to: .configs/**
 `
 
-func TestIntegrate_rename_exact_and_glob(t *testing.T) {
+const downstreamRenameGitsporkYML = `downstream_owned:
+- from: seed-from.md
+  to: seed-to.md
+`
+
+func TestIntegrate_upstream_rename_exact_and_glob(t *testing.T) {
 	upstreamDir := NewUpstreamRepo(t, map[string]string{
 		".markdownlint-cli2-downstream.jsonc": "{\"config\":true}\n",
 		"configs/app.yml":                     "app: true\n",
 		"configs/nested/db.yml":               "db: true\n",
-	}, renameGitsporkYML)
+	}, upstreamRenameGitsporkYML)
 	downstreamDir := NewDownstreamRepo(t)
 	runner := resolveRunner(t, upstreamDir, downstreamDir)
 
@@ -850,11 +994,11 @@ func TestIntegrate_rename_exact_and_glob(t *testing.T) {
 	AssertFileAbsent(t, downstreamDir, "configs/app.yml")
 }
 
-func TestIntegrate_rename_delete_propagates_to_destination(t *testing.T) {
+func TestIntegrate_upstream_rename_delete_propagates_to_destination(t *testing.T) {
 	upstreamDir := NewUpstreamRepo(t, map[string]string{
 		".markdownlint-cli2-downstream.jsonc": "{\"config\":true}\n",
 		"configs/app.yml":                     "app: true\n",
-	}, renameGitsporkYML)
+	}, upstreamRenameGitsporkYML)
 	downstreamDir := NewDownstreamRepo(t)
 	runner := resolveRunner(t, upstreamDir, downstreamDir)
 	args := integrateArgs(upstreamDir, downstreamDir)
@@ -874,12 +1018,39 @@ func TestIntegrate_rename_delete_propagates_to_destination(t *testing.T) {
 	// Deletion must propagate to the DESTINATION path downstream.
 	AssertFileAbsent(t, downstreamDir, ".markdownlint-cli2.jsonc")
 }
+
+func TestIntegrate_downstream_rename_seeds_and_survives_reintegrate(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"seed-from.md": "seed content\n",
+	}, downstreamRenameGitsporkYML)
+	downstreamDir := NewDownstreamRepo(t)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	args := integrateArgs(upstreamDir, downstreamDir)
+
+	out, code := runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "first integrate failed:\n%s", out)
+
+	// seeded at destination, absent at source
+	AssertFileContains(t, downstreamDir, "seed-to.md", "seed content")
+	AssertFileAbsent(t, downstreamDir, "seed-from.md")
+
+	// downstream customizes the seeded destination file, commits
+	WriteFiles(t, downstreamDir, map[string]string{"seed-to.md": "downstream edit\n"})
+	CommitAll(t, OpenRepo(t, downstreamDir), downstreamDir, "customize seeded file")
+
+	// re-integrate must NOT overwrite the downstream-owned destination
+	out, code = runner.Run(t, args, downstreamDir)
+	require.Equal(t, 0, code, "re-integrate failed:\n%s", out)
+	content := ReadFile(t, downstreamDir, "seed-to.md")
+	require.Contains(t, content, "downstream edit",
+		"downstream-owned rename destination should survive re-integrate")
+}
 ```
 
 - [ ] **Step 2: Run the functional tests (native)**
 
-Run: `go test -tags functional ./test/functional -run 'TestIntegrate_rename' -v`
-Expected: both tests PASS.
+Run: `go test -tags functional ./test/functional -run 'TestIntegrate_upstream_rename|TestIntegrate_downstream_rename' -v`
+Expected: all three tests PASS.
 
 - [ ] **Step 3: Run the whole functional suite to check for regressions**
 
@@ -890,7 +1061,7 @@ Expected: PASS.
 
 ```bash
 git add test/functional/rename_test.go
-git commit -m "test: functional coverage for upstream_owned renames and delete propagation"
+git commit -m "test: functional coverage for upstream/downstream renames and delete propagation"
 ```
 
 ---
@@ -904,8 +1075,8 @@ Expected: all PASS.
 
 - [ ] **Step 2: Confirm schema/init round-trips cleanly**
 
-Run: `go run . schema` and visually confirm `upstream_owned` renders plain entries as scalars and the rename entry as a `from/to` map.
+Run: `go run . schema` and visually confirm both `upstream_owned` and `downstream_owned` render plain entries as scalars and the rename entry as a `from/to` map.
 
-- [ ] **Step 3: Remove the obsolete spike file reference (sanity)**
+- [ ] **Step 3: Confirm no stray files remain**
 
-Run: `git status` and confirm `internal/spike_rename_marshal_test.go` no longer exists (it was deleted during the spike) and no stray files remain.
+Run: `git status` and confirm the working tree is clean and `internal/upstream_owned_marshal_test.go` was renamed to `internal/owned_entry_test.go` (no leftover spike file).

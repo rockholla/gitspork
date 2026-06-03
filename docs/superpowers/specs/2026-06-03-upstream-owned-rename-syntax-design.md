@@ -159,12 +159,28 @@ The other ownership lists (`downstream_owned`, `shared_ownership.*`,
 - Update the `init` scaffold and `schema` command output so the annotated
   schema documents the structured rename form.
 - Update `docs/README.md` with a usage example.
-- **Risk to verify during implementation (spike):** `marshal.YAMLWithComments`
-  (from `github.com/rockholla/go-lib`) must cooperate with a custom
-  `MarshalYAML` on slice elements. If it does not round-trip cleanly, the
-  `schema` output and the config rewritten by `mv`/`rm` could be malformed.
-  Confirm this early; if it breaks, fall back to a marshaling approach that the
-  annotated marshaler supports.
+
+**Marshaling approach (verified by `internal/upstream_owned_marshal_test.go`).**
+A de-risking spike confirmed how the two marshaling paths behave:
+
+- **Config read/write path (goccy/go-yaml).** A custom `BytesUnmarshaler`
+  (`UnmarshalYAML([]byte) error`) + `BytesMarshaler` (`MarshalYAML() ([]byte, error)`)
+  on `UpstreamOwnedEntry` works correctly. Unmarshal accepts a mixed list of
+  scalars and `{from,to}` maps; marshal round-trips plain entries to **bare
+  scalars** and renames to `{from,to}` maps. The comment-preserving write path
+  (`MarshalWithOptions` + `CommentMap`, used by `WriteGitSporkConfig`) preserves
+  user comments and renders scalar/map forms correctly. The entry's `from`/`to`
+  (and the plain `pattern`) fields carry `,omitempty` yaml tags.
+
+- **Schema-doc path (go-lib `marshal.YAMLWithComments`).** This renderer is
+  reflection-based and **ignores** custom `MarshalYAML`, so it emits plain
+  entries in verbose `- pattern: "x"` map form. Chosen fix: a targeted
+  **post-processing pass** (`collapsePlainUpstreamOwned`) that rewrites
+  `- pattern: "x"` lines within the `upstream_owned:` block back to bare scalars
+  `- "x"`, leaving `{from,to}` rename entries and following sections untouched.
+  This pass lives next to `GetGitSporkConfigSchema` and is applied to its output.
+  The spike confirmed the transform produces the intended schema and does not
+  bleed into adjacent sections.
 
 ## Testing
 
@@ -172,6 +188,10 @@ The other ownership lists (`downstream_owned`, `shared_ownership.*`,
 
 - `UpstreamOwnedEntry` unmarshal: scalar form and map form.
 - `UpstreamOwnedEntry` marshal + round-trip: scalar stays scalar, map stays map.
+  (Already started in `internal/upstream_owned_marshal_test.go`, which currently
+  uses temporary fixture types; during implementation these tests are pointed at
+  the real `UpstreamOwnedEntry` and the schema `collapsePlainUpstreamOwned`
+  helper moves into non-test code.)
 - `ResolveDest`: plain identity; exact rename; glob prefix substitution.
 - `buildManagedGlobs` / delta matchers use the source side (a rename entry's
   `from` glob matches a real upstream file).

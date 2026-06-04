@@ -172,8 +172,11 @@ func checkCleanWorkingTree(repoPath string) error {
 	if err != nil {
 		return fmt.Errorf("error checking working tree status: %v", err)
 	}
-	if strings.TrimSpace(string(out)) != "" {
-		return fmt.Errorf("working tree is not clean — commit or stash changes before running check-drift")
+	if status := strings.TrimSpace(string(out)); status != "" {
+		return fmt.Errorf("working tree is not clean — commit or stash changes before running check-drift:\n%s\n\n"+
+			"note: this may be running in a container with different global gitignore rules than your local git environment, "+
+			"which can explain differences you see versus a local `git status`. "+
+			"Commit needed gitignore changes to your repo's .gitignore in these cases to ensure the repo ignores what you need it to regardless of global rules.", status)
 	}
 	return nil
 }

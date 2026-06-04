@@ -34,6 +34,23 @@ var (
 	structuredDataJSONExtensions []string = []string{".json"}
 )
 
+// Integrator is implemented by the ownership integrators that process a
+// homogeneous list of items into the downstream: T is OwnedEntry for the
+// upstream_owned/downstream_owned lists and string (glob pattern) for the
+// shared_ownership lists. Each integrator file carries a compile-time
+// `var _ Integrator[T] = (*Type)(nil)` assertion, so a newly added integrator
+// that diverges from this contract fails to build.
+type Integrator[T any] interface {
+	Integrate(items []T, upstreamPath string, downstreamPath string, logger *Logger) error
+}
+
+// TemplatedIntegrator is kept separate from Integrator[T] because rendering
+// templates additionally needs the forceRePrompt flag to drive input
+// collection, so its Integrate signature cannot match the generic contract.
+type TemplatedIntegrator interface {
+	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error
+}
+
 // Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
 func Integrate(opts *IntegrateOptions) error {
 	var err error

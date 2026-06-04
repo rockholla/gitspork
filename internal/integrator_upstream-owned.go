@@ -8,6 +8,8 @@ import (
 // IntegratorUpstreamOwned will process a list of files to be managed as owned by the upstream gitspork repo
 type IntegratorUpstreamOwned struct{}
 
+var _ Integrator[OwnedEntry] = (*IntegratorUpstreamOwned)(nil)
+
 // Integrate copies each upstream-owned file to the downstream, applying rename
 // entries' destination resolution.
 func (i *IntegratorUpstreamOwned) Integrate(entries []OwnedEntry, upstreamPath string, downstreamPath string, logger *Logger) error {

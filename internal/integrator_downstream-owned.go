@@ -9,6 +9,8 @@ import (
 // IntegratorDownstreamOwned will process a list of files to be managed as owned by the downstream gitspork repo, just initially bootstrapped by the upstream
 type IntegratorDownstreamOwned struct{}
 
+var _ Integrator[OwnedEntry] = (*IntegratorDownstreamOwned)(nil)
+
 // Integrate seeds each downstream-owned file from the upstream a single time,
 // applying rename entries' destination resolution. A file is only copied when
 // its downstream destination does not already exist — the downstream owns it

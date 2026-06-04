@@ -47,7 +47,11 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 	if err != nil {
 		prevConfig = config // fall back to new config if prev has none
 	}
-	prevManagedGlobs, err := buildManagedGlobs(prevConfig)
+	prevMatchers, err := buildManagedMatchers(prevConfig)
+	if err != nil {
+		return delta, err
+	}
+	newMatchers, err := buildManagedMatchers(config)
 	if err != nil {
 		return delta, err
 	}
@@ -75,16 +79,24 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 		switch action {
 		case merkletrie.Delete:
 			fromPath := stripSubpath(change.From.Name, upstreamSubpath)
-			if matchesAnyGlob(fromPath, prevManagedGlobs) {
-				delta.Deletions = append(delta.Deletions, fromPath)
+			if dest, ok := resolveManagedDest(fromPath, prevMatchers); ok {
+				delta.Deletions = append(delta.Deletions, dest)
 			}
 		case merkletrie.Modify:
 			// A Modify with different From/To names is a rename (after rename detection)
 			if change.From.Name != change.To.Name {
 				fromPath := stripSubpath(change.From.Name, upstreamSubpath)
 				toPath := stripSubpath(change.To.Name, upstreamSubpath)
-				if matchesAnyGlob(fromPath, prevManagedGlobs) {
-					delta.Renames = append(delta.Renames, upstreamRename{OldPath: fromPath, NewPath: toPath})
+				oldDest, ok := resolveManagedDest(fromPath, prevMatchers)
+				if !ok {
+					break
+				}
+				newDest, ok := resolveManagedDest(toPath, newMatchers)
+				if !ok {
+					newDest = toPath
+				}
+				if oldDest != newDest {
+					delta.Renames = append(delta.Renames, upstreamRename{OldPath: oldDest, NewPath: newDest})
 				}
 			}
 		}
@@ -97,32 +109,51 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 	return delta, nil
 }
 
-func buildManagedGlobs(config *GitSporkConfig) ([]glob.Glob, error) {
-	var patterns []string
-	for _, e := range config.UpstreamOwned {
-		patterns = append(patterns, e.SourcePattern())
+type managedMatcher struct {
+	glob  glob.Glob
+	entry *OwnedEntry // non-nil only for rename entries; nil means identity dest
+}
+
+func buildManagedMatchers(config *GitSporkConfig) ([]managedMatcher, error) {
+	var matchers []managedMatcher
+	for i := range config.UpstreamOwned {
+		e := config.UpstreamOwned[i]
+		g, err := glob.Compile(e.SourcePattern())
+		if err != nil {
+			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", e.SourcePattern(), err)
+		}
+		var ref *OwnedEntry
+		if e.IsRename() {
+			ref = &e
+		}
+		matchers = append(matchers, managedMatcher{glob: g, entry: ref})
 	}
-	patterns = append(patterns, config.SharedOwnership.Merged...)
-	patterns = append(patterns, config.SharedOwnership.Structured.PreferUpstream...)
-	patterns = append(patterns, config.SharedOwnership.Structured.PreferDownstream...)
-	var compiled []glob.Glob
-	for _, p := range patterns {
+	var plain []string
+	plain = append(plain, config.SharedOwnership.Merged...)
+	plain = append(plain, config.SharedOwnership.Structured.PreferUpstream...)
+	plain = append(plain, config.SharedOwnership.Structured.PreferDownstream...)
+	for _, p := range plain {
 		g, err := glob.Compile(p)
 		if err != nil {
 			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", p, err)
 		}
-		compiled = append(compiled, g)
+		matchers = append(matchers, managedMatcher{glob: g})
 	}
-	return compiled, nil
+	return matchers, nil
 }
 
-func matchesAnyGlob(path string, globs []glob.Glob) bool {
-	for _, g := range globs {
-		if g.Match(path) {
-			return true
+// resolveManagedDest returns the downstream destination for an upstream source
+// path if any managed matcher matches it.
+func resolveManagedDest(srcPath string, matchers []managedMatcher) (string, bool) {
+	for _, m := range matchers {
+		if m.glob.Match(srcPath) {
+			if m.entry != nil {
+				return m.entry.ResolveDest(srcPath), true
+			}
+			return srcPath, true
 		}
 	}
-	return false
+	return "", false
 }
 
 func stripSubpath(path, subpath string) string {

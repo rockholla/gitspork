@@ -144,6 +144,26 @@ func Test_computeUpstreamDelta(t *testing.T) {
 	})
 }
 
+func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {
+	cfg := &GitSporkConfig{UpstreamOwned: []OwnedEntry{
+		{From: "configs/**", To: ".configs/**"},
+		{Pattern: "docs/**"},
+	}}
+	matchers, err := buildManagedMatchers(cfg)
+	require.NoError(t, err)
+
+	dest, ok := resolveManagedDest("configs/app.yml", matchers)
+	require.True(t, ok)
+	assert.Equal(t, ".configs/app.yml", dest)
+
+	dest, ok = resolveManagedDest("docs/x.md", matchers)
+	require.True(t, ok)
+	assert.Equal(t, "docs/x.md", dest)
+
+	_, ok = resolveManagedDest("unmanaged.txt", matchers)
+	assert.False(t, ok)
+}
+
 func makeUpstreamWithDeletedFile(t *testing.T, dir, filePath string) (*gogit.Repository, string, string) {
 	t.Helper()
 	repo, err := gogit.PlainInit(dir, false,

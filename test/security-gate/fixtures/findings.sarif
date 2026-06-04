@@ -1,0 +1,13 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "CodeQL" } },
+      "results": [
+        { "ruleId": "go/sql-injection", "level": "error", "message": { "text": "Possible SQL injection" } },
+        { "ruleId": "go/weak-crypto", "level": "warning", "message": { "text": "Weak cryptographic algorithm" } },
+        { "ruleId": "go/informational-note", "level": "note", "message": { "text": "FYI only" } }
+      ]
+    }
+  ]
+}

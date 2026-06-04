@@ -3,6 +3,7 @@
 </picture>
 
 [![ci](https://github.com/rockholla/gitspork/actions/workflows/main.yml/badge.svg)](https://github.com/rockholla/gitspork/actions/workflows/main.yml)
+[![security](https://github.com/rockholla/gitspork/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/rockholla/gitspork/actions/workflows/security.yml)
 
 ## When a fork just ain't good enough
 

@@ -16,10 +16,14 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 When getting started, you can run `gitspork init --help` or `gitspork schema` to see the schema and documentation for `.gitspork.yml`:
 
 ```yaml
-upstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo
+upstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream
 - "upstream-owned.txt"
-downstream_owned: # file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated
+- from: "upstream-owned-renamed-from.txt" # (rename) upstream source glob/path
+  to: "downstream-renamed-to.txt" # (rename) downstream destination glob/path
+downstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path
 - "downstream-owned.md"
+- from: "downstream-owned-seed-from.md" # (rename) upstream source glob/path
+  to: "downstream-owned-seed-to.md" # (rename) downstream destination glob/path
 shared_ownership: # file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way
   merged: # file patterns (https://github.com/gobwas/glob) that should be treated as owned by both the upstream and downstream repos, with the ability for the upstream to own blocks w/in these types of files
   - "shared-ownership-merged.txt"
@@ -54,6 +58,21 @@ pre_integrate:
 post_integrate:
   exec: "./.gitspork/migrations/0001/post-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
 ```
+
+### Renaming files on sync
+
+An `upstream_owned` or `downstream_owned` entry is normally a glob string and the
+matched files land at the same relative path in the downstream. To have a file
+land at a *different* downstream path, use the `{from, to}` map form. `from` is
+matched against the upstream tree exactly like a plain pattern; `to` is the
+downstream destination. For glob renames (e.g. `from: configs/**`,
+`to: .configs/**`) the destination is computed by swapping the source's
+non-wildcard prefix for the destination's, so `configs/app/db.yml` lands at
+`.configs/app/db.yml`.
+
+The two lists differ only in *when* the copy happens: `upstream_owned` files are
+overwritten on every integrate, while `downstream_owned` files are seeded once
+(at the `to` path) and never overwritten afterward.
 
 ### Special Support for `git mv` and `git rm` Operations
 

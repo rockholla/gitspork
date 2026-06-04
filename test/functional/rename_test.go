@@ -40,6 +40,7 @@ func TestIntegrate_upstream_rename_exact_and_glob(t *testing.T) {
 	AssertFileContains(t, downstreamDir, ".configs/app.yml", "app: true")
 	AssertFileContains(t, downstreamDir, ".configs/nested/db.yml", "db: true")
 	AssertFileAbsent(t, downstreamDir, "configs/app.yml")
+	AssertFileAbsent(t, downstreamDir, "configs/nested/db.yml")
 }
 
 func TestIntegrate_upstream_rename_delete_propagates_to_destination(t *testing.T) {

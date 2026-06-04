@@ -39,4 +39,6 @@ jobs:
           upload: true
           output: sarif-results
       - name: Security gate
-        run: ./scripts/ci/security-gate.sh sarif-results/go.sarif
+        run: |
+          sarif="$(ls sarif-results/*.sarif | head -n1)"
+          ./scripts/ci/security-gate.sh "$sarif"

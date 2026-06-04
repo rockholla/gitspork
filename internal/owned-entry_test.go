@@ -6,6 +6,7 @@ package internal
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -99,7 +100,7 @@ func TestCollapsePlainOwnedEntries_bothBlocks(t *testing.T) {
 
 func TestGitSporkConfig_RenameRoundTripPreservesComments(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/.gitspork.yml"
+	path := filepath.Join(dir, ".gitspork.yml")
 	src := `upstream_owned:
 # keep me
 - src/**

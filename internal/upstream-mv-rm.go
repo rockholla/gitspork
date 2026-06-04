@@ -74,6 +74,7 @@ func ComputeUpstreamMvFromConfig(config *GitSporkConfig, oldPath, newPath string
 				newSrc = src
 			}
 			if e.IsRename() {
+				// To is a downstream landing path, not an upstream file, so mv never rewrites it.
 				result[i] = OwnedEntry{From: newSrc, To: e.To}
 			} else {
 				result[i] = OwnedEntry{Pattern: newSrc}

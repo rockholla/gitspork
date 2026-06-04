@@ -34,12 +34,6 @@ var (
 	structuredDataJSONExtensions []string = []string{".json"}
 )
 
-// GitSporkIntegrator defines the common implementation requirements for any thing processing a list of glob patterns to integrate b/w upstream/downstream
-// note that not all integrators will implement this interface, but it is the most common kind of integrator type
-type GitSporkIntegrator interface {
-	Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error
-}
-
 // Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
 func Integrate(opts *IntegrateOptions) error {
 	var err error

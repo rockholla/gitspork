@@ -59,6 +59,21 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Equal(t, "config/new.yml", delta.Renames[0].NewPath)
 	})
 
+	t.Run("upstream_owned rename entry: deleted source maps to destination in Deletions", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "configs/app.yml")
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{From: "configs/**", To: ".configs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, ".configs/app.yml")
+		assert.NotContains(t, delta.Deletions, "configs/app.yml")
+		assert.Empty(t, delta.Renames)
+	})
+
 	t.Run("downstream_owned file deleted does not appear in delta", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "gitspork-delta-test")
 		require.NoError(t, err)

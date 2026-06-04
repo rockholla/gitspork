@@ -93,6 +93,8 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 				}
 				newDest, ok := resolveManagedDest(toPath, newMatchers)
 				if !ok {
+					// toPath is no longer covered by any new config entry; fall back to the
+					// raw upstream path so the downstream file moves rather than being orphaned.
 					newDest = toPath
 				}
 				if oldDest != newDest {

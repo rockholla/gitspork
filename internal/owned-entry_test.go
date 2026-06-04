@@ -5,6 +5,7 @@ package internal
 // reflection-based marshal.YAMLWithComments output.
 
 import (
+	"os"
 	"testing"
 
 	"github.com/goccy/go-yaml"
@@ -94,4 +95,28 @@ func TestCollapsePlainOwnedEntries_bothBlocks(t *testing.T) {
 	assert.Contains(t, out, `to: ".markdownlint.jsonc"`)
 	assert.Contains(t, out, `from: "seed-from.md"`)
 	assert.Contains(t, out, `to: "seed-to.md"`)
+}
+
+func TestGitSporkConfig_RenameRoundTripPreservesComments(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/.gitspork.yml"
+	src := `upstream_owned:
+# keep me
+- src/**
+- from: a.txt
+  to: b.txt
+`
+	require.NoError(t, os.WriteFile(path, []byte(src), 0644))
+	cfg, err := ParseGitSporkConfig(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.UpstreamOwned, 2)
+	assert.Equal(t, "src/**", cfg.UpstreamOwned[0].Pattern)
+	assert.Equal(t, "a.txt", cfg.UpstreamOwned[1].From)
+
+	require.NoError(t, WriteGitSporkConfig(path, cfg))
+	out, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "keep me")
+	assert.Contains(t, string(out), "- src/**")
+	assert.Contains(t, string(out), "from: a.txt")
 }

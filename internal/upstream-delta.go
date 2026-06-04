@@ -99,7 +99,9 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 
 func buildManagedGlobs(config *GitSporkConfig) ([]glob.Glob, error) {
 	var patterns []string
-	patterns = append(patterns, config.UpstreamOwned...)
+	for _, e := range config.UpstreamOwned {
+		patterns = append(patterns, e.SourcePattern())
+	}
 	patterns = append(patterns, config.SharedOwnership.Merged...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferUpstream...)
 	patterns = append(patterns, config.SharedOwnership.Structured.PreferDownstream...)

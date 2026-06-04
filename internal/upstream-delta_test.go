@@ -31,7 +31,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
 		require.NoError(t, err)
@@ -65,7 +65,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{DownstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{DownstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
 		require.NoError(t, err)
@@ -79,7 +79,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, _, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, "0000000000000000000000000000000000000000", newHash, config, "")
 		require.NoError(t, err)
@@ -94,7 +94,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 
 		// file lives at upstream/docs/guide.md in the repo tree
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "upstream")
 		require.NoError(t, err)

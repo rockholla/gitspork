@@ -54,8 +54,36 @@ func ComputeUpstreamMvFromConfig(config *GitSporkConfig, oldPath, newPath string
 		return result
 	}
 
-	config.UpstreamOwned = rewritePatterns(config.UpstreamOwned)
-	config.DownstreamOwned = rewritePatterns(config.DownstreamOwned)
+	rewriteOwned := func(entries []OwnedEntry) []OwnedEntry {
+		result := make([]OwnedEntry, len(entries))
+		for i, e := range entries {
+			src := e.SourcePattern()
+			prefix := globNonWildcardPrefix(src)
+			var newSrc string
+			switch {
+			case prefix == "":
+				warnings = append(warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
+				newSrc = src
+			case src == oldPath:
+				newSrc = newPath
+			case prefix == oldPath:
+				newSrc = newPath + src[len(oldPath):]
+			case strings.HasPrefix(prefix, oldPath+"/"):
+				newSrc = newPath + src[len(oldPath):]
+			default:
+				newSrc = src
+			}
+			if e.IsRename() {
+				result[i] = OwnedEntry{From: newSrc, To: e.To}
+			} else {
+				result[i] = OwnedEntry{Pattern: newSrc}
+			}
+		}
+		return result
+	}
+
+	config.UpstreamOwned = rewriteOwned(config.UpstreamOwned)
+	config.DownstreamOwned = rewriteOwned(config.DownstreamOwned)
 	config.SharedOwnership.Merged = rewritePatterns(config.SharedOwnership.Merged)
 	config.SharedOwnership.Structured.PreferUpstream = rewritePatterns(config.SharedOwnership.Structured.PreferUpstream)
 	config.SharedOwnership.Structured.PreferDownstream = rewritePatterns(config.SharedOwnership.Structured.PreferDownstream)
@@ -125,8 +153,31 @@ func ComputeUpstreamRmFromConfig(config *GitSporkConfig, path string, recursive 
 		return result
 	}
 
-	config.UpstreamOwned = filterPatterns(config.UpstreamOwned)
-	config.DownstreamOwned = filterPatterns(config.DownstreamOwned)
+	filterOwned := func(entries []OwnedEntry) []OwnedEntry {
+		var result []OwnedEntry
+		for _, e := range entries {
+			src := e.SourcePattern()
+			if src == path {
+				continue
+			}
+			if recursive {
+				prefix := globNonWildcardPrefix(src)
+				if prefix == "" {
+					warnings = append(warnings, fmt.Sprintf("pattern %q has a leading wildcard — update manually", src))
+					result = append(result, e)
+					continue
+				}
+				if prefix == path || strings.HasPrefix(prefix, path+"/") {
+					continue
+				}
+			}
+			result = append(result, e)
+		}
+		return result
+	}
+
+	config.UpstreamOwned = filterOwned(config.UpstreamOwned)
+	config.DownstreamOwned = filterOwned(config.DownstreamOwned)
 	config.SharedOwnership.Merged = filterPatterns(config.SharedOwnership.Merged)
 	config.SharedOwnership.Structured.PreferUpstream = filterPatterns(config.SharedOwnership.Structured.PreferUpstream)
 	config.SharedOwnership.Structured.PreferDownstream = filterPatterns(config.SharedOwnership.Structured.PreferDownstream)

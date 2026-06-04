@@ -9,21 +9,31 @@ import (
 // IntegratorDownstreamOwned will process a list of files to be managed as owned by the downstream gitspork repo, just initially bootstrapped by the upstream
 type IntegratorDownstreamOwned struct{}
 
-// Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorDownstreamOwned) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error {
-	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
-	if err != nil {
-		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)
-	}
-	for _, integrateFile := range integrateFiles {
-		destination := filepath.Join(downstreamPath, integrateFile)
-		if _, err := os.Stat(destination); os.IsNotExist(err) {
-			logger.Log("➡️ copying %s one time to downstream", integrateFile)
-			if err := syncFile(filepath.Join(upstreamPath, integrateFile), destination); err != nil {
-				return err
+// Integrate seeds each downstream-owned file from the upstream a single time,
+// applying rename entries' destination resolution. A file is only copied when
+// its downstream destination does not already exist — the downstream owns it
+// thereafter.
+func (i *IntegratorDownstreamOwned) Integrate(entries []OwnedEntry, upstreamPath string, downstreamPath string, logger *Logger) error {
+	for _, entry := range entries {
+		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
+		if err != nil {
+			return fmt.Errorf("error determining the list of files to integrate in %s from %q: %v", upstreamPath, entry.SourcePattern(), err)
+		}
+		for _, integrateFile := range integrateFiles {
+			dest := entry.ResolveDest(integrateFile)
+			destination := filepath.Join(downstreamPath, dest)
+			if _, err := os.Stat(destination); os.IsNotExist(err) {
+				if dest == integrateFile {
+					logger.Log("➡️ copying %s one time to downstream", integrateFile)
+				} else {
+					logger.Log("➡️ copying %s one time to downstream as %s", integrateFile, dest)
+				}
+				if err := syncFile(filepath.Join(upstreamPath, integrateFile), destination); err != nil {
+					return err
+				}
+			} else {
+				logger.Log("🔒 downstream-owned file %s exists, not doing anything", dest)
 			}
-		} else {
-			logger.Log("🔒 downstream-owned file %s exists, not doing anything", integrateFile)
 		}
 	}
 	return nil

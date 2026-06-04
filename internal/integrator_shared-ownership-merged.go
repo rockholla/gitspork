@@ -16,6 +16,8 @@ const (
 // IntegratorSharedOwnershipMerged will process a list of files to have shared ownership and generic merging based on blocks defined as owned by the upstream repo
 type IntegratorSharedOwnershipMerged struct{}
 
+var _ Integrator[string] = (*IntegratorSharedOwnershipMerged)(nil)
+
 type upstreamOwnedBlock struct {
 	beginMarker string
 	content     string

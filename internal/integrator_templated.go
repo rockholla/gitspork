@@ -22,6 +22,8 @@ const (
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
 type IntegratorTemplated struct{}
 
+var _ TemplatedIntegrator = (*IntegratorTemplated)(nil)
+
 // IntegratorTemplateData is the common data interface passed into templates
 type IntegratorTemplatedData struct {
 	Inputs map[string]string `json:"inputs"`

@@ -10,6 +10,8 @@ import (
 // IntegratorSharedOwnershipStructuredPreferDownstream will process a list of structured data files to be co-owned by upstream and downstream, merged with preference/precdence in favor of downstream
 type IntegratorSharedOwnershipStructuredPreferDownstream struct{}
 
+var _ Integrator[string] = (*IntegratorSharedOwnershipStructuredPreferDownstream)(nil)
+
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
 func (i *IntegratorSharedOwnershipStructuredPreferDownstream) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error {
 	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)

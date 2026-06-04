@@ -31,7 +31,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
 		require.NoError(t, err)
@@ -59,13 +59,28 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Equal(t, "config/new.yml", delta.Renames[0].NewPath)
 	})
 
+	t.Run("upstream_owned rename entry: deleted source maps to destination in Deletions", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "configs/app.yml")
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{From: "configs/**", To: ".configs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, ".configs/app.yml")
+		assert.NotContains(t, delta.Deletions, "configs/app.yml")
+		assert.Empty(t, delta.Renames)
+	})
+
 	t.Run("downstream_owned file deleted does not appear in delta", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "gitspork-delta-test")
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{DownstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{DownstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
 		require.NoError(t, err)
@@ -79,7 +94,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, _, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, "0000000000000000000000000000000000000000", newHash, config, "")
 		require.NoError(t, err)
@@ -94,7 +109,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 
 		// file lives at upstream/docs/guide.md in the repo tree
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []string{"docs/**"}}
+		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "upstream")
 		require.NoError(t, err)
@@ -142,6 +157,26 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Equal(t, "out/old.txt", delta.Renames[0].OldPath)
 		assert.Equal(t, "out/new.txt", delta.Renames[0].NewPath)
 	})
+}
+
+func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {
+	cfg := &GitSporkConfig{UpstreamOwned: []OwnedEntry{
+		{From: "configs/**", To: ".configs/**"},
+		{Pattern: "docs/**"},
+	}}
+	matchers, err := buildManagedMatchers(cfg)
+	require.NoError(t, err)
+
+	dest, ok := resolveManagedDest("configs/app.yml", matchers)
+	require.True(t, ok)
+	assert.Equal(t, ".configs/app.yml", dest)
+
+	dest, ok = resolveManagedDest("docs/x.md", matchers)
+	require.True(t, ok)
+	assert.Equal(t, "docs/x.md", dest)
+
+	_, ok = resolveManagedDest("unmanaged.txt", matchers)
+	assert.False(t, ok)
 }
 
 func makeUpstreamWithDeletedFile(t *testing.T, dir, filePath string) (*gogit.Repository, string, string) {

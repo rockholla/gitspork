@@ -23,8 +23,8 @@ var (
 
 // GitSporkConfig represents the config an upstream repo defines in .gitspork.yml
 type GitSporkConfig struct {
-	UpstreamOwned   []string                      `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the upstream gitspork repo"`
-	DownstreamOwned []string                      `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) that should be treated as fully-owned by the downstream repo once it's been initially integrated"`
+	UpstreamOwned   []OwnedEntry                  `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream"`
+	DownstreamOwned []OwnedEntry                  `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path"`
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
 	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
 	Migrations      []string                      `yaml:"migrations" comment:"list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions"`
@@ -134,6 +134,16 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 		return config, fmt.Errorf("error parsing gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
 	config.comments = cm
+	for _, e := range config.UpstreamOwned {
+		if err := e.Validate(); err != nil {
+			return config, fmt.Errorf("invalid upstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
+	for _, e := range config.DownstreamOwned {
+		if err := e.Validate(); err != nil {
+			return config, fmt.Errorf("invalid downstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
 	return config, nil
 }
 
@@ -154,8 +164,14 @@ func ParseMigrationConfig(migrationConfigPath string) (*GitSporkConfigMigration,
 // GetGitSporkConfigSchema will render a version of the .gitspork.yml config w/ comments as a schema-like documentation source
 func GetGitSporkConfigSchema() (string, string, error) {
 	gitSporkExampleConfig := &GitSporkConfig{
-		UpstreamOwned:   []string{"upstream-owned.txt"},
-		DownstreamOwned: []string{"downstream-owned.md"},
+		UpstreamOwned: []OwnedEntry{
+			{Pattern: "upstream-owned.txt"},
+			{From: "upstream-owned-renamed-from.txt", To: "downstream-renamed-to.txt"},
+		},
+		DownstreamOwned: []OwnedEntry{
+			{Pattern: "downstream-owned.md"},
+			{From: "downstream-owned-seed-from.md", To: "downstream-owned-seed-to.md"},
+		},
 		SharedOwnership: GitSporkConfigSharedOwnership{
 			Merged: []string{"shared-ownership-merged.txt"},
 			Structured: GitSporkConfigSharedOwnershipStructured{
@@ -203,6 +219,7 @@ func GetGitSporkConfigSchema() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+	renderedMain = collapsePlainOwnedEntries(renderedMain)
 	renderedMigration, err := marshal.YAMLWithComments(migrationExampleConfig, 0)
 	if err != nil {
 		return "", "", err

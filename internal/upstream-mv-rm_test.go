@@ -20,35 +20,35 @@ func Test_globNonWildcardPrefix(t *testing.T) {
 func Test_UpstreamMv(t *testing.T) {
 	t.Run("exact upstream_owned entry is replaced", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/old.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/old.md"}},
 		})
 		warnings, err := UpstreamMv(cfg, "docs/old.md", "docs/new.md")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/new.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/new.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("glob with matching prefix is rewritten", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/cloud-native/**"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}},
 		})
 		warnings, err := UpstreamMv(cfg, "docs/cloud-native", "docs/cloud")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/cloud/**"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/**"}}, result.UpstreamOwned)
 	})
 
 	t.Run("glob with wildcard before moved segment emits warning and is unchanged", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"**/cloud-native/*.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "**/cloud-native/*.md"}},
 		})
 		warnings, err := UpstreamMv(cfg, "cloud-native", "cloud")
 		require.NoError(t, err)
 		assert.Len(t, warnings, 1)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"**/cloud-native/*.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "**/cloud-native/*.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("templated template field updated on exact match", func(t *testing.T) {
@@ -106,24 +106,46 @@ func Test_UpstreamMv(t *testing.T) {
 
 	t.Run("glob with matching sub-prefix is rewritten", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/cloud-native/sub/**"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/sub/**"}},
 		})
 		warnings, err := UpstreamMv(cfg, "docs/cloud-native", "docs/cloud")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/cloud/sub/**"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/sub/**"}}, result.UpstreamOwned)
 	})
 
 	t.Run("downstream_owned entry is rewritten", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			DownstreamOwned: []string{"docs/old.md"},
+			DownstreamOwned: []OwnedEntry{{Pattern: "docs/old.md"}},
 		})
 		warnings, err := UpstreamMv(cfg, "docs/old.md", "docs/new.md")
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/new.md"}, result.DownstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/new.md"}}, result.DownstreamOwned)
+	})
+
+	t.Run("upstream rename entry: mv rewrites source side, leaves destination", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{From: "source.txt", To: "dest.txt"}},
+		})
+		warnings, err := UpstreamMv(cfg, "source.txt", "new-source.txt")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{From: "new-source.txt", To: "dest.txt"}}, result.UpstreamOwned)
+	})
+
+	t.Run("downstream rename entry: mv rewrites source side, leaves destination", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			DownstreamOwned: []OwnedEntry{{From: "seed-from.md", To: "seed-to.md"}},
+		})
+		warnings, err := UpstreamMv(cfg, "seed-from.md", "renamed-seed.md")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{From: "renamed-seed.md", To: "seed-to.md"}}, result.DownstreamOwned)
 	})
 }
 
@@ -190,7 +212,7 @@ func Test_WriteGitSporkConfig_preservesComments(t *testing.T) {
 	cfg, err := ParseGitSporkConfig(cfgPath)
 	require.NoError(t, err)
 
-	cfg.UpstreamOwned = append(cfg.UpstreamOwned, "docs/new.md")
+	cfg.UpstreamOwned = append(cfg.UpstreamOwned, OwnedEntry{Pattern: "docs/new.md"})
 	require.NoError(t, WriteGitSporkConfig(cfgPath, cfg))
 
 	result, err := os.ReadFile(cfgPath)
@@ -203,46 +225,46 @@ func Test_WriteGitSporkConfig_preservesComments(t *testing.T) {
 func Test_UpstreamRm(t *testing.T) {
 	t.Run("exact entry removed", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/guide.md", "docs/other.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/guide.md"}, {Pattern: "docs/other.md"}},
 		})
 		warnings, err := UpstreamRm(cfg, "docs/guide.md", false)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("recursive: child exact paths removed", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/cloud-native/file.md", "docs/other.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/file.md"}, {Pattern: "docs/other.md"}},
 		})
 		warnings, err := UpstreamRm(cfg, "docs/cloud-native", true)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("recursive: glob with matching prefix removed", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"docs/cloud-native/**", "docs/other.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}, {Pattern: "docs/other.md"}},
 		})
 		warnings, err := UpstreamRm(cfg, "docs/cloud-native", true)
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"docs/other.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("glob with leading wildcard emits warning and is unchanged", func(t *testing.T) {
 		cfg := makeConfigFile(t, &GitSporkConfig{
-			UpstreamOwned: []string{"**/cloud-native/*.md"},
+			UpstreamOwned: []OwnedEntry{{Pattern: "**/cloud-native/*.md"}},
 		})
 		warnings, err := UpstreamRm(cfg, "cloud-native", true)
 		require.NoError(t, err)
 		assert.Len(t, warnings, 1)
 		result := loadConfigFile(t, cfg)
-		assert.Equal(t, []string{"**/cloud-native/*.md"}, result.UpstreamOwned)
+		assert.Equal(t, []OwnedEntry{{Pattern: "**/cloud-native/*.md"}}, result.UpstreamOwned)
 	})
 
 	t.Run("templated entry removed when template matches", func(t *testing.T) {
@@ -303,5 +325,33 @@ func Test_UpstreamRm(t *testing.T) {
 		result := loadConfigFile(t, cfg)
 		require.Len(t, result.Templated, 1)
 		assert.Equal(t, "templates/bar.tmpl", result.Templated[0].Template)
+	})
+
+	t.Run("upstream rename entry: rm matches source side and removes entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{
+				{From: "source.txt", To: "dest.txt"},
+				{Pattern: "keep.txt"},
+			},
+		})
+		warnings, err := UpstreamRm(cfg, "source.txt", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "keep.txt"}}, result.UpstreamOwned)
+	})
+
+	t.Run("downstream rename entry: rm matches source side and removes entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			DownstreamOwned: []OwnedEntry{
+				{From: "seed-from.md", To: "seed-to.md"},
+				{Pattern: "keep.md"},
+			},
+		})
+		warnings, err := UpstreamRm(cfg, "seed-from.md", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "keep.md"}}, result.DownstreamOwned)
 	})
 }

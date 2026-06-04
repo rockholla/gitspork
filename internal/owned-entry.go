@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -44,6 +45,29 @@ func (e OwnedEntry) ResolveDest(matchedFile string) string {
 	srcPrefix := globNonWildcardPrefix(e.From)
 	dstPrefix := globNonWildcardPrefix(e.To)
 	return dstPrefix + strings.TrimPrefix(matchedFile, srcPrefix)
+}
+
+// Validate reports a configuration error if the entry is malformed: a rename
+// must set both From and To, and the two sides must agree on whether they are
+// globs (both contain a wildcard or neither does). An asymmetric rename — a glob
+// source with a scalar destination, or vice versa — silently produces malformed
+// destination paths in ResolveDest, so it is rejected at parse time instead.
+func (e OwnedEntry) Validate() error {
+	if e.From == "" && e.To == "" {
+		if e.Pattern == "" {
+			return fmt.Errorf("ownership entry is empty: provide a pattern or a {from, to} rename")
+		}
+		return nil
+	}
+	if e.From == "" || e.To == "" {
+		return fmt.Errorf("rename entry must set both 'from' and 'to' (got from=%q to=%q)", e.From, e.To)
+	}
+	fromGlob := globNonWildcardPrefix(e.From) != e.From
+	toGlob := globNonWildcardPrefix(e.To) != e.To
+	if fromGlob != toGlob {
+		return fmt.Errorf("rename entry 'from' and 'to' must both be globs or both be exact paths (got from=%q to=%q)", e.From, e.To)
+	}
+	return nil
 }
 
 // UnmarshalYAML accepts either a scalar (plain pattern) or a {from, to} map.

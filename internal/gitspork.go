@@ -134,6 +134,16 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 		return config, fmt.Errorf("error parsing gitspork config file %s: %v", gitSporkConfigFilePath, err)
 	}
 	config.comments = cm
+	for _, e := range config.UpstreamOwned {
+		if err := e.Validate(); err != nil {
+			return config, fmt.Errorf("invalid upstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
+	for _, e := range config.DownstreamOwned {
+		if err := e.Validate(); err != nil {
+			return config, fmt.Errorf("invalid downstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
 	return config, nil
 }
 

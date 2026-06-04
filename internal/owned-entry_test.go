@@ -62,6 +62,26 @@ func TestOwnedEntry_SourcePattern(t *testing.T) {
 	assert.Equal(t, "a.txt", OwnedEntry{From: "a.txt", To: "b.txt"}.SourcePattern())
 }
 
+func TestOwnedEntry_Validate(t *testing.T) {
+	// valid: plain pattern
+	require.NoError(t, OwnedEntry{Pattern: "src/**"}.Validate())
+	// valid: exact rename (neither side has a wildcard)
+	require.NoError(t, OwnedEntry{From: "a.txt", To: "b.txt"}.Validate())
+	// valid: glob rename (both sides have a wildcard)
+	require.NoError(t, OwnedEntry{From: "configs/**", To: ".configs/**"}.Validate())
+
+	// invalid: rename missing To
+	require.Error(t, OwnedEntry{From: "a.txt"}.Validate())
+	// invalid: To without From (silent no-op otherwise)
+	require.Error(t, OwnedEntry{To: "b.txt"}.Validate())
+	// invalid: asymmetric — glob source, scalar dest, yields malformed paths
+	require.Error(t, OwnedEntry{From: "configs/**", To: ".configs"}.Validate())
+	// invalid: asymmetric — scalar source, glob dest
+	require.Error(t, OwnedEntry{From: "configs", To: ".configs/**"}.Validate())
+	// invalid: empty
+	require.Error(t, OwnedEntry{}.Validate())
+}
+
 func TestOwnedEntry_ResolveDest(t *testing.T) {
 	// plain entry: identity
 	assert.Equal(t, "x/y.txt", OwnedEntry{Pattern: "x/**"}.ResolveDest("x/y.txt"))

@@ -5,6 +5,7 @@ package functional
 import (
 	"testing"
 
+	gogit "github.com/go-git/go-git/v6"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,6 +53,38 @@ func TestCheckDrift_no_drift_state_url(t *testing.T) {
 		"--downstream-repo-path", downstreamDir,
 	}, downstreamDir)
 	require.Equal(t, 0, code, "expected no drift using state URL (exit 0):\n%s", out)
+}
+
+// TestCheckDrift_detached_head verifies check-drift works when the downstream is
+// in a detached HEAD state, as CI runners (e.g. Buildkite) leave it after
+// checking out a specific commit rather than a branch.
+func TestCheckDrift_detached_head(t *testing.T) {
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+
+	integrateForDrift(t, runner, upstreamDir, downstreamDir)
+	// check-drift re-runs integrate internally and needs input-data.json
+	prepDownstreamWithInputData(t, downstreamDir)
+
+	// Simulate the CI checkout: detach HEAD at the current commit (no branch).
+	repo := OpenRepo(t, downstreamDir)
+	head, err := repo.Head()
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, wt.Checkout(&gogit.CheckoutOptions{Hash: head.Hash()}))
+	detached, err := repo.Head()
+	require.NoError(t, err)
+	require.False(t, detached.Name().IsBranch(), "test setup should leave a detached HEAD")
+
+	out, code := runner.Run(t, []string{
+		"check-drift",
+		"--downstream-repo-path", downstreamDir,
+		"--upstream-repo-url", "file://" + upstreamDir,
+	}, downstreamDir)
+	require.Equal(t, 0, code, "expected detached HEAD handled with no drift (exit 0):\n%s", out)
 }
 
 func TestCheckDrift_drift_detected(t *testing.T) {

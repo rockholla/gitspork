@@ -37,6 +37,11 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 		Use:   "check-drift",
 		Short: checkDriftHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", checkDriftHelpShort, checkDriftHelpLong),
+		// Drift (and other failures) are operational errors, not usage errors:
+		// don't dump the help/usage block, and let root's Fatal print the message
+		// once instead of cobra also printing its own "Error:" line.
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := internal.CheckDrift(&internal.CheckDriftOptions{
 				Logger:             logger,

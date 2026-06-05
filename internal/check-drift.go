@@ -69,10 +69,15 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	if err != nil {
 		return fmt.Errorf("error resolving HEAD: %v", err)
 	}
-	if !headRef.Name().IsBranch() {
-		return fmt.Errorf("downstream repo is in detached HEAD state — check out a branch before running check-drift")
+
+	// Remember how to restore HEAD once the drift check finishes. CI runners
+	// (e.g. Buildkite) typically check out a specific commit, leaving a detached
+	// HEAD with no branch to return to; in that case restore by hash, otherwise
+	// restore the original branch.
+	restore := &gogit.CheckoutOptions{Hash: headRef.Hash()}
+	if headRef.Name().IsBranch() {
+		restore = &gogit.CheckoutOptions{Branch: headRef.Name()}
 	}
-	originalBranch := headRef.Name()
 
 	// create or reset the drift-check branch to the current HEAD
 	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)
@@ -85,7 +90,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 	}
 
 	defer func() {
-		_ = wt.Checkout(&gogit.CheckoutOptions{Branch: originalBranch})
+		_ = wt.Checkout(restore)
 		_ = repo.DeleteBranch(driftCheckBranch)
 	}()
 

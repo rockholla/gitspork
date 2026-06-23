@@ -14,10 +14,12 @@ import (
 	inputpkg "github.com/rockholla/gitspork/internal/input"
 )
 
-const (
-	templatedMergeStructuredPreferUpstream   = "prefer-upstream"
-	templatedMergeStructuredPreferDownstream = "prefer-downstream"
-)
+// relativeToDownstream returns path stripped of the downstreamPath prefix, for
+// display purposes. It uses TrimPrefix (not TrimLeft, which strips a character
+// set rather than a prefix) so the remainder is the true relative path.
+func relativeToDownstream(path string, downstreamPath string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(path, downstreamPath), "/")
+}
 
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
 type IntegratorTemplated struct{}
@@ -54,11 +56,11 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			// cached data path is there, we'll try to load it into inputs to pre-populate from pre-existing awareness of this data
 			jsonData, err := os.ReadFile(cachedTemplateDataFilePath)
 			if err != nil {
-				return fmt.Errorf("error reading cached template data file at %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
+				return fmt.Errorf("error reading cached template data file at %s: %v", relativeToDownstream(cachedTemplateDataFilePath, downstreamPath), err)
 			}
 			err = json.Unmarshal(jsonData, &templateData)
 			if err != nil {
-				return fmt.Errorf("error parsing cached template data file at %s into inputs: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
+				return fmt.Errorf("error parsing cached template data file at %s into inputs: %v", relativeToDownstream(cachedTemplateDataFilePath, downstreamPath), err)
 			}
 			maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 		}
@@ -123,15 +125,12 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 		if err := os.MkdirAll(fullDestinationDir, 0755); err != nil {
 			return fmt.Errorf("error ensuring %s exists: %v", fullDestinationDir, err)
 		}
-		performPostMergeStructured := ""
+		performPostMergeStructured := StructuredMergePreference("")
 		if templatedInstruction.Merged != nil && templatedInstruction.Merged.Structured != "" {
 			if _, err := os.Stat(fullDestinationPath); err == nil {
 				// if we have merge instruction present, and there's a file at the destination path already
+				// (validity of the value is enforced at parse time, see GitSporkConfigTemplated.Validate)
 				performPostMergeStructured = templatedInstruction.Merged.Structured
-				if performPostMergeStructured != templatedMergeStructuredPreferUpstream && performPostMergeStructured != templatedMergeStructuredPreferDownstream {
-					return fmt.Errorf("invalid templated merged.structured value %s, expects one of: %s, %s", performPostMergeStructured,
-						templatedMergeStructuredPreferUpstream, templatedMergeStructuredPreferDownstream)
-				}
 			}
 		}
 		var renderedBytes bytes.Buffer
@@ -155,7 +154,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			if err != nil {
 				return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
 			}
-			if performPostMergeStructured == templatedMergeStructuredPreferDownstream {
+			if performPostMergeStructured == StructuredMergePreferDownstream {
 				preferredData = existingData
 				secondaryData = newData
 			} else {
@@ -180,10 +179,10 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			return fmt.Errorf("error marshaling template data: %v", err)
 		}
 		if err := os.MkdirAll(filepath.Dir(cachedTemplateDataFilePath), 0755); err != nil {
-			return fmt.Errorf("error creating template data cache directory at %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
+			return fmt.Errorf("error creating template data cache directory at %s: %v", relativeToDownstream(cachedTemplateDataFilePath, downstreamPath), err)
 		}
 		if err := os.WriteFile(cachedTemplateDataFilePath, templateDataBytes, 0644); err != nil {
-			return fmt.Errorf("error writing cached templated data to %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
+			return fmt.Errorf("error writing cached templated data to %s: %v", relativeToDownstream(cachedTemplateDataFilePath, downstreamPath), err)
 		}
 	}
 

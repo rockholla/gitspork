@@ -159,7 +159,7 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 			migrationConfig.PreIntegrate.ID = fmt.Sprintf("%s:%s", migrationConfigPath, preIntegrateMigrationID)
 			preIntegrateMigrations, err = queueMigrationIfNotCompleted(migrationConfig.PreIntegrate, preIntegrateMigrations)
 			if err != nil {
-				return fmt.Errorf("error queuing post-integrate migrations: %v", err)
+				return fmt.Errorf("error queuing pre-integrate migrations: %v", err)
 			}
 		}
 		if migrationConfig.PostIntegrate != nil {
@@ -204,13 +204,13 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 
 	fmt.Println("")
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructured{PreferUpstream: true}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
 	}
 
 	fmt.Println("")
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructured{PreferUpstream: false}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
 	}
 
@@ -482,7 +482,7 @@ func getStructuredData(upstreamPath string, downstreamPath string) (*map[string]
 		}
 	}
 
-	return upstreamData, downstreamData, structuredDataType, err
+	return upstreamData, downstreamData, structuredDataType, nil
 }
 
 func writeStructuredData(structuredData *map[string]interface{}, structuredDataType string, toPath string) error {

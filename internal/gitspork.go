@@ -86,9 +86,65 @@ type GitSporkConfigTemplatedInputPrevious struct {
 	Name     string `yaml:"name" comment:"Name of the input from that template from which to pull the value"`
 }
 
+// Validate reports a configuration error if the input does not specify exactly
+// one of its mutually-exclusive value sources (prompt, json_data_path,
+// previous_input).
+func (in GitSporkConfigTemplatedInput) Validate() error {
+	sources := 0
+	if in.Prompt != "" {
+		sources++
+	}
+	if in.JSONDataPath != "" {
+		sources++
+	}
+	if in.PreviousInput != nil {
+		sources++
+	}
+	if sources != 1 {
+		return fmt.Errorf("templated input %q must set exactly one of 'prompt', 'json_data_path', or 'previous_input' (got %d)", in.Name, sources)
+	}
+	return nil
+}
+
+// Validate reports a configuration error if the templated instruction is
+// malformed: an invalid merged.structured preference, or any input that does not
+// satisfy its exactly-one-of-source invariant.
+func (t GitSporkConfigTemplated) Validate() error {
+	if t.Merged != nil {
+		if err := t.Merged.Structured.Validate(); err != nil {
+			return err
+		}
+	}
+	for _, in := range t.Inputs {
+		if err := in.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StructuredMergePreference is the closed set of valid values for a structured
+// post-render merge: which side wins on key collisions.
+type StructuredMergePreference string
+
+const (
+	StructuredMergePreferUpstream   StructuredMergePreference = "prefer-upstream"
+	StructuredMergePreferDownstream StructuredMergePreference = "prefer-downstream"
+)
+
+// Validate reports an error if the preference is set to an unsupported value.
+// An empty value is allowed (no post-render merge requested).
+func (p StructuredMergePreference) Validate() error {
+	switch p {
+	case "", StructuredMergePreferUpstream, StructuredMergePreferDownstream:
+		return nil
+	}
+	return fmt.Errorf("invalid merged.structured value %q, expects one of: %s, %s", p, StructuredMergePreferUpstream, StructuredMergePreferDownstream)
+}
+
 // GitSporkConfigTemplatedMerged
 type GitSporkConfigTemplatedMerged struct {
-	Structured string `yaml:"structured" comment:"instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'"`
+	Structured StructuredMergePreference `yaml:"structured" comment:"instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'"`
 }
 
 // IntegrateOptions are options for the Integrate method
@@ -144,6 +200,11 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 			return config, fmt.Errorf("invalid downstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
 		}
 	}
+	for _, t := range config.Templated {
+		if err := t.Validate(); err != nil {
+			return config, fmt.Errorf("invalid templated entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
 	return config, nil
 }
 
@@ -184,7 +245,7 @@ func GetGitSporkConfigSchema() (string, string, error) {
 				Template:    "meta.txt.go.tmpl",
 				Destination: "meta.txt",
 				Merged: &GitSporkConfigTemplatedMerged{
-					Structured: templatedMergeStructuredPreferDownstream,
+					Structured: StructuredMergePreferDownstream,
 				},
 				Inputs: []GitSporkConfigTemplatedInput{
 					{

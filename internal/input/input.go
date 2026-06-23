@@ -82,7 +82,7 @@ func RequestInput(opts *RequestInputOptions) (*RequestInputResult, error) {
 			return result, err
 		}
 		result.StringValue = strings.TrimSpace(string(input))
-		return result, cmd.Err
+		return result, nil
 	case Selection:
 		menu := NewMenu(fmt.Sprintf("➡️ %s", promptColor.Sprint(opts.Prompt)))
 		for _, selectOption := range opts.SelectOptions {

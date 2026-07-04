@@ -223,3 +223,22 @@ func testWriteAndCommitInDownstream(t *testing.T, downstreamDir, relPath, conten
 	require.NoError(t, err)
 	testCommitAll(t, repo, "drift edit: "+relPath)
 }
+
+func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
+	upstreamDir, _ := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
+
+	report, err := CheckDrift(&CheckDriftOptions{
+		Logger:             NewLogger(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.ErrorIs(t, err, ErrDriftDetected)
+	require.Len(t, report.Files, 1)
+	diff := report.Files[0].Diff
+	assert.Contains(t, diff, "upstream-owned/file.txt",
+		"expected the unified diff to reference the path, got:\n%s", diff)
+	assert.Contains(t, diff, "-upstream content", "expected removed-line marker for old content")
+	assert.Contains(t, diff, "+drifted", "expected added-line marker for new content")
+}

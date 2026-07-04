@@ -168,7 +168,6 @@ type CheckDriftOptions struct {
 	Logger             *Logger
 	DownstreamRepoPath string
 	Upstreams          []UpstreamSpec
-	Verbose            bool
 }
 
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path

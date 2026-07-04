@@ -45,7 +45,6 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 			opts := &internal.CheckDriftOptions{
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
-				Verbose:            verbose,
 			}
 			for _, f := range upstreamFlags {
 				spec, err := internal.ParseUpstreamFlag(f)
@@ -70,7 +69,14 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				}
 				logger.Log("  %s (upstream: %s)", f.Path, attribution)
 			}
-			// verbose/diff output moves to Task 4
+			if verbose {
+				for _, f := range report.Files {
+					if f.Diff == "" {
+						continue
+					}
+					fmt.Print(f.Diff)
+				}
+			}
 			os.Exit(2)
 			return nil // unreachable but keeps Go happy
 		},

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
@@ -167,12 +169,25 @@ func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
 	}
 
 	report.HasDrift = true
-	stats := patch.Stats()
-	for _, s := range stats {
+	for _, fp := range patch.FilePatches() {
+		from, to := fp.Files()
+		var name string
+		switch {
+		case to != nil:
+			name = to.Path()
+		case from != nil:
+			name = from.Path()
+		default:
+			continue
+		}
+		diffText, err := encodeFilePatch(fp)
+		if err != nil {
+			return report, fmt.Errorf("error encoding per-file diff for %s: %v", name, err)
+		}
 		report.Files = append(report.Files, DriftedFile{
-			Path:          s.Name,
-			AttributedURL: fileOwner[s.Name], // empty string means unattributed
-			// Diff populated in Task 4
+			Path:          name,
+			AttributedURL: fileOwner[name], // empty string means unattributed
+			Diff:          diffText,
 		})
 	}
 
@@ -216,6 +231,25 @@ func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*objec
 		return nil, fmt.Errorf("error computing patch: %v", err)
 	}
 	return patch, nil
+}
+
+// singleFilePatch adapts a single fdiff.FilePatch to the fdiff.Patch interface
+// so it can be run through UnifiedEncoder to produce a per-file unified diff.
+type singleFilePatch struct {
+	fp fdiff.FilePatch
+}
+
+func (s *singleFilePatch) FilePatches() []fdiff.FilePatch { return []fdiff.FilePatch{s.fp} }
+func (s *singleFilePatch) Message() string                { return "" }
+
+// encodeFilePatch renders one file's unified diff to a string.
+func encodeFilePatch(fp fdiff.FilePatch) (string, error) {
+	var buf bytes.Buffer
+	enc := fdiff.NewUnifiedEncoder(&buf, fdiff.DefaultContextLines)
+	if err := enc.Encode(&singleFilePatch{fp: fp}); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
 
 func checkCleanWorkingTree(repoPath string) error {

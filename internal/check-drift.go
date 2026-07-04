@@ -128,7 +128,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 			return fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
-		if err := Integrate(&IntegrateOptions{
+		if _, err := Integrate(&IntegrateOptions{
 			Logger:              opts.Logger,
 			UpstreamRepoURL:     entry.spec.URL,
 			UpstreamRepoSubpath: entry.spec.Subpath,

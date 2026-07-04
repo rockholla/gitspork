@@ -25,7 +25,7 @@ func TestIntegrate(t *testing.T) {
 
 		makeUpstreamRepo(t, upstreamDir)
 
-		err = Integrate(&IntegrateOptions{
+		_, err = Integrate(&IntegrateOptions{
 			Logger:              NewLogger(),
 			UpstreamRepoURL:     upstreamDir,
 			UpstreamRepoVersion: "master",

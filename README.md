@@ -25,7 +25,8 @@ What `gitspork` provides for upstream -> downstream integrations
 * **Templated Upstream -> Downstream Rendered Files**: Utilizing Go templates, allowing for configuration of JSON data files or user prompts as inputs to fill in the needed data to render the resulting file in downstream, including features:
   * Supporting structured merges after template rendering preferring either upstream or downstream changes in the merge
   * Caching previous prompt input values, allowing the choices to be re-used over numerous integrations
-* **Drift Detection**: downstreams can always easily see if and how they might have drifted from their current upstream version
+* **Drift Detection**: downstreams can always easily see if and how they might have drifted from their current upstream version, with per-file attribution to whichever upstream last wrote the file
+* **Multiple Upstreams**: downstreams can integrate from several upstream repos in a single invocation, with explicit left-to-right precedence — later upstreams win when the same file is touched by more than one
 * **Upstream -> Downstream delta resolutions** for moves, renames, and deletes. As the upstream evolves, downstreams will follow along with these types of iterations.
 * **Migrations Support**: some ability for the upstream to instruct downstream repos in particular migration-related operations:
   * **Exec**: arbitrary commands or scripts defined in the upstream to run against the downstream either _pre_ `integrate` or _post_ integrate

@@ -19,7 +19,7 @@ func TestCheckDrift(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		err = CheckDrift(&CheckDriftOptions{
+		_, err = CheckDrift(&CheckDriftOptions{
 			Logger:             NewLogger(),
 			DownstreamRepoPath: dir,
 		})
@@ -42,7 +42,7 @@ func TestCheckDrift(t *testing.T) {
 		}
 		require.NoError(t, saveDownstreamState(dir, state))
 
-		err = CheckDrift(&CheckDriftOptions{
+		_, err = CheckDrift(&CheckDriftOptions{
 			Logger:             NewLogger(),
 			DownstreamRepoPath: dir,
 		})
@@ -161,4 +161,65 @@ func makeBaselineRepo(t *testing.T, dir string) *gogit.Worktree {
 	_, err = wt.Commit("baseline", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
 	return wt
+}
+
+func TestCheckDrift_returns_report_no_drift(t *testing.T) {
+	upstreamDir, _ := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	report, err := CheckDrift(&CheckDriftOptions{
+		Logger:             NewLogger(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, report)
+	assert.False(t, report.HasDrift)
+	assert.Empty(t, report.Files)
+}
+
+func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.T) {
+	upstreamDir, _ := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
+
+	report, err := CheckDrift(&CheckDriftOptions{
+		Logger:             NewLogger(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.ErrorIs(t, err, ErrDriftDetected)
+	require.NotNil(t, report)
+	assert.True(t, report.HasDrift)
+	require.Len(t, report.Files, 1)
+	assert.Equal(t, "upstream-owned/file.txt", report.Files[0].Path)
+	assert.Equal(t, "file://"+upstreamDir, report.Files[0].AttributedURL)
+}
+
+// testIntegrateAndCommitBaseline integrates upstreamDir into downstreamDir and
+// commits the resulting downstream state so the working tree is clean and
+// CheckDrift can operate. Returns the post-integrate commit hash.
+func testIntegrateAndCommitBaseline(t *testing.T, upstreamDir, downstreamDir string) plumbing.Hash {
+	t.Helper()
+	_, err := Integrate(&IntegrateOptions{
+		Logger:             NewLogger(),
+		Upstreams:          []UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	return testCommitAll(t, repo, "post-integrate baseline")
+}
+
+// testWriteAndCommitInDownstream writes content to a file inside downstreamDir
+// and commits, simulating a downstream-side edit that check-drift should detect.
+func testWriteAndCommitInDownstream(t *testing.T, downstreamDir, relPath, content string) {
+	t.Helper()
+	full := filepath.Join(downstreamDir, relPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0755))
+	require.NoError(t, os.WriteFile(full, []byte(content), 0644))
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	testCommitAll(t, repo, "drift edit: "+relPath)
 }

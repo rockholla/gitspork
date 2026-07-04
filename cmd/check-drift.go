@@ -54,11 +54,25 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				}
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
-			err := internal.CheckDrift(opts)
-			if errors.Is(err, internal.ErrDriftDetected) {
-				os.Exit(2)
+			report, err := internal.CheckDrift(opts)
+			if err != nil && !errors.Is(err, internal.ErrDriftDetected) {
+				return err
 			}
-			return err
+			if !report.HasDrift {
+				logger.Log("no drift detected")
+				return nil
+			}
+			logger.Log("drift detected: %d file(s) changed", len(report.Files))
+			for _, f := range report.Files {
+				attribution := f.AttributedURL
+				if attribution == "" {
+					attribution = "(unknown upstream)"
+				}
+				logger.Log("  %s (upstream: %s)", f.Path, attribution)
+			}
+			// verbose/diff output moves to Task 4
+			os.Exit(2)
+			return nil // unreachable but keeps Go happy
 		},
 	}
 

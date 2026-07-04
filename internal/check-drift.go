@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,24 +21,25 @@ const driftCheckBranch = "_gitspork-check-drift"
 var ErrDriftDetected = errors.New("drift detected")
 
 // CheckDrift detects whether the downstream has drifted from its last integrated upstream state
-func CheckDrift(opts *CheckDriftOptions) error {
+func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
+	report := &DriftReport{}
 	var err error
 
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {
-			return fmt.Errorf("unable to get the present working directory: %v", err)
+			return report, fmt.Errorf("unable to get the present working directory: %v", err)
 		}
 	} else {
 		opts.DownstreamRepoPath, err = filepath.Abs(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("unable to determine local downstream repo path: %v", err)
+			return report, fmt.Errorf("unable to determine local downstream repo path: %v", err)
 		}
 	}
 
 	state, err := loadDownstreamState(opts.DownstreamRepoPath)
 	if err != nil {
-		return fmt.Errorf("error loading downstream state: %v", err)
+		return report, fmt.Errorf("error loading downstream state: %v", err)
 	}
 
 	// Resolve which upstreams to check and their recorded commit hashes.
@@ -62,12 +62,12 @@ func CheckDrift(opts *CheckDriftOptions) error {
 				}
 			}
 			if !found {
-				return fmt.Errorf("--upstream override %q has no matching state entry — run 'gitspork integrate' first", override.URL)
+				return report, fmt.Errorf("--upstream override %q has no matching state entry — run 'gitspork integrate' first", override.URL)
 			}
 		}
 	} else {
 		if len(state.Upstreams) == 0 {
-			return fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
+			return report, fmt.Errorf("no previous integration found in downstream state — run 'gitspork integrate' first")
 		}
 		for _, su := range state.Upstreams {
 			entries = append(entries, upstreamCheckEntry{
@@ -79,20 +79,20 @@ func CheckDrift(opts *CheckDriftOptions) error {
 
 	repo, err := gogit.PlainOpen(opts.DownstreamRepoPath)
 	if err != nil {
-		return fmt.Errorf("error opening downstream repo: %v", err)
+		return report, fmt.Errorf("error opening downstream repo: %v", err)
 	}
 	wt, err := repo.Worktree()
 	if err != nil {
-		return fmt.Errorf("error accessing downstream worktree: %v", err)
+		return report, fmt.Errorf("error accessing downstream worktree: %v", err)
 	}
 
 	if err := checkCleanWorkingTree(opts.DownstreamRepoPath); err != nil {
-		return err
+		return report, err
 	}
 
 	headRef, err := repo.Head()
 	if err != nil {
-		return fmt.Errorf("error resolving HEAD: %v", err)
+		return report, fmt.Errorf("error resolving HEAD: %v", err)
 	}
 
 	// Remember how to restore HEAD once the drift check finishes. CI runners
@@ -106,10 +106,10 @@ func CheckDrift(opts *CheckDriftOptions) error {
 
 	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(driftBranchRef, headRef.Hash())); err != nil {
-		return fmt.Errorf("error creating/resetting drift-check branch: %v", err)
+		return report, fmt.Errorf("error creating/resetting drift-check branch: %v", err)
 	}
 	if err := wt.Checkout(&gogit.CheckoutOptions{Branch: driftBranchRef}); err != nil {
-		return fmt.Errorf("error checking out drift-check branch: %v", err)
+		return report, fmt.Errorf("error checking out drift-check branch: %v", err)
 	}
 	defer func() {
 		_ = wt.Checkout(restore)
@@ -125,7 +125,7 @@ func CheckDrift(opts *CheckDriftOptions) error {
 
 		beforeFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("error listing worktree files before integrate: %v", err)
+			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
 		if _, err := Integrate(&IntegrateOptions{
@@ -137,12 +137,12 @@ func CheckDrift(opts *CheckDriftOptions) error {
 			DownstreamRepoPath:  opts.DownstreamRepoPath,
 			ForDriftCheck:       true,
 		}); err != nil {
-			return fmt.Errorf("error running integration for drift check: %v", err)
+			return report, fmt.Errorf("error running integration for drift check: %v", err)
 		}
 
 		afterFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("error listing worktree files after integrate: %v", err)
+			return report, fmt.Errorf("error listing worktree files after integrate: %v", err)
 		}
 
 		// Any file that appeared or changed is attributed to this upstream.
@@ -160,31 +160,23 @@ func CheckDrift(opts *CheckDriftOptions) error {
 
 	patch, err := diffWorktreeAgainstHEAD(repo, wt)
 	if err != nil {
-		return fmt.Errorf("error diffing downstream against HEAD: %v", err)
+		return report, fmt.Errorf("error diffing downstream against HEAD: %v", err)
 	}
 	if patch == nil {
-		opts.Logger.Log("no drift detected")
-		return nil
+		return report, nil
 	}
 
+	report.HasDrift = true
 	stats := patch.Stats()
-	opts.Logger.Log("drift detected: %d file(s) changed", len(stats))
 	for _, s := range stats {
-		owner := fileOwner[s.Name]
-		if owner == "" {
-			owner = "(unknown upstream)"
-		}
-		opts.Logger.Log("  %s (upstream: %s)", s.Name, owner)
-	}
-	if opts.Verbose {
-		pr, pw := io.Pipe()
-		go func() { pw.CloseWithError(patch.Encode(pw)) }()
-		if err := opts.Logger.Diff(pr); err != nil {
-			return fmt.Errorf("error encoding diff: %v", err)
-		}
+		report.Files = append(report.Files, DriftedFile{
+			Path:          s.Name,
+			AttributedURL: fileOwner[s.Name], // empty string means unattributed
+			// Diff populated in Task 4
+		})
 	}
 
-	return ErrDriftDetected
+	return report, ErrDriftDetected
 }
 
 // diffWorktreeAgainstHEAD stages all changes and compares against HEAD.

@@ -95,7 +95,7 @@ type DriftReport struct {
 type DriftedFile struct {
 	Path          string
 	AttributedURL string // upstream URL responsible for this file; empty means unattributed
-	Diff          string // unified-diff text for just this file; empty for binary or unattributable
+	Diff          string // unified-diff text for this file; a `Binary files ... differ` marker line when the file is binary
 }
 
 // UpstreamSpec is a parsed --upstream flag entry.

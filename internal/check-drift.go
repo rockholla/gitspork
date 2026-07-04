@@ -239,6 +239,8 @@ type singleFilePatch struct {
 	fp fdiff.FilePatch
 }
 
+var _ fdiff.Patch = (*singleFilePatch)(nil)
+
 func (s *singleFilePatch) FilePatches() []fdiff.FilePatch { return []fdiff.FilePatch{s.fp} }
 func (s *singleFilePatch) Message() string                { return "" }
 

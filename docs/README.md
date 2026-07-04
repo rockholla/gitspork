@@ -44,7 +44,7 @@ templated: # list of instruction for templated source files in the upstream that
     previous_input: # (optional, one-of-required) reference to an input already known from this template or another template defined before this one
       template: "meta.txt.go.tmpl" # Name of a previous template defined in the gitspork config from which to pull the value
       name: "input_one" # Name of the input from that template from which to pull the value
-  merged: # instruction for merging with pre-existing file in the destination, if present, post-render
+  merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"

@@ -27,6 +27,27 @@ const mvMultiSourceGitsporkYML = `upstream_owned:
 - docs/keep.md
 `
 
+const templatedNoMergedGitsporkYML = `templated:
+- template: .gitspork-templates/one.txt.go.tmpl
+  destination: one.txt
+  inputs:
+  - name: value
+    prompt: enter a value
+`
+
+const templatedTwoNoMergedGitsporkYML = `templated:
+- template: .gitspork-templates/one.txt.go.tmpl
+  destination: one.txt
+  inputs:
+  - name: value
+    prompt: enter a value
+- template: .gitspork-templates/two.txt.go.tmpl
+  destination: two.txt
+  inputs:
+  - name: value
+    prompt: enter a value
+`
+
 func TestMv_updates_config_and_stages(t *testing.T) {
 	upstreamDir := NewUpstreamRepo(t, map[string]string{
 		"docs/old.md":  "# old doc\n",
@@ -206,6 +227,52 @@ func TestMv_downstream_exact(t *testing.T) {
 
 	AssertFileAbsent(t, downstreamDir, "docs/old.md")
 	AssertFileContains(t, downstreamDir, "docs/new.md", "old doc")
+}
+
+// TestMv_templated_without_merged_omits_merged_key ensures that when a templated
+// entry has no `merged` field, `gitspork mv` rewrites .gitspork.yml without introducing
+// a `merged: null` (or similar) line for that entry.
+func TestMv_templated_without_merged_omits_merged_key(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		".gitspork-templates/one.txt.go.tmpl": "value={{ index .Inputs \"value\" }}\n",
+	}, templatedNoMergedGitsporkYML)
+
+	runner := resolveRunner(t, upstreamDir, "")
+
+	out, code := runner.Run(t, []string{"mv",
+		".gitspork-templates/one.txt.go.tmpl",
+		".gitspork-templates/renamed.txt.go.tmpl",
+	}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork mv failed:\n%s", out)
+
+	cfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+	assert.Contains(t, cfg, ".gitspork-templates/renamed.txt.go.tmpl")
+	assert.NotContains(t, cfg, ".gitspork-templates/one.txt.go.tmpl")
+	assert.NotContains(t, cfg, "merged: null",
+		"rewritten templated entry should omit the merged key entirely, got:\n%s", cfg)
+}
+
+// TestRm_templated_without_merged_omits_merged_key ensures that when a templated
+// entry has no `merged` field, `gitspork rm` rewrites .gitspork.yml without introducing
+// a `merged: null` (or similar) line for the surviving entry.
+func TestRm_templated_without_merged_omits_merged_key(t *testing.T) {
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		".gitspork-templates/one.txt.go.tmpl": "value={{ index .Inputs \"value\" }}\n",
+		".gitspork-templates/two.txt.go.tmpl": "value={{ index .Inputs \"value\" }}\n",
+	}, templatedTwoNoMergedGitsporkYML)
+
+	runner := resolveRunner(t, upstreamDir, "")
+
+	out, code := runner.Run(t, []string{"rm",
+		".gitspork-templates/two.txt.go.tmpl",
+	}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork rm failed:\n%s", out)
+
+	cfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+	assert.Contains(t, cfg, ".gitspork-templates/one.txt.go.tmpl")
+	assert.NotContains(t, cfg, ".gitspork-templates/two.txt.go.tmpl")
+	assert.NotContains(t, cfg, "merged: null",
+		"rewritten templated entry should omit the merged key entirely, got:\n%s", cfg)
 }
 
 // TestMv_downstream_glob runs gitspork mv on a directory covered by a glob entry,

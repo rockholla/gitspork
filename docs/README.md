@@ -114,7 +114,20 @@ gitspork integrate-local \
 Once you've integrated, gitspork records awareness of the last state at which you integrated (upstream commit hash etc.), and you can check drift from upstream at any time by:
 
 ```
-gitspork check-drift [ --verbose ] [ --upstream-repo-url <override-url> ]
+gitspork check-drift [ --verbose ] [ --upstream url=<override-url> ]
 ```
 
-`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. The `--upstream-repo-url` flag overrides the stored upstream URL, useful when running in an environment where the original URL protocol (SSH vs HTTPS) needs to differ. It exits `0` if no drift is detected, `2` if drift is detected, and `1` on error.
+`check-drift` will by default simply report files that have drifted or that it's all clear. The `--verbose` flag will print out full diffs if drift is detected. The `--upstream` flag (repeatable) overrides the stored upstream list, useful when running in an environment where the original URL protocol (SSH vs HTTPS) needs to differ; overrides are matched to state entries by normalized URL + subpath so a protocol switch still finds the right recorded commit hash. It exits `0` if no drift is detected, `2` if drift is detected, and `1` on error.
+
+### Multiple upstreams
+
+`integrate`, `integrate-local`, and `check-drift` all accept multiple upstream sources in a single invocation. Later upstreams take precedence over earlier ones (left-to-right), so when two upstreams write the same file, the one specified later wins.
+
+```
+gitspork integrate \
+  --upstream "url=git@github.com:org/base.git,version=main" \
+  --upstream "url=git@github.com:org/platform.git,version=v1.2.0,subpath=infra" \
+  --downstream-repo-path .
+```
+
+Valid `--upstream` keys are `url` (required), `version`, `subpath`, and `token`. All upstreams are recorded in downstream state and re-checked on `check-drift`, which reports drift per file attributed to whichever upstream last wrote it. `integrate-local` uses `--upstream-path` (also repeatable) with the same precedence semantics.

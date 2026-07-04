@@ -1,14 +1,31 @@
 package internal
 
-import "path/filepath"
+import (
+	"fmt"
+	"path/filepath"
+)
 
-// Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
+// IntegrateLocal integrates one or more local upstream paths into the downstream.
 func IntegrateLocal(opts *IntegrateLocalOptions) error {
-	opts.Logger.Log("parsing the gitspork config file at %s or %s", filepath.Join(opts.UpstreamPath, gitSporkConfigFileName), filepath.Join(opts.UpstreamPath, gitSporkConfigFileNameAlt))
-	gitSporkConfig, err := getGitSporkConfig(opts.UpstreamPath)
-	if err != nil {
-		return err
+	// Normalize: single UpstreamPath -> UpstreamPaths slice.
+	if len(opts.UpstreamPaths) == 0 && opts.UpstreamPath != "" {
+		opts.UpstreamPaths = []string{opts.UpstreamPath}
+	}
+	if len(opts.UpstreamPaths) == 0 {
+		return fmt.Errorf("no upstream path specified: provide --upstream-path")
 	}
 
-	return integrate(gitSporkConfig, opts.UpstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger)
+	for _, upstreamPath := range opts.UpstreamPaths {
+		opts.Logger.Log("parsing the gitspork config file at %s or %s",
+			filepath.Join(upstreamPath, gitSporkConfigFileName),
+			filepath.Join(upstreamPath, gitSporkConfigFileNameAlt))
+		gitSporkConfig, err := getGitSporkConfig(upstreamPath)
+		if err != nil {
+			return err
+		}
+		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger); err != nil {
+			return err
+		}
+	}
+	return nil
 }

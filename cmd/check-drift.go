@@ -29,8 +29,7 @@ type CheckDriftSubcommand struct{}
 // GetCmd will return the native cobra command for the check-drift subcommand
 func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 	var downstreamRepoPath string
-	var upstreamRepoURL string
-	var upstreamRepoToken string
+	var upstreamFlags []string
 	var verbose bool
 
 	var cmd = &cobra.Command{
@@ -43,13 +42,19 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := internal.CheckDrift(&internal.CheckDriftOptions{
+			opts := &internal.CheckDriftOptions{
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
-				UpstreamRepoURL:    upstreamRepoURL,
-				UpstreamRepoToken:  upstreamRepoToken,
 				Verbose:            verbose,
-			})
+			}
+			for _, f := range upstreamFlags {
+				spec, err := internal.ParseUpstreamFlag(f)
+				if err != nil {
+					return err
+				}
+				opts.Upstreams = append(opts.Upstreams, spec)
+			}
+			err := internal.CheckDrift(opts)
 			if errors.Is(err, internal.ErrDriftDetected) {
 				os.Exit(2)
 			}
@@ -59,10 +64,8 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 
 	cmd.PersistentFlags().StringVarP(&downstreamRepoPath, "downstream-repo-path", "d", "",
 		"local path to the downstream repo to check, defaults to the present working directory")
-	cmd.PersistentFlags().StringVarP(&upstreamRepoURL, "upstream-repo-url", "u", "",
-		"override the upstream repo URL stored in state (useful when SSH/HTTPS auto-rewrite is insufficient)")
-	cmd.PersistentFlags().StringVarP(&upstreamRepoToken, "upstream-repo-token", "t", "",
-		"if using an HTTPS git repo URL for the upstream, this is the token to auth")
+	cmd.PersistentFlags().StringArrayVar(&upstreamFlags, "upstream", nil,
+		"override upstream(s) as comma-separated key=value pairs (url, version, subpath, token); repeatable")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false,
 		"print full git diff output when drift is detected")
 

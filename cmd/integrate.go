@@ -25,6 +25,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 	var upstreamRepoVersion string
 	var upstreamRepoSubpath string
 	var upstreamRepoToken string
+	var upstreamFlags []string
 	var downstreamRepoPath string
 	var forceRePrompt bool
 
@@ -33,7 +34,12 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 		Short: integrateHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", integrateHelpShort, integrateHelpLong),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return internal.Integrate(&internal.IntegrateOptions{
+			oldFlagsSet := upstreamRepoURL != "" || upstreamRepoVersion != "" || upstreamRepoSubpath != "" || upstreamRepoToken != ""
+			if len(upstreamFlags) > 0 && oldFlagsSet {
+				return fmt.Errorf("cannot mix --upstream with --upstream-repo-url/version/subpath/token flags")
+			}
+
+			opts := &internal.IntegrateOptions{
 				Logger:              logger,
 				UpstreamRepoURL:     upstreamRepoURL,
 				UpstreamRepoVersion: upstreamRepoVersion,
@@ -41,22 +47,32 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				UpstreamRepoToken:   upstreamRepoToken,
 				DownstreamRepoPath:  downstreamRepoPath,
 				ForceRePrompt:       forceRePrompt,
-			})
+			}
+			for _, f := range upstreamFlags {
+				spec, err := internal.ParseUpstreamFlag(f)
+				if err != nil {
+					return err
+				}
+				opts.Upstreams = append(opts.Upstreams, spec)
+			}
+			return internal.Integrate(opts)
 		},
 	}
 
+	cmd.PersistentFlags().StringArrayVar(&upstreamFlags, "upstream", nil,
+		"upstream spec as comma-separated key=value pairs (url, version, subpath, token); repeatable for multiple upstreams")
 	cmd.PersistentFlags().StringVarP(&upstreamRepoURL, "upstream-repo-url", "u", "",
-		"upstream gitspork repo to integrate/re-integrate with")
+		"upstream gitspork repo to integrate/re-integrate with (single-upstream shorthand)")
 	cmd.PersistentFlags().StringVarP(&upstreamRepoVersion, "upstream-repo-version", "v", "",
-		"upstream gitspork repo version to use while integrating/re-integrating, defaults to the repo's default branch")
+		"upstream gitspork repo version (single-upstream shorthand)")
 	cmd.PersistentFlags().StringVarP(&upstreamRepoSubpath, "upstream-repo-subpath", "p", "",
-		"upstream gitspork repo subpath where the gitspork source exists, defaults to the root of the repo")
+		"upstream gitspork repo subpath (single-upstream shorthand)")
 	cmd.PersistentFlags().StringVarP(&upstreamRepoToken, "upstream-repo-token", "t", "",
-		"if using an HTTPs git repo URL for the upstream, this is the token to auth, otherwise SSH and agent auth assumed")
+		"upstream gitspork repo token (single-upstream shorthand)")
 	cmd.PersistentFlags().StringVarP(&downstreamRepoPath, "downstream-repo-path", "d", "",
 		"local path to the downstream repo clone to integrate/re-integrate, defaults to the present working directory")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
-		"If true, will disregard and previous prompt input value caches for templated instructions, requiring values to be re-input by the user")
+		"If true, will disregard any previous prompt input value caches for templated instructions")
 
 	return cmd
 }

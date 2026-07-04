@@ -32,6 +32,8 @@ const (
 var (
 	structuredDataYAMLExtensions []string = []string{".yaml", ".yml"}
 	structuredDataJSONExtensions []string = []string{".json"}
+	reSSHURL                               = regexp.MustCompile(`^git@([^:]+):(.+)$`)
+	reHTTPProto                            = regexp.MustCompile(`^https?://`)
 )
 
 // Integrator is implemented by the ownership integrators that process a
@@ -51,11 +53,65 @@ type TemplatedIntegrator interface {
 	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error
 }
 
+// ParseUpstreamFlag parses a comma-separated key=value --upstream flag value.
+// Valid keys: url (required), version, subpath, token.
+func ParseUpstreamFlag(val string) (UpstreamSpec, error) {
+	spec := UpstreamSpec{}
+	for _, part := range strings.Split(val, ",") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			return spec, fmt.Errorf("--upstream: invalid key=value pair %q", part)
+		}
+		switch kv[0] {
+		case "url":
+			spec.URL = kv[1]
+		case "version":
+			spec.Version = kv[1]
+		case "subpath":
+			spec.Subpath = kv[1]
+		case "token":
+			spec.Token = kv[1]
+		default:
+			return spec, fmt.Errorf("--upstream: unknown key %q", kv[0])
+		}
+	}
+	if spec.URL == "" {
+		return spec, fmt.Errorf("--upstream: missing required key \"url\"")
+	}
+	return spec, nil
+}
+
+func normalizeUpstreamURL(rawURL string, subpath string) string {
+	u := rawURL
+	// SSH git@host:org/repo -> host/org/repo
+	if reSSHURL.MatchString(u) {
+		u = reSSHURL.ReplaceAllString(u, "$1/$2")
+	}
+	// strip https:// or http:// prefix
+	u = reHTTPProto.ReplaceAllString(u, "")
+	// strip trailing .git
+	u = strings.TrimSuffix(u, ".git")
+	if subpath != "" {
+		u = u + "::" + subpath
+	}
+	return strings.ToLower(u)
+}
+
+func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamState) {
+	key := normalizeUpstreamURL(entry.URL, entry.Subpath)
+	for i, existing := range state.Upstreams {
+		if normalizeUpstreamURL(existing.URL, existing.Subpath) == key {
+			state.Upstreams[i] = entry
+			return
+		}
+	}
+	state.Upstreams = append(state.Upstreams, entry)
+}
+
 // Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
 func Integrate(opts *IntegrateOptions) error {
 	var err error
 
-	// setup
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {
@@ -68,32 +124,70 @@ func Integrate(opts *IntegrateOptions) error {
 		}
 	}
 
+	// Normalize: synthesize Upstreams from single-upstream fields for backward compat.
+	if len(opts.Upstreams) == 0 && opts.UpstreamRepoURL != "" {
+		opts.Upstreams = []UpstreamSpec{{
+			URL:     opts.UpstreamRepoURL,
+			Version: opts.UpstreamRepoVersion,
+			Subpath: opts.UpstreamRepoSubpath,
+			Token:   opts.UpstreamRepoToken,
+		}}
+	}
+	if len(opts.Upstreams) == 0 {
+		return fmt.Errorf("no upstream specified: provide --upstream or --upstream-repo-url")
+	}
+
+	for _, upstream := range opts.Upstreams {
+		if err := integrateOne(opts, upstream); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 	prevHash := ""
 	if !opts.ForDriftCheck {
 		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
-		prevHash = existingState.LastUpstreamCommitHash
-		opts.PrevUpstreamCommitHash = prevHash
+		key := normalizeUpstreamURL(upstream.URL, upstream.Subpath)
+		for _, u := range existingState.Upstreams {
+			if normalizeUpstreamURL(u.URL, u.Subpath) == key {
+				prevHash = u.CommitHash
+				break
+			}
+		}
 	}
 
-	// clone the upstream git repo to a temporary local location to start
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
 		return fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
-	originalUpstreamURL := opts.UpstreamRepoURL
-	opts.Logger.Log("cloning gitspork upstream repo %s", opts.UpstreamRepoURL)
-	commitHash, err := cloneUpstreamForIntegrate(cloneDir, opts)
+
+	singleOpts := &IntegrateOptions{
+		Logger:                 opts.Logger,
+		UpstreamRepoURL:        upstream.URL,
+		UpstreamRepoVersion:    upstream.Version,
+		UpstreamRepoSubpath:    upstream.Subpath,
+		UpstreamRepoToken:      upstream.Token,
+		UpstreamRepoCommit:     opts.UpstreamRepoCommit,
+		DownstreamRepoPath:     opts.DownstreamRepoPath,
+		ForceRePrompt:          opts.ForceRePrompt,
+		ForDriftCheck:          opts.ForDriftCheck,
+		PrevUpstreamCommitHash: prevHash,
+	}
+
+	originalUpstreamURL := upstream.URL
+	opts.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
+	commitHash, err := cloneUpstreamForIntegrate(cloneDir, singleOpts)
 	if err != nil {
 		return err
 	}
 
-	// now we can work our way through both the upstream clone and our local downstream source
-	// to begin integrating, merging, etc.
-	upstreamRootPath := filepath.Join(cloneDir, opts.UpstreamRepoSubpath)
+	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
 	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
@@ -105,7 +199,7 @@ func Integrate(opts *IntegrateOptions) error {
 		if err != nil {
 			return fmt.Errorf("error opening upstream clone for delta computation: %v", err)
 		}
-		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, opts.UpstreamRepoSubpath)
+		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, upstream.Subpath)
 		if err != nil {
 			return fmt.Errorf("error computing upstream delta: %v", err)
 		}
@@ -118,15 +212,16 @@ func Integrate(opts *IntegrateOptions) error {
 		return err
 	}
 
-	// only persist upstream metadata and migration completions on a real integrate, not on a drift-check re-integrate
 	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		state.LastUpstreamRepoURL = originalUpstreamURL
-		state.LastUpstreamRepoSubpath = opts.UpstreamRepoSubpath
-		state.LastUpstreamCommitHash = commitHash
+		upsertUpstreamState(state, GitSporkUpstreamState{
+			URL:        originalUpstreamURL,
+			Subpath:    upstream.Subpath,
+			CommitHash: commitHash,
+		})
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
 			return fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}
@@ -534,6 +629,17 @@ func loadDownstreamState(downstreamRepoPath string) (*GitSporkDownstreamState, e
 	err = json.Unmarshal(f, state)
 	if err != nil {
 		return state, err
+	}
+	// Migrate deprecated single-upstream fields to Upstreams slice.
+	if len(state.Upstreams) == 0 && state.LastUpstreamCommitHash != "" {
+		state.Upstreams = []GitSporkUpstreamState{{
+			URL:        state.LastUpstreamRepoURL,
+			Subpath:    state.LastUpstreamRepoSubpath,
+			CommitHash: state.LastUpstreamCommitHash,
+		}}
+		state.LastUpstreamRepoURL = ""
+		state.LastUpstreamRepoSubpath = ""
+		state.LastUpstreamCommitHash = ""
 	}
 	return state, nil
 }

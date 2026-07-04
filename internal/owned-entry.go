@@ -59,6 +59,9 @@ func (e OwnedEntry) Validate() error {
 		}
 		return nil
 	}
+	if e.Pattern != "" {
+		return fmt.Errorf("ownership entry is either a pattern or a {from, to} rename, not both (got pattern=%q from=%q to=%q)", e.Pattern, e.From, e.To)
+	}
 	if e.From == "" || e.To == "" {
 		return fmt.Errorf("rename entry must set both 'from' and 'to' (got from=%q to=%q)", e.From, e.To)
 	}

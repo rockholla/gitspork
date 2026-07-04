@@ -259,3 +259,20 @@ func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
 	assert.Equal(t, "", result.Upstreams[0].Subpath)
 }
+
+func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
+	upstreamDir, _ := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+
+	result, err := IntegrateLocal(&IntegrateLocalOptions{
+		Logger:         NewLogger(),
+		UpstreamPaths:  []string{upstreamDir},
+		DownstreamPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Upstreams, 1)
+	// IntegrateLocal has no URL — record the path in the URL slot with no scheme.
+	assert.Equal(t, upstreamDir, result.Upstreams[0].URL)
+	assert.Equal(t, "", result.Upstreams[0].CommitHash)
+}

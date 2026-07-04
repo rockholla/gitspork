@@ -6,13 +6,15 @@ import (
 )
 
 // IntegrateLocal integrates one or more local upstream paths into the downstream.
-func IntegrateLocal(opts *IntegrateLocalOptions) error {
+func IntegrateLocal(opts *IntegrateLocalOptions) (*IntegrateResult, error) {
+	result := &IntegrateResult{}
+
 	// Normalize: single UpstreamPath -> UpstreamPaths slice.
 	if len(opts.UpstreamPaths) == 0 && opts.UpstreamPath != "" {
 		opts.UpstreamPaths = []string{opts.UpstreamPath}
 	}
 	if len(opts.UpstreamPaths) == 0 {
-		return fmt.Errorf("no upstream path specified: provide --upstream-path")
+		return result, fmt.Errorf("no upstream path specified: provide --upstream-path")
 	}
 
 	for _, upstreamPath := range opts.UpstreamPaths {
@@ -21,11 +23,14 @@ func IntegrateLocal(opts *IntegrateLocalOptions) error {
 			filepath.Join(upstreamPath, gitSporkConfigFileNameAlt))
 		gitSporkConfig, err := getGitSporkConfig(upstreamPath)
 		if err != nil {
-			return err
+			return result, err
 		}
 		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger); err != nil {
-			return err
+			return result, err
 		}
+		result.Upstreams = append(result.Upstreams, IntegratedUpstream{
+			URL: upstreamPath, // local path recorded in URL slot; no CommitHash concept for local
+		})
 	}
-	return nil
+	return result, nil
 }

@@ -221,6 +221,18 @@ Three phases, each shipping as its own PR. Between phases the CLI's user-facing 
 
 **Acceptance:** every CLI invocation and every existing consumer path works identically. `import "github.com/rockholla/gitspork/v2"` works from an external Go module. Tagged as v2.0.0 by maintainer.
 
+#### Phase 3 follow-ups carried forward from Phase 1
+
+Items surfaced by Phase 1 code reviews that fit naturally in Phase 3 (when the SDK surface goes public and gets its dedicated tests). These belong in the Phase 3 plan when we write it:
+
+- **Document `IntegratedUpstream.URL` local-path overload.** `IntegrateLocal` stores an absolute filesystem path in the `URL` field (no scheme). The field's doc-comment on `internal/gitspork.go` doesn't call this out. When the type moves to `package gitspork`, add a one-line note: `// URL is the upstream URL, or the local filesystem path for IntegrateLocal (no scheme).`
+- **Document non-nil invariant for `IntegrateResult` / `DriftReport`.** All three entry-point functions guarantee a non-nil pointer return even on error (Phase 1 established this). Add doc-comments on both types and the return signatures so SDK consumers don't add defensive `if result != nil` guards.
+- **Add SDK-tier unit test for multi-upstream `IntegrateResult.Upstreams` ordering.** Phase 1's `TestIntegrate_returns_result_with_upstream_url_and_hash` only covers single-upstream. Multi-upstream ordering is functionally tested via state-file inspection in `TestIntegrate_multi_upstream_state_records_all`, but the new `test/sdk/` tier should assert `result.Upstreams` order directly.
+- **Restore colored verbose diff output in the CLI.** Phase 1 removed `Logger.Diff(io.Reader)` which colorized `+`/`-`/`@@`/header lines with ANSI. `cmd/check-drift.go` now prints `DriftedFile.Diff` as plain text. Add a CLI-side colorizer that iterates lines and applies the old prefix-based coloring when `!color.NoColor`. Keep the SDK `DriftedFile.Diff` plain so machine consumers get clean data.
+- **Honor `Logger == nil` as silent throughout the internal codebase.** Phase 3 promises `nil = silent` at the SDK boundary. Today `internal/integrate.go` has multiple `fmt.Println("")` blank-line writes (~lines 278, 290, 296, 302, 308, 314, 320, 327, 339) and go-git's clone `Progress: os.Stdout` at ~line 407 that bypass the Logger entirely. Route these through the Logger interface (or wrap the Progress writer) so a nil-logger SDK caller sees no stdout output.
+- **Move `IntegrateOptions` internal fields to an unexported sibling.** `ForDriftCheck`, `PrevUpstreamCommitHash`, and the deprecated single-upstream fields (`UpstreamRepoURL`, `UpstreamRepoVersion`, `UpstreamRepoCommit`, `UpstreamRepoSubpath`, `UpstreamRepoToken`) live on the public-facing `IntegrateOptions` today. When it becomes SDK-facing, introduce an unexported `integrateRequest` struct inside `internal/integrate/` and have the public entry point copy the exported fields into it.
+- **Document last-writer-wins attribution semantics on `DriftReport`.** When two upstreams write the same file, `DriftedFile.AttributedURL` records whichever wrote it last. This is a deliberate design choice already reflected in the multi-upstream check-drift tests, but not documented on the type. Add a sentence when promoting the type.
+
 ---
 
 ## Section 4: Testing Strategy

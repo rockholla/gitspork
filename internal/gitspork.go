@@ -70,7 +70,7 @@ type GitSporkConfigTemplated struct {
 	Template    string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
 	Destination string                         `yaml:"destination" comment:"destination path and file name in the dowstream where the template will be rendered"`
 	Inputs      []GitSporkConfigTemplatedInput `yaml:"inputs" comment:"list of inputs to provide to the template, and how to determine them"`
-	Merged      *GitSporkConfigTemplatedMerged `yaml:"merged" comment:"instruction for merging with pre-existing file in the destination, if present, post-render"`
+	Merged      *GitSporkConfigTemplatedMerged `yaml:"merged,omitempty" comment:"optional instruction for merging with pre-existing file in the destination, if present, post-render"`
 }
 
 // GitSporkConfigTemplatedInput

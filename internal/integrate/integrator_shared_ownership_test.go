@@ -40,6 +40,24 @@ func readJSONMap(t *testing.T, path string) map[string]any {
 	return m
 }
 
+func readOrderedYAMLKeys(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	n, err := parseYAML(b)
+	require.NoError(t, err)
+	return n.mapping.Keys()
+}
+
+func readOrderedJSONKeys(t *testing.T, path string) []string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	n, err := parseJSON(b)
+	require.NoError(t, err)
+	return n.mapping.Keys()
+}
+
 func TestIntegratorSharedOwnershipStructuredPreferUpstream_YAML(t *testing.T) {
 	upstreamYAML := "shared_key: from-upstream\nupstream_only: value-u\n"
 	downstreamYAML := "shared_key: from-downstream\ndownstream_only: value-d\n"
@@ -59,6 +77,9 @@ func TestIntegratorSharedOwnershipStructuredPreferUpstream_YAML(t *testing.T) {
 	t.Run("downstream-only keys survive", func(t *testing.T) {
 		assert.Equal(t, "value-d", result["downstream_only"],
 			"downstream-only keys should be preserved in a prefer-upstream merge (shared ownership means downstream can add keys of its own)")
+	})
+	t.Run("preserves upstream key order first, downstream-only appended", func(t *testing.T) {
+		assert.Equal(t, []string{"shared_key", "upstream_only", "downstream_only"}, readOrderedYAMLKeys(t, filepath.Join(downstreamDir, "config.yaml")))
 	})
 }
 
@@ -82,6 +103,9 @@ func TestIntegratorSharedOwnershipStructuredPreferUpstream_JSON(t *testing.T) {
 		assert.Equal(t, "value-d", result["downstream_only"],
 			"downstream-only keys should be preserved in a prefer-upstream merge (shared ownership means downstream can add keys of its own)")
 	})
+	t.Run("preserves upstream key order first, downstream-only appended", func(t *testing.T) {
+		assert.Equal(t, []string{"shared_key", "upstream_only", "downstream_only"}, readOrderedJSONKeys(t, filepath.Join(downstreamDir, "config.json")))
+	})
 }
 
 func TestIntegratorSharedOwnershipStructuredPreferDownstream_YAML(t *testing.T) {
@@ -103,6 +127,9 @@ func TestIntegratorSharedOwnershipStructuredPreferDownstream_YAML(t *testing.T) 
 	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
 		assert.Equal(t, "value-u", result["upstream_only"])
 	})
+	t.Run("preserves downstream key order first, upstream-only appended", func(t *testing.T) {
+		assert.Equal(t, []string{"shared_key", "downstream_only", "upstream_only"}, readOrderedYAMLKeys(t, filepath.Join(downstreamDir, "config.yaml")))
+	})
 }
 
 func TestIntegratorSharedOwnershipStructuredPreferDownstream_JSON(t *testing.T) {
@@ -123,6 +150,9 @@ func TestIntegratorSharedOwnershipStructuredPreferDownstream_JSON(t *testing.T) 
 	})
 	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
 		assert.Equal(t, "value-u", result["upstream_only"])
+	})
+	t.Run("preserves downstream key order first, upstream-only appended", func(t *testing.T) {
+		assert.Equal(t, []string{"shared_key", "downstream_only", "upstream_only"}, readOrderedJSONKeys(t, filepath.Join(downstreamDir, "config.json")))
 	})
 }
 

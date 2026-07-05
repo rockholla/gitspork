@@ -277,7 +277,7 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 
 	for _, preIntegrateMigration := range preIntegrateMigrations {
 		logger.Log("%s", greenBold.Sprintf("running pre-integrate migration defined in upstream against the downstream: %s", preIntegrateMigration.ID))
-		if err := runMigration(preIntegrateMigration, upstreamPath, downstreamPath); err != nil {
+		if err := runMigration(preIntegrateMigration, upstreamPath, downstreamPath, logger); err != nil {
 			return fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
 		}
 		if !forDriftCheck {
@@ -319,7 +319,7 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 
 	for _, postIntegrateMigration := range postIntegrateMigrations {
 		logger.Log("%s", greenBold.Sprintf("running post-integrate migration defined in upstream against the downstream: %s", postIntegrateMigration.ID))
-		if err := runMigration(postIntegrateMigration, upstreamPath, downstreamPath); err != nil {
+		if err := runMigration(postIntegrateMigration, upstreamPath, downstreamPath, logger); err != nil {
 			return fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
 		}
 		if !forDriftCheck {
@@ -679,7 +679,7 @@ func migrationCompletedInDownstream(migrationID string, downstreamRepoPath strin
 	return false, nil
 }
 
-func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string) error {
+func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string, logger sdktypes.Logger) error {
 	if migrationInstructions.Exec != "" {
 		execParts := strings.Split(migrationInstructions.Exec, " ")
 		if _, err := os.Stat(filepath.Join(upstreamRepoRootPath, execParts[0])); err == nil {
@@ -687,8 +687,8 @@ func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructi
 			execParts[0] = filepath.Join(upstreamRepoRootPath, execParts[0])
 		}
 		cmd := exec.Command(execParts[0], execParts[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdout = &logutil.LoggerWriter{L: logger}
+		cmd.Stderr = &logutil.LoggerWriter{L: logger}
 		cmd.Dir = downstreamRepoPath
 		return cmd.Run()
 	}

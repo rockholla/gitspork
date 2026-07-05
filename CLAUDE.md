@@ -61,21 +61,23 @@ make test-unit              # go vet ./... && go test ./... (unit tests, no buil
 make test-functional        # -tags functional (compiles binary, runs against synthetic repos)
 make test-functional-docker # -tags functional_docker (same scenarios via Docker image)
 make test-examples          # -tags examples (runs against docs/examples/ upstream dirs)
+make test-sdk               # -tags sdk (black-box tests importing github.com/rockholla/gitspork/v2)
 ```
 
 **Build tags are important:**
 - `functional` — activates `test/functional/` tests using the native binary runner
 - `functional_docker` — activates the same test scenarios using `DockerRunner`
 - `examples` — activates `test/examples/`
+- `sdk` — activates `test/sdk/` (black-box library tests)
 - `harness_native.go` uses `//go:build functional && !functional_docker` to avoid gopls duplicate declaration errors when both tags are active
 
-**Shared test helpers** live in `internal/testharness/testharness.go` (no build tag). Both `test/functional/` and `test/examples/` import from there. `test/functional/harness.go` wraps them with thin delegating functions.
+**Shared test helpers** live in `internal/testharness/testharness.go` (no build tag). Both `test/functional/`, `test/examples/`, and `test/sdk/` import from there. `test/functional/harness.go` wraps them with thin delegating functions.
 
 ## CI
 
 - `main.yml` — triggered on push/PR to `main`; calls the reusable `tests.yml` workflow
 - `release.yml` — triggered on `v*` tag push; runs `tests.yml` then goreleaser
-- `tests.yml` — reusable workflow with four parallel jobs: unit, functional, functional-docker, examples
+- `tests.yml` — reusable workflow with five parallel jobs: unit, functional, functional-docker, examples, sdk
 - goreleaser builds multi-arch Linux + Darwin binaries, multi-arch Docker images, pushes a Homebrew formula to `rockholla/homebrew-gitspork`
 
 ## Releasing
@@ -92,6 +94,6 @@ Pre-release tags (e.g. `v1.2.3-rc.1`) can be pushed from any branch.
 
 **URL rewriting:** `resolveUpstreamURL(url, token string)` in `internal/integrate/integrate.go` silently rewrites SSH↔HTTPS based on token presence: a token forces the HTTPS form; no token forces the SSH form. `CheckDrift` selects which URL to pass (override or stored) to `IntegrateForDriftCheck`; the function only handles the protocol rewrite.
 
-**State storage:** `.gitspork/downstream-state.json` in the downstream repo stores `last_upstream_repo_url`, `last_upstream_repo_subpath`, `last_upstream_commit_hash`, and `migrations_complete`. State is only written by `Integrate` (not `CheckDrift` and not `IntegrateLocal`).
+**State storage:** `.gitspork/downstream-state.json` in the downstream repo stores a `migrations_complete` list and an `upstreams` slice, where each entry has `url`, `subpath`, and `commit_hash`. The state schema also carries three deprecated fields (`last_upstream_repo_url`, `last_upstream_repo_subpath`, `last_upstream_commit_hash`) for backward compatibility — `LoadDownstreamState` auto-migrates them into the `upstreams` slice on first read and clears them on next save. State is only written by `Integrate` (not `CheckDrift` and not `IntegrateLocal`).
 
 **`ColorizeYAML`** in `internal/logutil/colorize.go` uses `goccy/go-yaml`'s `lexer.Tokenize` + `printer.Printer` for token-accurate YAML highlighting — do not replace with regex-based approaches. Color is suppressed automatically when stdout is not a TTY (`color.NoColor`).

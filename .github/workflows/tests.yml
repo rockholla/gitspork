@@ -49,3 +49,14 @@ jobs:
         go-version-file: 'go.mod'
     - name: Examples Tests
       run: make test-examples
+
+  sdk-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: 'go.mod'
+    - name: SDK Tests
+      run: make test-sdk

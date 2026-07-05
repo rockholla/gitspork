@@ -144,6 +144,7 @@ Import and call directly:
 package main
 
 import (
+    "errors"
     "log"
 
     gitspork "github.com/rockholla/gitspork/v2"
@@ -153,7 +154,7 @@ func main() {
     report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
         DownstreamRepoPath: "/path/to/downstream",
     })
-    if err != nil && err != gitspork.ErrDriftDetected {
+    if err != nil && !errors.Is(err, gitspork.ErrDriftDetected) {
         log.Fatal(err)
     }
     for _, f := range report.Files {

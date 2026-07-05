@@ -183,6 +183,21 @@ func TestCheckDrift_overrideMissingState_errors(t *testing.T) {
 	assert.Contains(t, err.Error(), bogus)
 }
 
+// CheckDrift fails fast with gitspork.ErrGitBinaryMissing when git is not on PATH.
+func TestCheckDrift_gitBinaryMissing_errorsWithSentinel(t *testing.T) {
+	downstreamDir := emptyDownstream(t)
+
+	// Scrub PATH so exec.LookPath cannot find git.
+	t.Setenv("PATH", "/nonexistent-path-for-gitspork-tests")
+
+	_, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, gitspork.ErrGitBinaryMissing),
+		"CheckDrift should fail with ErrGitBinaryMissing when git is not on PATH")
+}
+
 // captureLogger implements gitspork.Logger and records calls.
 type captureLogger struct {
 	entries []string

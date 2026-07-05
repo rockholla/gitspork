@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +29,9 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		Long:               fmt.Sprintf("%s\n\n%s", rmHelpShort, rmHelpLong),
 		DisableFlagParsing: true,
 		Args:               cobra.MinimumNArgs(1),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return gitbin.Require()
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			recursive := slices.Contains(args, "-r")
 

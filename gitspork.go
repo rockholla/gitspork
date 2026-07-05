@@ -80,6 +80,13 @@ type Logger = sdktypes.Logger
 // downstream relative to its recorded upstream state.
 var ErrDriftDetected = sdktypes.ErrDriftDetected
 
+// ErrGitBinaryMissing is returned by CheckDrift (and the CLI's mv/rm subcommands)
+// when the git binary is not found on PATH. gitspork uses go-git for most git
+// operations, but a few paths — reading the downstream's working-tree cleanliness,
+// staging renames/removals from `gitspork mv` and `gitspork rm` — require the
+// git CLI. Detect via errors.Is(err, gitspork.ErrGitBinaryMissing).
+var ErrGitBinaryMissing = sdktypes.ErrGitBinaryMissing
+
 // NoopLogger returns a Logger implementation that discards all messages.
 // SDK consumers can pass this (or nil, which is treated equivalently by the
 // coordinator entry-points) to silence gitspork output.

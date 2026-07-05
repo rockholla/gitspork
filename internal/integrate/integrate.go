@@ -76,7 +76,7 @@ func NormalizeUpstreamURL(rawURL string, subpath string) string {
 
 // UpsertUpstreamState inserts entry into state.Upstreams, replacing any existing
 // entry whose URL+subpath normalises to the same key while preserving slice order.
-func UpsertUpstreamState(state *types.GitSporkDownstreamState, entry types.GitSporkUpstreamState) {
+func UpsertUpstreamState(state *types.DownstreamState, entry types.UpstreamState) {
 	key := NormalizeUpstreamURL(entry.URL, entry.Subpath)
 	for i, existing := range state.Upstreams {
 		if NormalizeUpstreamURL(existing.URL, existing.Subpath) == key {
@@ -204,7 +204,7 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		UpsertUpstreamState(state, types.GitSporkUpstreamState{
+		UpsertUpstreamState(state, types.UpstreamState{
 			URL:        originalUpstreamURL,
 			Subpath:    upstream.Subpath,
 			CommitHash: commitHash,
@@ -607,12 +607,12 @@ func ensureDownstreamMetaDir(downstreamRepoPath string) (string, error) {
 // .gitspork/downstream-state.json under downstreamRepoPath, creating the
 // metadata directory if it does not already exist. Deprecated single-upstream
 // fields on disk are migrated in-memory into the Upstreams slice.
-func LoadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamState, error) {
+func LoadDownstreamState(downstreamRepoPath string) (*types.DownstreamState, error) {
 	gitSporkMetaDir, err := ensureDownstreamMetaDir(downstreamRepoPath)
 	if err != nil {
 		return nil, err
 	}
-	state := &types.GitSporkDownstreamState{}
+	state := &types.DownstreamState{}
 	stateFilePath := filepath.Join(gitSporkMetaDir, downstreamStateFileName)
 	if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
 		return state, nil
@@ -627,7 +627,7 @@ func LoadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamSt
 	}
 	// Migrate deprecated single-upstream fields to Upstreams slice.
 	if len(state.Upstreams) == 0 && state.LastUpstreamCommitHash != "" {
-		state.Upstreams = []types.GitSporkUpstreamState{{
+		state.Upstreams = []types.UpstreamState{{
 			URL:        state.LastUpstreamRepoURL,
 			Subpath:    state.LastUpstreamRepoSubpath,
 			CommitHash: state.LastUpstreamCommitHash,
@@ -641,7 +641,7 @@ func LoadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamSt
 
 // SaveDownstreamState persists state to .gitspork/downstream-state.json under
 // downstreamRepoPath, ensuring the metadata directory exists first.
-func SaveDownstreamState(downstreamRepoPath string, state *types.GitSporkDownstreamState) error {
+func SaveDownstreamState(downstreamRepoPath string, state *types.DownstreamState) error {
 	b, err := json.Marshal(state)
 	if err != nil {
 		return err

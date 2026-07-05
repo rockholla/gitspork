@@ -84,29 +84,29 @@ func Test_NormalizeUpstreamURL(t *testing.T) {
 }
 
 func Test_UpsertUpstreamState_newEntry(t *testing.T) {
-	state := &types.GitSporkDownstreamState{}
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
+	state := &types.DownstreamState{}
+	UpsertUpstreamState(state, types.UpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "https://github.com/org/repo.git", state.Upstreams[0].URL)
 	assert.Equal(t, "abc", state.Upstreams[0].CommitHash)
 }
 
 func Test_UpsertUpstreamState_updateExisting(t *testing.T) {
-	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
+	state := &types.DownstreamState{Upstreams: []types.UpstreamState{
 		{URL: "git@github.com:org/repo.git", CommitHash: "old"},
 	}}
 	// SSH and HTTPS forms of same repo — should match and update in place
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
+	UpsertUpstreamState(state, types.UpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
 }
 
 func Test_UpsertUpstreamState_orderPreserved(t *testing.T) {
-	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
+	state := &types.DownstreamState{Upstreams: []types.UpstreamState{
 		{URL: "https://github.com/org/base.git", CommitHash: "b1"},
 		{URL: "https://github.com/org/platform.git", CommitHash: "p1"},
 	}}
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
+	UpsertUpstreamState(state, types.UpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
 	require.Len(t, state.Upstreams, 2)
 	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
 	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)

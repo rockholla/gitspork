@@ -40,7 +40,7 @@ func TestCheckDrift(t *testing.T) {
 		err = os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty"), 0644)
 		require.NoError(t, err)
 
-		state := &types.GitSporkDownstreamState{
+		state := &types.DownstreamState{
 			LastUpstreamRepoURL:     "https://github.com/rockholla/gitspork.git",
 			LastUpstreamRepoSubpath: "docs/examples/simple/upstream",
 			LastUpstreamCommitHash:  "abc123",

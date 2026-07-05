@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"dario.cat/mergo"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
@@ -21,15 +20,13 @@ func (i *IntegratorSharedOwnershipStructuredPreferUpstream) Integrate(configured
 	}
 	for _, integrateFile := range integrateFiles {
 		logger.Log("📝 gathering structured data for %s", integrateFile)
-		upstreamStructuredData, downstreamStructuredData, structuredDataType, err := getStructuredData(filepath.Join(upstreamPath, integrateFile), filepath.Join(downstreamPath, integrateFile))
+		upstreamData, downstreamData, structuredDataType, err := getStructuredData(filepath.Join(upstreamPath, integrateFile), filepath.Join(downstreamPath, integrateFile))
 		if err != nil {
 			return err
 		}
 		logger.Log("🔧 merging upstream and downstream data, prefering upstream data")
-		if err := mergo.Merge(downstreamStructuredData, *upstreamStructuredData, mergo.WithOverride); err != nil {
-			return fmt.Errorf("error merging structured data from %s to downstream: %v", integrateFile, err)
-		}
-		if err := writeStructuredData(upstreamStructuredData, structuredDataType, filepath.Join(downstreamPath, integrateFile)); err != nil {
+		merged := mergeNodes(downstreamData, upstreamData, true)
+		if err := writeStructuredData(merged, structuredDataType, filepath.Join(downstreamPath, integrateFile)); err != nil {
 			return fmt.Errorf("error writing merged structured data: %v", err)
 		}
 	}

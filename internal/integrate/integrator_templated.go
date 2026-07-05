@@ -10,7 +10,6 @@ import (
 	"strings"
 	"text/template"
 
-	"dario.cat/mergo"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	inputpkg "github.com/rockholla/gitspork/v2/internal/input"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
@@ -147,22 +146,16 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				return fmt.Errorf("error writing rendered template to temporary location: %v", err)
 			}
 			newData, existingData, structuredDataType, err := getStructuredData(tmpFilePath, fullDestinationPath)
-			var preferredData *map[string]any
-			var secondaryData *map[string]any
 			if err != nil {
 				return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
 			}
+			var merged *node
 			if performPostMergeStructured == config.TemplatedMergeStructuredPreferDownstream {
-				preferredData = existingData
-				secondaryData = newData
+				merged = mergeNodes(newData, existingData, true)
 			} else {
-				preferredData = newData
-				secondaryData = existingData
+				merged = mergeNodes(existingData, newData, true)
 			}
-			if err := mergo.Merge(secondaryData, *preferredData, mergo.WithOverride); err != nil {
-				return fmt.Errorf("error merging structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
-			}
-			if err := writeStructuredData(preferredData, structuredDataType, fullDestinationPath); err != nil {
+			if err := writeStructuredData(merged, structuredDataType, fullDestinationPath); err != nil {
 				return fmt.Errorf("error writing merged structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
 			}
 		} else {

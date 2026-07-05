@@ -19,7 +19,6 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/gobwas/glob"
-	"github.com/goccy/go-yaml"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
@@ -589,11 +588,7 @@ func syncFile(src, dst string) error {
 	return nil
 }
 
-func getStructuredData(upstreamPath string, downstreamPath string) (*map[string]any, *map[string]any, string, error) {
-	var err error
-	upstreamData := &map[string]any{}
-	downstreamData := &map[string]any{}
-
+func getStructuredData(upstreamPath string, downstreamPath string) (*node, *node, string, error) {
 	structuredDataType := ""
 	for _, yamlExt := range structuredDataYAMLExtensions {
 		if filepath.Ext(upstreamPath) == yamlExt {
@@ -606,62 +601,51 @@ func getStructuredData(upstreamPath string, downstreamPath string) (*map[string]
 		}
 	}
 	if structuredDataType == "" {
-		return upstreamData, downstreamData, "", fmt.Errorf("upstream file %s is not a supported structured data file, supported: %v", upstreamPath, append(structuredDataYAMLExtensions, structuredDataJSONExtensions...))
+		return nil, nil, "", fmt.Errorf("upstream file %s is not a supported structured data file, supported: %v", upstreamPath, append(structuredDataYAMLExtensions, structuredDataJSONExtensions...))
 	}
 
-	upstreamPathBytes, err := os.ReadFile(upstreamPath)
+	upstreamBytes, err := os.ReadFile(upstreamPath)
 	if err != nil {
-		return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error reading file %s", upstreamPath)
+		return nil, nil, structuredDataType, fmt.Errorf("error reading file %s", upstreamPath)
 	}
 	if _, err := os.Stat(downstreamPath); os.IsNotExist(err) {
-		// the downstream doesn't exist yet, we can just copy the file
 		if err := syncFile(upstreamPath, downstreamPath); err != nil {
-			return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error copying structured data file %s to downstream: %v", upstreamPath, err)
+			return nil, nil, structuredDataType, fmt.Errorf("error copying structured data file %s to downstream: %v", upstreamPath, err)
 		}
 	}
-	downstreamPathBytes, err := os.ReadFile(downstreamPath)
+	downstreamBytes, err := os.ReadFile(downstreamPath)
 	if err != nil {
-		return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error reading file %s", upstreamPath)
-	}
-	switch structuredDataType {
-	case structuredDataTypeYAML:
-		if err := yaml.Unmarshal(upstreamPathBytes, upstreamData); err != nil {
-			return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error parsing upstream file %s: %v", upstreamPath, err)
-		}
-		if err := yaml.Unmarshal(downstreamPathBytes, downstreamData); err != nil {
-			return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error parsing downstream file %s: %v", upstreamPath, err)
-		}
-	case structuredDataTypeJSON:
-		if err := json.Unmarshal(upstreamPathBytes, upstreamData); err != nil {
-			return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error parsing upstream file %s: %v", upstreamPath, err)
-		}
-		if err := json.Unmarshal(downstreamPathBytes, downstreamData); err != nil {
-			return upstreamData, downstreamData, structuredDataType, fmt.Errorf("error parsing downstream file %s: %v", upstreamPath, err)
-		}
+		return nil, nil, structuredDataType, fmt.Errorf("error reading file %s", downstreamPath)
 	}
 
-	return upstreamData, downstreamData, structuredDataType, err
+	parse := parseYAML
+	if structuredDataType == structuredDataTypeJSON {
+		parse = parseJSON
+	}
+	upstreamNode, err := parse(upstreamBytes)
+	if err != nil {
+		return nil, nil, structuredDataType, fmt.Errorf("error parsing upstream file %s: %v", upstreamPath, err)
+	}
+	downstreamNode, err := parse(downstreamBytes)
+	if err != nil {
+		return nil, nil, structuredDataType, fmt.Errorf("error parsing downstream file %s: %v", downstreamPath, err)
+	}
+	return upstreamNode, downstreamNode, structuredDataType, nil
 }
 
-func writeStructuredData(structuredData *map[string]interface{}, structuredDataType string, toPath string) error {
+func writeStructuredData(data *node, structuredDataType string, toPath string) error {
 	var b []byte
 	var err error
 	switch structuredDataType {
 	case structuredDataTypeYAML:
-		b, err = yaml.Marshal(structuredData)
-		if err != nil {
-			return err
-		}
+		b, err = writeYAML(data)
 	case structuredDataTypeJSON:
-		b, err = json.MarshalIndent(structuredData, "", "  ")
-		if err != nil {
-			return err
-		}
+		b, err = writeJSON(data)
 	}
-	if err := os.WriteFile(toPath, b, 0644); err != nil {
+	if err != nil {
 		return err
 	}
-	return nil
+	return os.WriteFile(toPath, b, 0644)
 }
 
 func ensureDownstreamMetaDir(downstreamRepoPath string) (string, error) {

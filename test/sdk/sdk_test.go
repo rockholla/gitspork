@@ -112,6 +112,15 @@ func TestCheckDrift_driftDetected_returnsErrSentinel(t *testing.T) {
 	assert.Equal(t, "upstream-owned/file.txt", report.Files[0].Path)
 	assert.Equal(t, "file://"+upstreamDir, report.Files[0].AttributedURL)
 	assert.Contains(t, report.Files[0].Diff, "upstream-owned/file.txt", "per-file diff should reference the path")
+
+	// ColorizedDiff contains ANSI escape codes so SDK consumers can render
+	// human-readable output. Populated regardless of process TTY state.
+	assert.NotEqual(t, report.Files[0].Diff, report.Files[0].ColorizedDiff,
+		"ColorizedDiff should differ from Diff (colors were applied)")
+	assert.Contains(t, report.Files[0].ColorizedDiff, "\x1b[",
+		"ColorizedDiff should contain ANSI escape codes")
+	assert.Contains(t, report.Files[0].ColorizedDiff, "upstream-owned/file.txt",
+		"ColorizedDiff should still reference the path")
 }
 
 // Logger contract: nil Logger means silent (no panic)

@@ -42,4 +42,5 @@ type DriftedFile struct {
 	Path          string
 	AttributedURL string // upstream URL responsible for this file; empty means unattributed
 	Diff          string // unified-diff text for this file; a `Binary files ... differ` marker line when the file is binary
+	ColorizedDiff string // same content as Diff with ANSI color codes applied by line prefix (headers bold, hunks cyan, additions green, removals red); always populated regardless of the process's TTY state so SDK consumers can render into any sink
 }

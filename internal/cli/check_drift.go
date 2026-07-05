@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -12,35 +11,6 @@ import (
 	"github.com/rockholla/gitspork/v2/internal/drift"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
-
-// colorizeUnifiedDiff applies ANSI colors to a unified-diff string based on
-// per-line prefix: `diff --git` and `+++`/`---` headers bold, `@@` hunks
-// cyan, `+`/`-` change lines green/red. Falls through unchanged when color
-// output is disabled (non-TTY / NO_COLOR).
-func colorizeUnifiedDiff(diff string) string {
-	if color.NoColor {
-		return diff
-	}
-	var out strings.Builder
-	for _, line := range strings.Split(diff, "\n") {
-		switch {
-		case strings.HasPrefix(line, "diff --git"),
-			strings.HasPrefix(line, "--- "),
-			strings.HasPrefix(line, "+++ "):
-			out.WriteString(color.New(color.Bold).Sprint(line))
-		case strings.HasPrefix(line, "@@"):
-			out.WriteString(color.CyanString(line))
-		case strings.HasPrefix(line, "+"):
-			out.WriteString(color.GreenString(line))
-		case strings.HasPrefix(line, "-"):
-			out.WriteString(color.RedString(line))
-		default:
-			out.WriteString(line)
-		}
-		out.WriteString("\n")
-	}
-	return out.String()
-}
 
 const (
 	checkDriftHelpShort string = "check if a downstream repo has drifted from its last integrated upstream state"
@@ -106,7 +76,11 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 					if f.Diff == "" {
 						continue
 					}
-					fmt.Print(colorizeUnifiedDiff(f.Diff))
+					if color.NoColor {
+						fmt.Print(f.Diff)
+					} else {
+						fmt.Print(f.ColorizedDiff)
+					}
 				}
 			}
 			os.Exit(2)

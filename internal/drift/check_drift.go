@@ -17,6 +17,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/integrate"
+	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
@@ -191,6 +192,7 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			Path:          name,
 			AttributedURL: fileOwner[name], // empty string means unattributed
 			Diff:          diffText,
+			ColorizedDiff: logutil.ColorizeUnifiedDiff(diffText),
 		})
 	}
 

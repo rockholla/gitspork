@@ -1,4 +1,4 @@
-package internal
+package integrate
 
 import (
 	"encoding/json"
@@ -83,7 +83,10 @@ func ParseUpstreamFlag(val string) (types.UpstreamSpec, error) {
 	return spec, nil
 }
 
-func normalizeUpstreamURL(rawURL string, subpath string) string {
+// NormalizeUpstreamURL returns a canonical key for an upstream URL+subpath pair
+// so that SSH and HTTPS forms of the same repo compare equal. Used to look up
+// stored state entries regardless of how the upstream URL was originally spelled.
+func NormalizeUpstreamURL(rawURL string, subpath string) string {
 	u := rawURL
 	// SSH git@host:org/repo -> host/org/repo
 	if reSSHURL.MatchString(u) {
@@ -99,10 +102,12 @@ func normalizeUpstreamURL(rawURL string, subpath string) string {
 	return strings.ToLower(u)
 }
 
-func upsertUpstreamState(state *types.GitSporkDownstreamState, entry types.GitSporkUpstreamState) {
-	key := normalizeUpstreamURL(entry.URL, entry.Subpath)
+// UpsertUpstreamState inserts entry into state.Upstreams, replacing any existing
+// entry whose URL+subpath normalises to the same key while preserving slice order.
+func UpsertUpstreamState(state *types.GitSporkDownstreamState, entry types.GitSporkUpstreamState) {
+	key := NormalizeUpstreamURL(entry.URL, entry.Subpath)
 	for i, existing := range state.Upstreams {
-		if normalizeUpstreamURL(existing.URL, existing.Subpath) == key {
+		if NormalizeUpstreamURL(existing.URL, existing.Subpath) == key {
 			state.Upstreams[i] = entry
 			return
 		}
@@ -158,13 +163,13 @@ func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (types.IntegratedUpstream, error) {
 	prevHash := ""
 	if !opts.ForDriftCheck {
-		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
+		existingState, err := LoadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
-		key := normalizeUpstreamURL(upstream.URL, upstream.Subpath)
+		key := NormalizeUpstreamURL(upstream.URL, upstream.Subpath)
 		for _, u := range existingState.Upstreams {
-			if normalizeUpstreamURL(u.URL, u.Subpath) == key {
+			if NormalizeUpstreamURL(u.URL, u.Subpath) == key {
 				prevHash = u.CommitHash
 				break
 			}
@@ -223,16 +228,16 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 	}
 
 	if !opts.ForDriftCheck {
-		state, err := loadDownstreamState(opts.DownstreamRepoPath)
+		state, err := LoadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		upsertUpstreamState(state, types.GitSporkUpstreamState{
+		UpsertUpstreamState(state, types.GitSporkUpstreamState{
 			URL:        originalUpstreamURL,
 			Subpath:    upstream.Subpath,
 			CommitHash: commitHash,
 		})
-		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
+		if err := SaveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}
 	}
@@ -626,7 +631,11 @@ func ensureDownstreamMetaDir(downstreamRepoPath string) (string, error) {
 	return gitSporkMetaDir, nil
 }
 
-func loadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamState, error) {
+// LoadDownstreamState reads the persisted downstream state from
+// .gitspork/downstream-state.json under downstreamRepoPath, creating the
+// metadata directory if it does not already exist. Deprecated single-upstream
+// fields on disk are migrated in-memory into the Upstreams slice.
+func LoadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamState, error) {
 	gitSporkMetaDir, err := ensureDownstreamMetaDir(downstreamRepoPath)
 	if err != nil {
 		return nil, err
@@ -658,7 +667,9 @@ func loadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamSt
 	return state, nil
 }
 
-func saveDownstreamState(downstreamRepoPath string, state *types.GitSporkDownstreamState) error {
+// SaveDownstreamState persists state to .gitspork/downstream-state.json under
+// downstreamRepoPath, ensuring the metadata directory exists first.
+func SaveDownstreamState(downstreamRepoPath string, state *types.GitSporkDownstreamState) error {
 	b, err := json.Marshal(state)
 	if err != nil {
 		return err
@@ -675,7 +686,7 @@ func saveDownstreamState(downstreamRepoPath string, state *types.GitSporkDownstr
 }
 
 func migrationCompletedInDownstream(migrationID string, downstreamRepoPath string) (bool, error) {
-	state, err := loadDownstreamState(downstreamRepoPath)
+	state, err := LoadDownstreamState(downstreamRepoPath)
 	if err != nil {
 		return false, err
 	}
@@ -704,7 +715,7 @@ func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructi
 }
 
 func recordCompleteMigration(migrationID string, downstreamRepoPath string) error {
-	state, err := loadDownstreamState(downstreamRepoPath)
+	state, err := LoadDownstreamState(downstreamRepoPath)
 	if err != nil {
 		return err
 	}
@@ -715,5 +726,5 @@ func recordCompleteMigration(migrationID string, downstreamRepoPath string) erro
 	if !migrationCompleted {
 		state.MigrationsComplete = append(state.MigrationsComplete, migrationID)
 	}
-	return saveDownstreamState(downstreamRepoPath, state)
+	return SaveDownstreamState(downstreamRepoPath, state)
 }

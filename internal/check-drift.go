@@ -16,6 +16,7 @@ import (
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/internal/config"
+	"github.com/rockholla/gitspork/internal/integrate"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -42,7 +43,7 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 		}
 	}
 
-	state, err := loadDownstreamState(opts.DownstreamRepoPath)
+	state, err := integrate.LoadDownstreamState(opts.DownstreamRepoPath)
 	if err != nil {
 		return report, fmt.Errorf("error loading downstream state: %v", err)
 	}
@@ -57,10 +58,10 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 	if len(opts.Upstreams) > 0 {
 		// Override mode: match each override to its state entry for the commit hash.
 		for _, override := range opts.Upstreams {
-			key := normalizeUpstreamURL(override.URL, override.Subpath)
+			key := integrate.NormalizeUpstreamURL(override.URL, override.Subpath)
 			found := false
 			for _, su := range state.Upstreams {
-				if normalizeUpstreamURL(su.URL, su.Subpath) == key {
+				if integrate.NormalizeUpstreamURL(su.URL, su.Subpath) == key {
 					entries = append(entries, upstreamCheckEntry{spec: override, commitHash: su.CommitHash})
 					found = true
 					break
@@ -133,7 +134,7 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
-		if _, err := Integrate(&types.IntegrateOptions{
+		if _, err := integrate.Integrate(&types.IntegrateOptions{
 			Logger:              opts.Logger,
 			UpstreamRepoURL:     entry.spec.URL,
 			UpstreamRepoSubpath: entry.spec.Subpath,

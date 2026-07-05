@@ -1,4 +1,4 @@
-package internal
+package integrate
 
 import (
 	"os"
@@ -96,58 +96,58 @@ func Test_ParseUpstreamFlag(t *testing.T) {
 func Test_normalizeUpstreamURL(t *testing.T) {
 	t.Run("SSH and HTTPS same repo match", func(t *testing.T) {
 		assert.Equal(t,
-			normalizeUpstreamURL("git@github.com:org/repo.git", ""),
-			normalizeUpstreamURL("https://github.com/org/repo.git", ""))
+			NormalizeUpstreamURL("git@github.com:org/repo.git", ""),
+			NormalizeUpstreamURL("https://github.com/org/repo.git", ""))
 	})
 	t.Run("subpath included in key", func(t *testing.T) {
 		assert.NotEqual(t,
-			normalizeUpstreamURL("git@github.com:org/repo.git", "infra"),
-			normalizeUpstreamURL("git@github.com:org/repo.git", ""))
+			NormalizeUpstreamURL("git@github.com:org/repo.git", "infra"),
+			NormalizeUpstreamURL("git@github.com:org/repo.git", ""))
 	})
 	t.Run("trailing .git stripped", func(t *testing.T) {
 		assert.Equal(t,
-			normalizeUpstreamURL("https://github.com/org/repo.git", ""),
-			normalizeUpstreamURL("https://github.com/org/repo", ""))
+			NormalizeUpstreamURL("https://github.com/org/repo.git", ""),
+			NormalizeUpstreamURL("https://github.com/org/repo", ""))
 	})
 }
 
-func Test_upsertUpstreamState_newEntry(t *testing.T) {
+func Test_UpsertUpstreamState_newEntry(t *testing.T) {
 	state := &types.GitSporkDownstreamState{}
-	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
+	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "https://github.com/org/repo.git", state.Upstreams[0].URL)
 	assert.Equal(t, "abc", state.Upstreams[0].CommitHash)
 }
 
-func Test_upsertUpstreamState_updateExisting(t *testing.T) {
+func Test_UpsertUpstreamState_updateExisting(t *testing.T) {
 	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
 		{URL: "git@github.com:org/repo.git", CommitHash: "old"},
 	}}
 	// SSH and HTTPS forms of same repo — should match and update in place
-	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
+	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
 }
 
-func Test_upsertUpstreamState_orderPreserved(t *testing.T) {
+func Test_UpsertUpstreamState_orderPreserved(t *testing.T) {
 	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
 		{URL: "https://github.com/org/base.git", CommitHash: "b1"},
 		{URL: "https://github.com/org/platform.git", CommitHash: "p1"},
 	}}
-	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
+	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
 	require.Len(t, state.Upstreams, 2)
 	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
 	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)
 }
 
-func Test_loadDownstreamState_migration(t *testing.T) {
+func Test_LoadDownstreamState_migration(t *testing.T) {
 	dir := t.TempDir()
 	metaDir := filepath.Join(dir, ".gitspork")
 	require.NoError(t, os.MkdirAll(metaDir, 0755))
 	oldState := `{"migrations_complete":["m1"],"last_upstream_repo_url":"git@github.com:org/repo.git","last_upstream_repo_subpath":"infra","last_upstream_commit_hash":"abc123"}`
 	require.NoError(t, os.WriteFile(filepath.Join(metaDir, "downstream-state.json"), []byte(oldState), 0644))
 
-	state, err := loadDownstreamState(dir)
+	state, err := LoadDownstreamState(dir)
 	require.NoError(t, err)
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "git@github.com:org/repo.git", state.Upstreams[0].URL)

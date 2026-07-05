@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/integrate"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -50,13 +50,13 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				ForceRePrompt:       forceRePrompt,
 			}
 			for _, f := range upstreamFlags {
-				spec, err := internal.ParseUpstreamFlag(f)
+				spec, err := integrate.ParseUpstreamFlag(f)
 				if err != nil {
 					return err
 				}
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
-			if _, err := internal.Integrate(opts); err != nil {
+			if _, err := integrate.Integrate(opts); err != nil {
 				return err
 			}
 			return nil

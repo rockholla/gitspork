@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/integrate"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -48,7 +49,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				DownstreamRepoPath: downstreamRepoPath,
 			}
 			for _, f := range upstreamFlags {
-				spec, err := internal.ParseUpstreamFlag(f)
+				spec, err := integrate.ParseUpstreamFlag(f)
 				if err != nil {
 					return err
 				}

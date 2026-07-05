@@ -1,0 +1,190 @@
+package integrate
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func setupStructuredPair(t *testing.T, filename, upstreamContent, downstreamContent string) (string, string) {
+	t.Helper()
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, filename), []byte(upstreamContent), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, filename), []byte(downstreamContent), 0644))
+	return upstreamDir, downstreamDir
+}
+
+func readYAMLMap(t *testing.T, path string) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	m := map[string]any{}
+	require.NoError(t, yaml.Unmarshal(b, &m))
+	return m
+}
+
+func readJSONMap(t *testing.T, path string) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	m := map[string]any{}
+	require.NoError(t, json.Unmarshal(b, &m))
+	return m
+}
+
+func TestIntegratorSharedOwnershipStructuredPreferUpstream_YAML(t *testing.T) {
+	upstreamYAML := "shared_key: from-upstream\nupstream_only: value-u\n"
+	downstreamYAML := "shared_key: from-downstream\ndownstream_only: value-d\n"
+	upstreamDir, downstreamDir := setupStructuredPair(t, "config.yaml", upstreamYAML, downstreamYAML)
+
+	integrator := &IntegratorSharedOwnershipStructuredPreferUpstream{}
+	require.NoError(t, integrator.Integrate([]string{"config.yaml"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+	result := readYAMLMap(t, filepath.Join(downstreamDir, "config.yaml"))
+
+	t.Run("upstream wins on collision", func(t *testing.T) {
+		assert.Equal(t, "from-upstream", result["shared_key"])
+	})
+	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
+		assert.Equal(t, "value-u", result["upstream_only"])
+	})
+	t.Run("downstream-only keys survive", func(t *testing.T) {
+		assert.Equal(t, "value-d", result["downstream_only"],
+			"downstream-only keys should be preserved in a prefer-upstream merge (shared ownership means downstream can add keys of its own)")
+	})
+}
+
+func TestIntegratorSharedOwnershipStructuredPreferUpstream_JSON(t *testing.T) {
+	upstreamJSON := `{"shared_key":"from-upstream","upstream_only":"value-u"}`
+	downstreamJSON := `{"shared_key":"from-downstream","downstream_only":"value-d"}`
+	upstreamDir, downstreamDir := setupStructuredPair(t, "config.json", upstreamJSON, downstreamJSON)
+
+	integrator := &IntegratorSharedOwnershipStructuredPreferUpstream{}
+	require.NoError(t, integrator.Integrate([]string{"config.json"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+	result := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
+
+	t.Run("upstream wins on collision", func(t *testing.T) {
+		assert.Equal(t, "from-upstream", result["shared_key"])
+	})
+	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
+		assert.Equal(t, "value-u", result["upstream_only"])
+	})
+	t.Run("downstream-only keys survive", func(t *testing.T) {
+		assert.Equal(t, "value-d", result["downstream_only"],
+			"downstream-only keys should be preserved in a prefer-upstream merge (shared ownership means downstream can add keys of its own)")
+	})
+}
+
+func TestIntegratorSharedOwnershipStructuredPreferDownstream_YAML(t *testing.T) {
+	upstreamYAML := "shared_key: from-upstream\nupstream_only: value-u\n"
+	downstreamYAML := "shared_key: from-downstream\ndownstream_only: value-d\n"
+	upstreamDir, downstreamDir := setupStructuredPair(t, "config.yaml", upstreamYAML, downstreamYAML)
+
+	integrator := &IntegratorSharedOwnershipStructuredPreferDownstream{}
+	require.NoError(t, integrator.Integrate([]string{"config.yaml"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+	result := readYAMLMap(t, filepath.Join(downstreamDir, "config.yaml"))
+
+	t.Run("downstream wins on collision", func(t *testing.T) {
+		assert.Equal(t, "from-downstream", result["shared_key"])
+	})
+	t.Run("downstream-only keys survive", func(t *testing.T) {
+		assert.Equal(t, "value-d", result["downstream_only"])
+	})
+	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
+		assert.Equal(t, "value-u", result["upstream_only"])
+	})
+}
+
+func TestIntegratorSharedOwnershipStructuredPreferDownstream_JSON(t *testing.T) {
+	upstreamJSON := `{"shared_key":"from-upstream","upstream_only":"value-u"}`
+	downstreamJSON := `{"shared_key":"from-downstream","downstream_only":"value-d"}`
+	upstreamDir, downstreamDir := setupStructuredPair(t, "config.json", upstreamJSON, downstreamJSON)
+
+	integrator := &IntegratorSharedOwnershipStructuredPreferDownstream{}
+	require.NoError(t, integrator.Integrate([]string{"config.json"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+	result := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
+
+	t.Run("downstream wins on collision", func(t *testing.T) {
+		assert.Equal(t, "from-downstream", result["shared_key"])
+	})
+	t.Run("downstream-only keys survive", func(t *testing.T) {
+		assert.Equal(t, "value-d", result["downstream_only"])
+	})
+	t.Run("upstream-only keys land in downstream", func(t *testing.T) {
+		assert.Equal(t, "value-u", result["upstream_only"])
+	})
+}
+
+func TestIntegratorSharedOwnershipMerged(t *testing.T) {
+	beginMarker := "# ::gitspork::begin-upstream-owned-block"
+	endMarker := "# ::gitspork::end-upstream-owned-block"
+
+	t.Run("upstream block content replaces downstream block content", func(t *testing.T) {
+		upstream := beginMarker + "\nupstream owned line A\nupstream owned line B\n" + endMarker + "\n"
+		downstream := beginMarker + "\nstale downstream block content\n" + endMarker + "\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "Makefile", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NoError(t, integrator.Integrate([]string{"Makefile"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "Makefile"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "upstream owned line A")
+		assert.Contains(t, string(got), "upstream owned line B")
+		assert.NotContains(t, string(got), "stale downstream block content")
+	})
+
+	t.Run("downstream lines outside upstream blocks are preserved", func(t *testing.T) {
+		upstream := beginMarker + "\nupstream owned\n" + endMarker + "\n"
+		downstream := "downstream-only line above\n" +
+			beginMarker + "\nstale\n" + endMarker + "\n" +
+			"downstream-only line below\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "Makefile", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NoError(t, integrator.Integrate([]string{"Makefile"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "Makefile"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "downstream-only line above")
+		assert.Contains(t, string(got), "downstream-only line below")
+		assert.Contains(t, string(got), "upstream owned")
+		assert.NotContains(t, string(got), "stale")
+
+		aboveIdx := strings.Index(string(got), "downstream-only line above")
+		upstreamIdx := strings.Index(string(got), "upstream owned")
+		belowIdx := strings.Index(string(got), "downstream-only line below")
+		assert.True(t, aboveIdx < upstreamIdx && upstreamIdx < belowIdx,
+			"downstream lines should retain their original relative position around the upstream block")
+	})
+
+	t.Run("upstream block appended when missing in downstream", func(t *testing.T) {
+		upstream := beginMarker + "\nfresh upstream content\n" + endMarker + "\n"
+		downstream := "downstream only content\nno markers here\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "Makefile", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NoError(t, integrator.Integrate([]string{"Makefile"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "Makefile"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "downstream only content")
+		assert.Contains(t, string(got), "fresh upstream content")
+
+		downstreamIdx := strings.Index(string(got), "downstream only content")
+		upstreamIdx := strings.Index(string(got), "fresh upstream content")
+		assert.True(t, downstreamIdx < upstreamIdx,
+			"an upstream block not present in downstream should be appended after existing downstream content")
+	})
+}

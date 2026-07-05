@@ -29,7 +29,7 @@ func (i *IntegratorSharedOwnershipStructuredPreferUpstream) Integrate(configured
 		if err := mergo.Merge(downstreamStructuredData, *upstreamStructuredData, mergo.WithOverride); err != nil {
 			return fmt.Errorf("error merging structured data from %s to downstream: %v", integrateFile, err)
 		}
-		if err := writeStructuredData(upstreamStructuredData, structuredDataType, filepath.Join(downstreamPath, integrateFile)); err != nil {
+		if err := writeStructuredData(downstreamStructuredData, structuredDataType, filepath.Join(downstreamPath, integrateFile)); err != nil {
 			return fmt.Errorf("error writing merged structured data: %v", err)
 		}
 	}

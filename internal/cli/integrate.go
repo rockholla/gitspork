@@ -41,13 +41,17 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 			}
 
 			opts := &types.IntegrateOptions{
-				Logger:              logger,
-				UpstreamRepoURL:     upstreamRepoURL,
-				UpstreamRepoVersion: upstreamRepoVersion,
-				UpstreamRepoSubpath: upstreamRepoSubpath,
-				UpstreamRepoToken:   upstreamRepoToken,
-				DownstreamRepoPath:  downstreamRepoPath,
-				ForceRePrompt:       forceRePrompt,
+				Logger:             logger,
+				DownstreamRepoPath: downstreamRepoPath,
+				ForceRePrompt:      forceRePrompt,
+			}
+			if oldFlagsSet {
+				opts.Upstreams = []types.UpstreamSpec{{
+					URL:     upstreamRepoURL,
+					Version: upstreamRepoVersion,
+					Subpath: upstreamRepoSubpath,
+					Token:   upstreamRepoToken,
+				}}
 			}
 			for _, f := range upstreamFlags {
 				spec, err := ParseUpstreamFlag(f)

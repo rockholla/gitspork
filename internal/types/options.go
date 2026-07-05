@@ -7,22 +7,6 @@ type IntegrateOptions struct {
 	DownstreamRepoPath string
 	ForceRePrompt      bool
 	Logger             Logger
-	// Task 2 removes ForDriftCheck / PrevUpstreamCommitHash / UpstreamRepo* from
-	// this struct. Until then, they carry legacy-flag data from the CLI and
-	// drift-check re-integration wiring.
-	ForDriftCheck          bool
-	PrevUpstreamCommitHash string
-	// Deprecated: set Upstreams instead. The CLI accepts --upstream-repo-url
-	// for backward compatibility and translates internally.
-	UpstreamRepoURL string
-	// Deprecated: set Upstreams instead.
-	UpstreamRepoVersion string
-	// Deprecated: set Upstreams instead.
-	UpstreamRepoSubpath string
-	// Deprecated: set Upstreams instead.
-	UpstreamRepoToken string
-	// Deprecated: internal drift-check wiring only.
-	UpstreamRepoCommit string
 }
 
 // IntegrateLocalOptions configures a call to IntegrateLocal. Populate
@@ -32,9 +16,6 @@ type IntegrateLocalOptions struct {
 	DownstreamPath string
 	ForceRePrompt  bool
 	Logger         Logger
-	// Deprecated: set UpstreamPaths instead. The CLI accepts a single
-	// --upstream-path for backward compatibility and translates internally.
-	UpstreamPath string
 }
 
 // CheckDriftOptions configures a call to CheckDrift. Leave Upstreams empty

@@ -38,6 +38,19 @@ var (
 	reHTTPProto                            = regexp.MustCompile(`^https?://`)
 )
 
+// internalRequest carries wiring needed by integrateOneInternal that is not
+// part of the public IntegrateOptions surface. It exists to keep the SDK's
+// IntegrateOptions minimal while still allowing drift-check to signal special
+// behavior.
+type internalRequest struct {
+	Logger                 types.Logger
+	DownstreamRepoPath     string
+	ForceRePrompt          bool
+	forDriftCheck          bool   // true = skip state write, skip delta
+	upstreamCommit         string // when forDriftCheck: the pinned commit
+	prevUpstreamCommitHash string // set by integrateOne between calls
+}
+
 // Integrator is implemented by the ownership integrators that process a
 // homogeneous list of items into the downstream: T is OwnedEntry for the
 // upstream_owned/downstream_owned lists and string (glob pattern) for the
@@ -90,7 +103,6 @@ func UpsertUpstreamState(state *types.DownstreamState, entry types.UpstreamState
 // Integrate will ensure that the downstream at opts.DownstreamRepoPath is
 // integrated with each upstream in opts.Upstreams, in order.
 func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
-	var err error
 	result := &types.IntegrateResult{}
 
 	if opts.Logger == nil {
@@ -98,28 +110,21 @@ func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 	}
 
 	if opts.DownstreamRepoPath == "" {
-		opts.DownstreamRepoPath, err = os.Getwd()
+		wd, err := os.Getwd()
 		if err != nil {
 			return result, fmt.Errorf("unable to get the present working directory: %v", err)
 		}
+		opts.DownstreamRepoPath = wd
 	} else {
-		opts.DownstreamRepoPath, err = filepath.Abs(opts.DownstreamRepoPath)
+		abs, err := filepath.Abs(opts.DownstreamRepoPath)
 		if err != nil {
 			return result, fmt.Errorf("unable to determine local downstream repo path: %v", err)
 		}
+		opts.DownstreamRepoPath = abs
 	}
 
-	// Normalize: synthesize Upstreams from single-upstream fields for backward compat.
-	if len(opts.Upstreams) == 0 && opts.UpstreamRepoURL != "" {
-		opts.Upstreams = []types.UpstreamSpec{{
-			URL:     opts.UpstreamRepoURL,
-			Version: opts.UpstreamRepoVersion,
-			Subpath: opts.UpstreamRepoSubpath,
-			Token:   opts.UpstreamRepoToken,
-		}}
-	}
 	if len(opts.Upstreams) == 0 {
-		return result, fmt.Errorf("no upstream specified: provide --upstream or --upstream-repo-url")
+		return result, fmt.Errorf("no upstream specified: set Upstreams on IntegrateOptions")
 	}
 
 	for _, upstream := range opts.Upstreams {
@@ -132,10 +137,26 @@ func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 	return result, nil
 }
 
+// integrateOne is the public-facing helper called from Integrate. It adapts
+// the public *types.IntegrateOptions into an internalRequest.
 func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (types.IntegratedUpstream, error) {
+	req := &internalRequest{
+		Logger:             opts.Logger,
+		DownstreamRepoPath: opts.DownstreamRepoPath,
+		ForceRePrompt:      opts.ForceRePrompt,
+		// forDriftCheck / upstreamCommit / prevUpstreamCommitHash stay zero-value:
+		// public Integrate never runs drift-check semantics.
+	}
+	return integrateOneInternal(req, upstream)
+}
+
+// integrateOneInternal is the shared body. It receives the internalRequest
+// carrying the drift-check flag and pinned commit hash, and is called from
+// both integrateOne (public path) and IntegrateForDriftCheck.
+func integrateOneInternal(req *internalRequest, upstream types.UpstreamSpec) (types.IntegratedUpstream, error) {
 	prevHash := ""
-	if !opts.ForDriftCheck {
-		existingState, err := LoadDownstreamState(opts.DownstreamRepoPath)
+	if !req.forDriftCheck {
+		existingState, err := LoadDownstreamState(req.DownstreamRepoPath)
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
@@ -154,34 +175,30 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 	}
 	defer os.RemoveAll(cloneDir)
 
-	singleOpts := &types.IntegrateOptions{
-		Logger:                 opts.Logger,
-		UpstreamRepoURL:        upstream.URL,
-		UpstreamRepoVersion:    upstream.Version,
-		UpstreamRepoSubpath:    upstream.Subpath,
-		UpstreamRepoToken:      upstream.Token,
-		UpstreamRepoCommit:     opts.UpstreamRepoCommit,
-		DownstreamRepoPath:     opts.DownstreamRepoPath,
-		ForceRePrompt:          opts.ForceRePrompt,
-		ForDriftCheck:          opts.ForDriftCheck,
-		PrevUpstreamCommitHash: prevHash,
+	nestedReq := &internalRequest{
+		Logger:                 req.Logger,
+		DownstreamRepoPath:     req.DownstreamRepoPath,
+		ForceRePrompt:          req.ForceRePrompt,
+		forDriftCheck:          req.forDriftCheck,
+		upstreamCommit:         req.upstreamCommit,
+		prevUpstreamCommitHash: prevHash,
 	}
 
 	originalUpstreamURL := upstream.URL
-	opts.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
-	commitHash, err := cloneUpstreamForIntegrate(cloneDir, singleOpts)
+	req.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
+	commitHash, err := cloneUpstreamForIntegrate(cloneDir, nestedReq, upstream)
 	if err != nil {
 		return types.IntegratedUpstream{}, err
 	}
 
 	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
-	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", config.GitSporkConfigFileName, config.GitSporkConfigFileNameAlt)
+	req.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", config.GitSporkConfigFileName, config.GitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
 		return types.IntegratedUpstream{}, err
 	}
 
-	if !opts.ForDriftCheck && prevHash != "" {
+	if !req.forDriftCheck && prevHash != "" {
 		upstreamRepo, err := git.PlainOpen(cloneDir)
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error opening upstream clone for delta computation: %v", err)
@@ -190,17 +207,17 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error computing upstream delta: %v", err)
 		}
-		if err := applyUpstreamDelta(delta, opts.DownstreamRepoPath, opts.Logger); err != nil {
+		if err := applyUpstreamDelta(delta, req.DownstreamRepoPath, req.Logger); err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error applying upstream delta to downstream: %v", err)
 		}
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
+	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.forDriftCheck, req.Logger); err != nil {
 		return types.IntegratedUpstream{}, err
 	}
 
-	if !opts.ForDriftCheck {
-		state, err := LoadDownstreamState(opts.DownstreamRepoPath)
+	if !req.forDriftCheck {
+		state, err := LoadDownstreamState(req.DownstreamRepoPath)
 		if err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
@@ -209,7 +226,7 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 			Subpath:    upstream.Subpath,
 			CommitHash: commitHash,
 		})
-		if err := SaveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
+		if err := SaveDownstreamState(req.DownstreamRepoPath, state); err != nil {
 			return types.IntegratedUpstream{}, fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}
 	}
@@ -363,16 +380,16 @@ func resolveUpstreamURL(url string, token string) string {
 	return url
 }
 
-func cloneUpstreamForIntegrate(cloneDir string, opts *types.IntegrateOptions) (string, error) {
-	opts.UpstreamRepoURL = resolveUpstreamURL(opts.UpstreamRepoURL, opts.UpstreamRepoToken)
+func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream types.UpstreamSpec) (string, error) {
+	upstreamURL := resolveUpstreamURL(upstream.URL, upstream.Token)
 	var err error
 	var authMethod transport.AuthMethod
-	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", opts.UpstreamRepoURL)
-	isSSHUpstreamURL, _ := regexp.MatchString("^git@", opts.UpstreamRepoURL)
-	if isHTTPsUpstreamURL && opts.UpstreamRepoToken != "" {
+	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", upstreamURL)
+	isSSHUpstreamURL, _ := regexp.MatchString("^git@", upstreamURL)
+	if isHTTPsUpstreamURL && upstream.Token != "" {
 		authMethod = &http.BasicAuth{
 			Username: config.GitSpork,
-			Password: opts.UpstreamRepoToken,
+			Password: upstream.Token,
 		}
 	} else if isSSHUpstreamURL {
 		agentAuth, err := ssh.NewSSHAgentAuth(config.GitSSHUsername)
@@ -385,25 +402,25 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *types.IntegrateOptions) (s
 		authMethod = agentAuth
 	}
 	cloneOptions := &git.CloneOptions{
-		URL:          opts.UpstreamRepoURL,
+		URL:          upstreamURL,
 		SingleBranch: true,
 		Progress:     os.Stdout,
 	}
 	if authMethod != nil {
 		cloneOptions.Auth = authMethod
 	}
-	if opts.UpstreamRepoVersion != "" {
-		refName := fmt.Sprintf("refs/heads/%s", opts.UpstreamRepoVersion)
-		isTag, err := regexp.MatchString("^tags\\/", opts.UpstreamRepoVersion)
+	if upstream.Version != "" {
+		refName := fmt.Sprintf("refs/heads/%s", upstream.Version)
+		isTag, err := regexp.MatchString("^tags\\/", upstream.Version)
 		if err != nil {
 			return "", fmt.Errorf("error processing upstream gitspork repo version to use: %v", err)
 		}
 		if isTag {
-			refName = fmt.Sprintf("refs/%s", opts.UpstreamRepoVersion)
+			refName = fmt.Sprintf("refs/%s", upstream.Version)
 		}
 		cloneOptions.ReferenceName = plumbing.ReferenceName(refName)
 	}
-	if opts.UpstreamRepoCommit != "" || opts.PrevUpstreamCommitHash != "" {
+	if req.upstreamCommit != "" || req.prevUpstreamCommitHash != "" {
 		// need full history to checkout a specific commit
 		cloneOptions.SingleBranch = false
 	}
@@ -411,17 +428,17 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *types.IntegrateOptions) (s
 	if err != nil {
 		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
 	}
-	if opts.UpstreamRepoCommit != "" {
+	if req.upstreamCommit != "" {
 		worktree, err := repo.Worktree()
 		if err != nil {
 			return "", fmt.Errorf("error getting worktree for commit checkout: %v", err)
 		}
 		if err := worktree.Checkout(&git.CheckoutOptions{
-			Hash: plumbing.NewHash(opts.UpstreamRepoCommit),
+			Hash: plumbing.NewHash(req.upstreamCommit),
 		}); err != nil {
-			return "", fmt.Errorf("error checking out commit %s: %v", opts.UpstreamRepoCommit, err)
+			return "", fmt.Errorf("error checking out commit %s: %v", req.upstreamCommit, err)
 		}
-		return opts.UpstreamRepoCommit, nil
+		return req.upstreamCommit, nil
 	}
 	ref, err := repo.Head()
 	if err != nil {

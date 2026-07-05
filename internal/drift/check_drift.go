@@ -134,14 +134,13 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
-		if _, err := integrate.Integrate(&types.IntegrateOptions{
-			Logger:              opts.Logger,
-			UpstreamRepoURL:     entry.spec.URL,
-			UpstreamRepoSubpath: entry.spec.Subpath,
-			UpstreamRepoToken:   entry.spec.Token,
-			UpstreamRepoCommit:  entry.commitHash,
-			DownstreamRepoPath:  opts.DownstreamRepoPath,
-			ForDriftCheck:       true,
+		if err := integrate.IntegrateForDriftCheck(&integrate.DriftCheckRequest{
+			Logger:             opts.Logger,
+			DownstreamRepoPath: opts.DownstreamRepoPath,
+			UpstreamURL:        entry.spec.URL,
+			UpstreamSubpath:    entry.spec.Subpath,
+			UpstreamToken:      entry.spec.Token,
+			UpstreamCommit:     entry.commitHash,
 		}); err != nil {
 			return report, fmt.Errorf("error running integration for drift check: %v", err)
 		}

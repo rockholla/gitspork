@@ -16,12 +16,8 @@ func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, 
 		opts.Logger = types.NoopLogger()
 	}
 
-	// Normalize: single UpstreamPath -> UpstreamPaths slice.
-	if len(opts.UpstreamPaths) == 0 && opts.UpstreamPath != "" {
-		opts.UpstreamPaths = []string{opts.UpstreamPath}
-	}
 	if len(opts.UpstreamPaths) == 0 {
-		return result, fmt.Errorf("no upstream path specified: provide --upstream-path")
+		return result, fmt.Errorf("no upstream path specified: set UpstreamPaths on IntegrateLocalOptions")
 	}
 
 	for _, upstreamPath := range opts.UpstreamPaths {

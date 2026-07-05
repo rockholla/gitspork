@@ -131,9 +131,10 @@ func Test_LoadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
-func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
-	// Create a local upstream repo with two commits; verify that Integrate
-	// checks out the older commit (v1) when UpstreamRepoCommit is set.
+func TestIntegrateForDriftCheck_honors_UpstreamCommit(t *testing.T) {
+	// Create a local upstream repo with two commits; verify that
+	// IntegrateForDriftCheck checks out the older commit (v1) when
+	// UpstreamCommit is set.
 	upstreamDir := t.TempDir()
 	upstreamRepo, err := gogit.PlainInit(upstreamDir, false,
 		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
@@ -162,19 +163,18 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := logutil.New()
-	_, err = Integrate(&types.IntegrateOptions{
+	err = IntegrateForDriftCheck(&DriftCheckRequest{
 		Logger:             logger,
-		UpstreamRepoURL:    "file://" + upstreamDir,
-		UpstreamRepoCommit: commitV1.String(),
 		DownstreamRepoPath: downstreamDir,
-		ForDriftCheck:      true, // skip state write; we only care about file content
+		UpstreamURL:        "file://" + upstreamDir,
+		UpstreamCommit:     commitV1.String(),
 	})
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned", "file.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "version one\n", string(content),
-		"Integrate with UpstreamRepoCommit set to v1 should produce v1 content, not HEAD (v2)")
+		"IntegrateForDriftCheck with UpstreamCommit set to v1 should produce v1 content, not HEAD (v2)")
 }
 
 func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
@@ -224,10 +224,9 @@ func TestIntegrate(t *testing.T) {
 		makeUpstreamRepo(t, upstreamDir)
 
 		_, err = Integrate(&types.IntegrateOptions{
-			Logger:              logutil.New(),
-			UpstreamRepoURL:     upstreamDir,
-			UpstreamRepoVersion: "master",
-			DownstreamRepoPath:  downstreamDir,
+			Logger:             logutil.New(),
+			Upstreams:          []types.UpstreamSpec{{URL: upstreamDir, Version: "master"}},
+			DownstreamRepoPath: downstreamDir,
 		})
 		require.NoError(t, err)
 

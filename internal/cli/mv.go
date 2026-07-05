@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +29,9 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		Long:               fmt.Sprintf("%s\n\n%s", mvHelpShort, mvHelpLong),
 		DisableFlagParsing: true,
 		Args:               cobra.MinimumNArgs(2),
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			return gitbin.Require()
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath, err := config.FindGitSporkConfig(".")
 			if err != nil {

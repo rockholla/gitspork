@@ -16,6 +16,7 @@ import (
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/rockholla/gitspork/v2/internal/integrate"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
@@ -30,6 +31,12 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 
 	if opts.Logger == nil {
 		opts.Logger = sdktypes.NoopLogger()
+	}
+
+	// Fail fast if the git binary is not available: the working-tree cleanliness
+	// check below (checkCleanWorkingTree) shells out to git.
+	if err := gitbin.Require(); err != nil {
+		return report, err
 	}
 
 	if opts.DownstreamRepoPath == "" {

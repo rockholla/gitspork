@@ -17,7 +17,7 @@ func Init(initPath string, logger types.Logger) error {
 	var err error
 
 	if logger == nil {
-		logger = types.NopLogger()
+		logger = types.NoopLogger()
 	}
 	logger.Log("initializing gitspork upstream at %s", initPath)
 	if initPath == "" {

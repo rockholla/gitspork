@@ -13,7 +13,7 @@ func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, 
 	result := &types.IntegrateResult{}
 
 	if opts.Logger == nil {
-		opts.Logger = types.NopLogger()
+		opts.Logger = types.NoopLogger()
 	}
 
 	// Normalize: single UpstreamPath -> UpstreamPaths slice.

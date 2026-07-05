@@ -94,7 +94,7 @@ func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 	result := &types.IntegrateResult{}
 
 	if opts.Logger == nil {
-		opts.Logger = types.NopLogger()
+		opts.Logger = types.NoopLogger()
 	}
 
 	if opts.DownstreamRepoPath == "" {

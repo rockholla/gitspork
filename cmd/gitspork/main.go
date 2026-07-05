@@ -1,6 +1,6 @@
 package main
 
-import "github.com/rockholla/gitspork/internal/cli"
+import "github.com/rockholla/gitspork/v2/internal/cli"
 
 var (
 	version = "dev"

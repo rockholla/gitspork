@@ -1,28 +1,18 @@
-package types
+package sdktypes
 
 // IntegrateOptions configures a call to Integrate. Populate Upstreams (one
-// or more entries) for multi-upstream integration, or the deprecated
-// UpstreamRepo* single-value fields for backward compatibility.
+// or more entries) for multi-upstream integration.
 type IntegrateOptions struct {
-	Upstreams              []UpstreamSpec
-	DownstreamRepoPath     string
-	ForceRePrompt          bool
-	Logger                 Logger
-	ForDriftCheck          bool
-	PrevUpstreamCommitHash string
-	UpstreamRepoURL        string
-	UpstreamRepoVersion    string
-	UpstreamRepoSubpath    string
-	UpstreamRepoToken      string
-	UpstreamRepoCommit     string
+	Upstreams          []UpstreamSpec
+	DownstreamRepoPath string
+	ForceRePrompt      bool
+	Logger             Logger
 }
 
 // IntegrateLocalOptions configures a call to IntegrateLocal. Populate
-// UpstreamPaths for multi-path integration; UpstreamPath (deprecated) is
-// preserved for backward compatibility.
+// UpstreamPaths (one or more entries) for multi-path integration.
 type IntegrateLocalOptions struct {
 	UpstreamPaths  []string
-	UpstreamPath   string
 	DownstreamPath string
 	ForceRePrompt  bool
 	Logger         Logger

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/rockholla/gitspork/internal/drift"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/drift"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 const (
@@ -43,7 +44,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := &types.CheckDriftOptions{
+			opts := &sdktypes.CheckDriftOptions{
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
 			}
@@ -55,7 +56,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
 			report, err := drift.CheckDrift(opts)
-			if err != nil && !errors.Is(err, types.ErrDriftDetected) {
+			if err != nil && !errors.Is(err, sdktypes.ErrDriftDetected) {
 				return err
 			}
 			if !report.HasDrift {
@@ -75,7 +76,11 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 					if f.Diff == "" {
 						continue
 					}
-					fmt.Print(f.Diff)
+					if color.NoColor {
+						fmt.Print(f.Diff)
+					} else {
+						fmt.Print(f.ColorizedDiff)
+					}
 				}
 			}
 			os.Exit(2)

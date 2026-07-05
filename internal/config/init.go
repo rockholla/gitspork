@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 const (
@@ -13,11 +13,11 @@ const (
 )
 
 // Init will initialize a path for use as a gitspork upstream
-func Init(initPath string, logger types.Logger) error {
+func Init(initPath string, logger sdktypes.Logger) error {
 	var err error
 
 	if logger == nil {
-		logger = types.NoopLogger()
+		logger = sdktypes.NoopLogger()
 	}
 	logger.Log("initializing gitspork upstream at %s", initPath)
 	if initPath == "" {

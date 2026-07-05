@@ -131,3 +131,36 @@ gitspork integrate \
 ```
 
 Valid `--upstream` keys are `url` (required), `version`, `subpath`, and `token`. All upstreams are recorded in downstream state and re-checked on `check-drift`, which reports drift per file attributed to whichever upstream last wrote it. `integrate-local` uses `--upstream-path` (also repeatable) with the same precedence semantics.
+
+## Using gitspork as a Go SDK
+
+The three top-level operations are exposed as a Go library at `github.com/rockholla/gitspork/v2`. Add it to your Go module:
+
+    go get github.com/rockholla/gitspork/v2
+
+Import and call directly:
+
+```go
+package main
+
+import (
+    "errors"
+    "log"
+
+    gitspork "github.com/rockholla/gitspork/v2"
+)
+
+func main() {
+    report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+        DownstreamRepoPath: "/path/to/downstream",
+    })
+    if err != nil && !errors.Is(err, gitspork.ErrDriftDetected) {
+        log.Fatal(err)
+    }
+    for _, f := range report.Files {
+        log.Printf("drifted: %s (attributed to %s)", f.Path, f.AttributedURL)
+    }
+}
+```
+
+The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.

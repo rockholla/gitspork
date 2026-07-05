@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/rockholla/gitspork/internal/logutil"
+	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/spf13/cobra"
 )
 

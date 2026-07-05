@@ -1,12 +1,12 @@
 .PHONY: schema
 schema: ## Outputs the current working schema for the version of source
-	@go run main.go schema
+	@go run ./cmd/gitspork schema
 
 .PHONY: build
 build: ## Builds gitspork to dist/gitspork and builds Docker image tagged gitspork:local
 	@mkdir -p dist dist/.docker-build
-	@go build -o dist/gitspork .
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork .
+	@go build -o dist/gitspork ./cmd/gitspork
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork ./cmd/gitspork
 	@cp Dockerfile dist/.docker-build/Dockerfile
 	@docker build -t gitspork:local dist/.docker-build/
 	@rm -rf dist/.docker-build
@@ -27,12 +27,16 @@ test-functional-docker: ## Run tests specific to testing the containerized versi
 test-examples: ## Run example scenario tests
 	@go test -tags examples -timeout 120s -v ./test/examples/...
 
+.PHONY: test-sdk
+test-sdk: ## Run black-box SDK tests
+	@go test -tags sdk -timeout 120s -v ./test/sdk/...
+
 .PHONY: test-security-gate
 test-security-gate: ## Run unit tests for the CI security gate script
 	@./test/security-gate/run-tests.sh
 
 .PHONY: test-all
-test-all: test-unit test-security-gate test-functional test-functional-docker ## Run all test suite types
+test-all: test-unit test-security-gate test-functional test-functional-docker test-sdk ## Run all test suite types
 
 # NOTE: recommended way to run all of this to support multi-arch image builds along w/ release artifacts through goreleaser:
 #   1. Default macOS Docker desktop

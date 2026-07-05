@@ -20,6 +20,7 @@ How did you verify this works? Check off what applies.
 - [ ] `make test-functional` passes
 - [ ] `make test-functional-docker` passes
 - [ ] `make test-examples` passes
+- [ ] `make test-sdk` passes
 - [ ] Manual testing: <!-- describe steps -->
 
 ## Checklist

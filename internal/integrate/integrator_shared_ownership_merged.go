@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 const (
@@ -28,7 +28,7 @@ type upstreamOwnedBlock struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger types.Logger) error {
+func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger sdktypes.Logger) error {
 	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
 		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rockholla/gitspork/internal/logutil"
+	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rockholla/gitspork/internal/integrate"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/integrate"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 const (
@@ -40,14 +40,18 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				return fmt.Errorf("cannot mix --upstream with --upstream-repo-url/version/subpath/token flags")
 			}
 
-			opts := &types.IntegrateOptions{
-				Logger:              logger,
-				UpstreamRepoURL:     upstreamRepoURL,
-				UpstreamRepoVersion: upstreamRepoVersion,
-				UpstreamRepoSubpath: upstreamRepoSubpath,
-				UpstreamRepoToken:   upstreamRepoToken,
-				DownstreamRepoPath:  downstreamRepoPath,
-				ForceRePrompt:       forceRePrompt,
+			opts := &sdktypes.IntegrateOptions{
+				Logger:             logger,
+				DownstreamRepoPath: downstreamRepoPath,
+				ForceRePrompt:      forceRePrompt,
+			}
+			if oldFlagsSet {
+				opts.Upstreams = []sdktypes.UpstreamSpec{{
+					URL:     upstreamRepoURL,
+					Version: upstreamRepoVersion,
+					Subpath: upstreamRepoSubpath,
+					Token:   upstreamRepoToken,
+				}}
 			}
 			for _, f := range upstreamFlags {
 				spec, err := ParseUpstreamFlag(f)

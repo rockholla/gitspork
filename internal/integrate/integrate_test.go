@@ -10,10 +10,10 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/logutil"
-	"github.com/rockholla/gitspork/internal/testharness"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/logutil"
+	"github.com/rockholla/gitspork/v2/internal/testharness"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,29 +84,29 @@ func Test_NormalizeUpstreamURL(t *testing.T) {
 }
 
 func Test_UpsertUpstreamState_newEntry(t *testing.T) {
-	state := &types.GitSporkDownstreamState{}
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
+	state := &sdktypes.DownstreamState{}
+	UpsertUpstreamState(state, sdktypes.UpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "https://github.com/org/repo.git", state.Upstreams[0].URL)
 	assert.Equal(t, "abc", state.Upstreams[0].CommitHash)
 }
 
 func Test_UpsertUpstreamState_updateExisting(t *testing.T) {
-	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
+	state := &sdktypes.DownstreamState{Upstreams: []sdktypes.UpstreamState{
 		{URL: "git@github.com:org/repo.git", CommitHash: "old"},
 	}}
 	// SSH and HTTPS forms of same repo — should match and update in place
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
+	UpsertUpstreamState(state, sdktypes.UpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
 }
 
 func Test_UpsertUpstreamState_orderPreserved(t *testing.T) {
-	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
+	state := &sdktypes.DownstreamState{Upstreams: []sdktypes.UpstreamState{
 		{URL: "https://github.com/org/base.git", CommitHash: "b1"},
 		{URL: "https://github.com/org/platform.git", CommitHash: "p1"},
 	}}
-	UpsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
+	UpsertUpstreamState(state, sdktypes.UpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
 	require.Len(t, state.Upstreams, 2)
 	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
 	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)
@@ -131,9 +131,10 @@ func Test_LoadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
-func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
-	// Create a local upstream repo with two commits; verify that Integrate
-	// checks out the older commit (v1) when UpstreamRepoCommit is set.
+func TestIntegrateForDriftCheck_honors_UpstreamCommit(t *testing.T) {
+	// Create a local upstream repo with two commits; verify that
+	// IntegrateForDriftCheck checks out the older commit (v1) when
+	// UpstreamCommit is set.
 	upstreamDir := t.TempDir()
 	upstreamRepo, err := gogit.PlainInit(upstreamDir, false,
 		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
@@ -162,28 +163,27 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := logutil.New()
-	_, err = Integrate(&types.IntegrateOptions{
+	err = IntegrateForDriftCheck(&DriftCheckRequest{
 		Logger:             logger,
-		UpstreamRepoURL:    "file://" + upstreamDir,
-		UpstreamRepoCommit: commitV1.String(),
 		DownstreamRepoPath: downstreamDir,
-		ForDriftCheck:      true, // skip state write; we only care about file content
+		UpstreamURL:        "file://" + upstreamDir,
+		UpstreamCommit:     commitV1.String(),
 	})
 	require.NoError(t, err)
 
 	content, err := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned", "file.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "version one\n", string(content),
-		"Integrate with UpstreamRepoCommit set to v1 should produce v1 content, not HEAD (v2)")
+		"IntegrateForDriftCheck with UpstreamCommit set to v1 should produce v1 content, not HEAD (v2)")
 }
 
 func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 
-	result, err := Integrate(&types.IntegrateOptions{
+	result, err := Integrate(&sdktypes.IntegrateOptions{
 		Logger:             logutil.New(),
-		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.NoError(t, err)
@@ -198,7 +198,7 @@ func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
 	upstreamDir, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 
-	result, err := IntegrateLocal(&types.IntegrateLocalOptions{
+	result, err := IntegrateLocal(&sdktypes.IntegrateLocalOptions{
 		Logger:         logutil.New(),
 		UpstreamPaths:  []string{upstreamDir},
 		DownstreamPath: downstreamDir,
@@ -223,11 +223,10 @@ func TestIntegrate(t *testing.T) {
 
 		makeUpstreamRepo(t, upstreamDir)
 
-		_, err = Integrate(&types.IntegrateOptions{
-			Logger:              logutil.New(),
-			UpstreamRepoURL:     upstreamDir,
-			UpstreamRepoVersion: "master",
-			DownstreamRepoPath:  downstreamDir,
+		_, err = Integrate(&sdktypes.IntegrateOptions{
+			Logger:             logutil.New(),
+			Upstreams:          []sdktypes.UpstreamSpec{{URL: upstreamDir, Version: "master"}},
+			DownstreamRepoPath: downstreamDir,
 		})
 		require.NoError(t, err)
 

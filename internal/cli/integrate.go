@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				ForceRePrompt:       forceRePrompt,
 			}
 			for _, f := range upstreamFlags {
-				spec, err := integrate.ParseUpstreamFlag(f)
+				spec, err := ParseUpstreamFlag(f)
 				if err != nil {
 					return err
 				}

@@ -50,6 +50,18 @@ Docker/container images are published for every release, and available at: https
 
 Download the appropriate binary from the [Github releases](https://github.com/rockholla/gitspork/releases), and install on your system's `PATH`.
 
+## Programmatic use (Go SDK)
+
+gitspork is also importable as a Go library:
+
+    go get github.com/rockholla/gitspork/v2
+
+```go
+import gitspork "github.com/rockholla/gitspork/v2"
+```
+
+See `pkg.go.dev/github.com/rockholla/gitspork/v2` for the API reference. The three top-level operations mirror the CLI: `Integrate`, `IntegrateLocal`, and `CheckDrift`. Each returns a structural result so orchestrators and CI drift bots can consume outcomes without parsing log output.
+
 ## Initialize a Repo as a `gitspork` Upstream
 
 ```

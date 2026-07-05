@@ -1,11 +1,11 @@
 package main
 
-import "github.com/rockholla/gitspork/cmd"
+import "github.com/rockholla/gitspork/internal/cli"
 
 var (
 	version = "dev"
 )
 
 func main() {
-	cmd.Execute(version)
+	cli.Execute(version)
 }

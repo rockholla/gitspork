@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +16,7 @@ purpose this tool serves and how to use it.`
 
 var (
 	version string
-	logger  *internal.Logger
+	logger  *logutil.Logger
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -42,10 +42,10 @@ func init() {
 		if forceColor {
 			color.NoColor = false
 		}
-		logger = internal.NewLogger()
+		logger = logutil.New()
 	})
 
-	logger = internal.NewLogger()
+	logger = logutil.New()
 
 	integrateSubcommand := &IntegrateSubcommand{}
 	integrateLocalSubcommand := &IntegrateLocalSubcommand{}

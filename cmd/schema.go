@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/spf13/cobra"
 )
 
@@ -29,8 +30,8 @@ func (s *SchemaSubcommand) GetCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Main .gitspork.yml schema:\n---------------------------------------------\n%s\n\nMigration YAML schema:\n---------------------------------------------\n%s\n",
-				internal.ColorizeYAML(configSchema),
-				internal.ColorizeYAML(migrationsSchema),
+				logutil.ColorizeYAML(configSchema),
+				logutil.ColorizeYAML(migrationsSchema),
 			)
 			return nil
 		},

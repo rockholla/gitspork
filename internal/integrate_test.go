@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
+	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -228,7 +229,7 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	logger := NewLogger()
+	logger := logutil.New()
 	_, err = Integrate(&types.IntegrateOptions{
 		Logger:             logger,
 		UpstreamRepoURL:    "file://" + upstreamDir,
@@ -249,7 +250,7 @@ func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 	downstreamDir := testEmptyDownstream(t)
 
 	result, err := Integrate(&types.IntegrateOptions{
-		Logger:             NewLogger(),
+		Logger:             logutil.New(),
 		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
 	})
@@ -266,7 +267,7 @@ func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
 	downstreamDir := testEmptyDownstream(t)
 
 	result, err := IntegrateLocal(&types.IntegrateLocalOptions{
-		Logger:         NewLogger(),
+		Logger:         logutil.New(),
 		UpstreamPaths:  []string{upstreamDir},
 		DownstreamPath: downstreamDir,
 	})

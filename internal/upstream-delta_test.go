@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/goccy/go-yaml"
@@ -242,7 +243,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		require.NoError(t, os.WriteFile(target, []byte("x"), 0644))
 
 		delta := &upstreamDelta{Deletions: []string{"docs/guide.md"}}
-		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
 		_, err = os.Stat(target)
 		assert.True(t, os.IsNotExist(err))
 	})
@@ -253,7 +254,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		delta := &upstreamDelta{Deletions: []string{"docs/guide.md"}}
-		assert.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		assert.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
 	})
 
 	t.Run("renames existing file to new path", func(t *testing.T) {
@@ -266,7 +267,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		require.NoError(t, os.WriteFile(oldPath, []byte("content"), 0644))
 
 		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
-		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
 
 		_, err = os.Stat(oldPath)
 		assert.True(t, os.IsNotExist(err))
@@ -286,7 +287,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		require.NoError(t, os.WriteFile(newPath, []byte("existing"), 0644))
 
 		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
-		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
 
 		contents, err := os.ReadFile(newPath)
 		require.NoError(t, err)
@@ -299,7 +300,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
-		require.NoError(t, applyUpstreamDelta(delta, dir, NewLogger()))
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
 
 		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
 		assert.True(t, os.IsNotExist(err))

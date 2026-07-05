@@ -9,6 +9,7 @@ import (
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,7 +22,7 @@ func TestCheckDrift(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		_, err = CheckDrift(&types.CheckDriftOptions{
-			Logger:             NewLogger(),
+			Logger:             logutil.New(),
 			DownstreamRepoPath: dir,
 		})
 		assert.ErrorContains(t, err, "no previous integration found")
@@ -44,7 +45,7 @@ func TestCheckDrift(t *testing.T) {
 		require.NoError(t, saveDownstreamState(dir, state))
 
 		_, err = CheckDrift(&types.CheckDriftOptions{
-			Logger:             NewLogger(),
+			Logger:             logutil.New(),
 			DownstreamRepoPath: dir,
 		})
 		assert.ErrorContains(t, err, "working tree is not clean")
@@ -170,7 +171,7 @@ func TestCheckDrift_returns_report_no_drift(t *testing.T) {
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 
 	report, err := CheckDrift(&types.CheckDriftOptions{
-		Logger:             NewLogger(),
+		Logger:             logutil.New(),
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.NoError(t, err)
@@ -186,7 +187,7 @@ func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 
 	report, err := CheckDrift(&types.CheckDriftOptions{
-		Logger:             NewLogger(),
+		Logger:             logutil.New(),
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.ErrorIs(t, err, types.ErrDriftDetected)
@@ -203,7 +204,7 @@ func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.
 func testIntegrateAndCommitBaseline(t *testing.T, upstreamDir, downstreamDir string) plumbing.Hash {
 	t.Helper()
 	_, err := Integrate(&types.IntegrateOptions{
-		Logger:             NewLogger(),
+		Logger:             logutil.New(),
 		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
 	})
@@ -232,7 +233,7 @@ func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 
 	report, err := CheckDrift(&types.CheckDriftOptions{
-		Logger:             NewLogger(),
+		Logger:             logutil.New(),
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.ErrorIs(t, err, types.ErrDriftDetected)

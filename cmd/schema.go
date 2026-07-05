@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +25,7 @@ func (s *SchemaSubcommand) GetCmd() *cobra.Command {
 		Short: schemaHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", schemaHelpShort, schemaHelpLong),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configSchema, migrationsSchema, err := internal.GetGitSporkConfigSchema()
+			configSchema, migrationsSchema, err := config.GetGitSporkConfigSchema()
 			if err != nil {
 				return err
 			}

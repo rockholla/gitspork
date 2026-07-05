@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -48,7 +49,7 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 			line := upstreamScanner.Text()
 			if currentUpstreamOwnedBlock == nil {
 				// not currently tracking/assembling an upstream-owned block
-				if strings.Contains(line, fmt.Sprintf("%s%s", gitSporkCommentMarker, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)) {
+				if strings.Contains(line, fmt.Sprintf("%s%s", config.GitSporkCommentMarker, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)) {
 					// beginning identification of an upstream-owned block
 					currentUpstreamOwnedBlock = &upstreamOwnedBlock{
 						beginMarker: line,
@@ -58,7 +59,7 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 				}
 			} else {
 				// currently tracking/assembling an upstream-owned block
-				if strings.Contains(line, fmt.Sprintf("%s%s", gitSporkCommentMarker, sharedOwnershipMergedEndUpstreamOwnedBlockMarker)) {
+				if strings.Contains(line, fmt.Sprintf("%s%s", config.GitSporkCommentMarker, sharedOwnershipMergedEndUpstreamOwnedBlockMarker)) {
 					// detected end upstream owned block, finalize this block
 					currentUpstreamOwnedBlock.endMarker = line
 					upstreamOwnedBlocks = append(upstreamOwnedBlocks, currentUpstreamOwnedBlock)
@@ -95,11 +96,11 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 			if waitingForUpstreamOwnedBlockEnd {
 				// we're continuing to silently bypass lines in the downstream in this case, as the block has been replaced
 				// from the relevant upstream defined block
-				if strings.Contains(line, fmt.Sprintf("%s%s", gitSporkCommentMarker, sharedOwnershipMergedEndUpstreamOwnedBlockMarker)) {
+				if strings.Contains(line, fmt.Sprintf("%s%s", config.GitSporkCommentMarker, sharedOwnershipMergedEndUpstreamOwnedBlockMarker)) {
 					waitingForUpstreamOwnedBlockEnd = false
 					continue
 				}
-			} else if strings.Contains(line, fmt.Sprintf("%s%s", gitSporkCommentMarker, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)) {
+			} else if strings.Contains(line, fmt.Sprintf("%s%s", config.GitSporkCommentMarker, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)) {
 				// found begin owned block begin, we can simply inject the upstream-defined owned block at the same index and then just
 				// continue scanning the downstream file until we see the next end upstream owned block marker
 				mergedContent = fmt.Sprintf("%s%s\n%s%s\n",

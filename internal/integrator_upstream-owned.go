@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
 // IntegratorUpstreamOwned will process a list of files to be managed as owned by the upstream gitspork repo
 type IntegratorUpstreamOwned struct{}
 
-var _ Integrator[OwnedEntry] = (*IntegratorUpstreamOwned)(nil)
+var _ Integrator[config.OwnedEntry] = (*IntegratorUpstreamOwned)(nil)
 
 // Integrate copies each upstream-owned file to the downstream, applying rename
 // entries' destination resolution.
-func (i *IntegratorUpstreamOwned) Integrate(entries []OwnedEntry, upstreamPath string, downstreamPath string, logger types.Logger) error {
+func (i *IntegratorUpstreamOwned) Integrate(entries []config.OwnedEntry, upstreamPath string, downstreamPath string, logger types.Logger) error {
 	for _, entry := range entries {
 		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
 		if err != nil {

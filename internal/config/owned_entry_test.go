@@ -1,4 +1,4 @@
-package internal
+package config
 
 // Verifies the scalar-or-map marshaling of OwnedEntry across goccy (the config
 // read/write path) and the schema post-processing that corrects the

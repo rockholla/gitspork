@@ -11,13 +11,9 @@ import (
 	"text/template"
 
 	"dario.cat/mergo"
+	"github.com/rockholla/gitspork/internal/config"
 	inputpkg "github.com/rockholla/gitspork/internal/input"
 	"github.com/rockholla/gitspork/internal/types"
-)
-
-const (
-	templatedMergeStructuredPreferUpstream   = "prefer-upstream"
-	templatedMergeStructuredPreferDownstream = "prefer-downstream"
 )
 
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
@@ -31,7 +27,7 @@ type IntegratorTemplatedData struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error {
+func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error {
 
 	// captured input values will support the input 'previous_input' type via this structure:
 	/*
@@ -47,7 +43,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 		logger.Log("📄 executing templated instruction for rendering upstream template %s to downstream location %s", templatedInstruction.Template, templatedInstruction.Destination)
 
 		capturedInputValues[templatedInstruction.Template] = map[string]string{}
-		cachedTemplateDataFilePath := filepath.Join(downstreamPath, filepath.Join(fmt.Sprintf(".%s", gitSpork), fmt.Sprintf("%s.json", templatedInstruction.Destination)))
+		cachedTemplateDataFilePath := filepath.Join(downstreamPath, filepath.Join(fmt.Sprintf(".%s", config.GitSpork), fmt.Sprintf("%s.json", templatedInstruction.Destination)))
 		templateData := IntegratorTemplatedData{
 			Inputs: map[string]string{},
 		}
@@ -129,9 +125,9 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			if _, err := os.Stat(fullDestinationPath); err == nil {
 				// if we have merge instruction present, and there's a file at the destination path already
 				performPostMergeStructured = templatedInstruction.Merged.Structured
-				if performPostMergeStructured != templatedMergeStructuredPreferUpstream && performPostMergeStructured != templatedMergeStructuredPreferDownstream {
+				if performPostMergeStructured != config.TemplatedMergeStructuredPreferUpstream && performPostMergeStructured != config.TemplatedMergeStructuredPreferDownstream {
 					return fmt.Errorf("invalid templated merged.structured value %s, expects one of: %s, %s", performPostMergeStructured,
-						templatedMergeStructuredPreferUpstream, templatedMergeStructuredPreferDownstream)
+						config.TemplatedMergeStructuredPreferUpstream, config.TemplatedMergeStructuredPreferDownstream)
 				}
 			}
 		}
@@ -141,7 +137,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			return fmt.Errorf("error rendering template data: %v", err)
 		}
 		if performPostMergeStructured != "" {
-			tmpDir, err := os.MkdirTemp("", gitSpork)
+			tmpDir, err := os.MkdirTemp("", config.GitSpork)
 			if err != nil {
 				return fmt.Errorf("error creating temp directory: %v", err)
 			}
@@ -156,7 +152,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTe
 			if err != nil {
 				return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
 			}
-			if performPostMergeStructured == templatedMergeStructuredPreferDownstream {
+			if performPostMergeStructured == config.TemplatedMergeStructuredPreferDownstream {
 				preferredData = existingData
 				secondaryData = newData
 			} else {

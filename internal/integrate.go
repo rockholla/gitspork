@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/gobwas/glob"
 	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -51,7 +52,7 @@ type Integrator[T any] interface {
 // templates additionally needs the forceRePrompt flag to drive input
 // collection, so its Integrate signature cannot match the generic contract.
 type TemplatedIntegrator interface {
-	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error
+	Integrate(instructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error
 }
 
 // ParseUpstreamFlag parses a comma-separated key=value --upstream flag value.
@@ -170,7 +171,7 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 		}
 	}
 
-	cloneDir, err := os.MkdirTemp("", gitSpork)
+	cloneDir, err := os.MkdirTemp("", config.GitSpork)
 	if err != nil {
 		return types.IntegratedUpstream{}, fmt.Errorf("error creating temporary directory: %v", err)
 	}
@@ -197,7 +198,7 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 	}
 
 	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
-	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
+	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", config.GitSporkConfigFileName, config.GitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
 		return types.IntegratedUpstream{}, err
@@ -243,12 +244,12 @@ func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (ty
 	}, nil
 }
 
-func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger types.Logger) error {
+func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger types.Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
-	preIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
-	postIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
-	queueMigrationIfNotCompleted := func(instructions *GitSporkConfigMigrationInstructions, queue []*GitSporkConfigMigrationInstructions) ([]*GitSporkConfigMigrationInstructions, error) {
+	preIntegrateMigrations := []*config.GitSporkConfigMigrationInstructions{}
+	postIntegrateMigrations := []*config.GitSporkConfigMigrationInstructions{}
+	queueMigrationIfNotCompleted := func(instructions *config.GitSporkConfigMigrationInstructions, queue []*config.GitSporkConfigMigrationInstructions) ([]*config.GitSporkConfigMigrationInstructions, error) {
 		migrationCompleted, err := migrationCompletedInDownstream(instructions.ID, downstreamPath)
 		if err != nil {
 			return queue, fmt.Errorf("error determining if migration %s was already run in downstream: %v", instructions.ID, err)
@@ -259,7 +260,7 @@ func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPa
 		return queue, nil
 	}
 	for _, migrationConfigPath := range gitSporkConfig.Migrations {
-		migrationConfig, err := ParseMigrationConfig(filepath.Join(upstreamPath, migrationConfigPath))
+		migrationConfig, err := config.ParseMigrationConfig(filepath.Join(upstreamPath, migrationConfigPath))
 		if err != nil {
 			return fmt.Errorf("error parsing migration config: %v", err)
 		}
@@ -393,11 +394,11 @@ func cloneUpstreamForIntegrate(cloneDir string, opts *types.IntegrateOptions) (s
 	isSSHUpstreamURL, _ := regexp.MatchString("^git@", opts.UpstreamRepoURL)
 	if isHTTPsUpstreamURL && opts.UpstreamRepoToken != "" {
 		authMethod = &http.BasicAuth{
-			Username: gitSpork,
+			Username: config.GitSpork,
 			Password: opts.UpstreamRepoToken,
 		}
 	} else if isSSHUpstreamURL {
-		agentAuth, err := ssh.NewSSHAgentAuth(gitSSHUsername)
+		agentAuth, err := ssh.NewSSHAgentAuth(config.GitSSHUsername)
 		if err != nil {
 			return "", fmt.Errorf("error setting up SSH auth method for git: %v", err)
 		}
@@ -484,16 +485,16 @@ func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string,
 	return allFiles, err
 }
 
-func getGitSporkConfig(atPath string) (*GitSporkConfig, error) {
-	cfg := &GitSporkConfig{}
-	gitSporkConfigFilePath := filepath.Join(atPath, gitSporkConfigFileName)
+func getGitSporkConfig(atPath string) (*config.GitSporkConfig, error) {
+	cfg := &config.GitSporkConfig{}
+	gitSporkConfigFilePath := filepath.Join(atPath, config.GitSporkConfigFileName)
 	if _, err := os.Stat(gitSporkConfigFilePath); os.IsNotExist(err) {
-		gitSporkConfigFilePath = filepath.Join(atPath, gitSporkConfigFileNameAlt)
+		gitSporkConfigFilePath = filepath.Join(atPath, config.GitSporkConfigFileNameAlt)
 		if _, err := os.Stat(gitSporkConfigFilePath); os.IsNotExist(err) {
-			return cfg, fmt.Errorf("it looks like %s does not include a %s or %s config file", atPath, gitSporkConfigFileName, gitSporkConfigFileNameAlt)
+			return cfg, fmt.Errorf("it looks like %s does not include a %s or %s config file", atPath, config.GitSporkConfigFileName, config.GitSporkConfigFileNameAlt)
 		}
 	}
-	return ParseGitSporkConfig(gitSporkConfigFilePath)
+	return config.ParseGitSporkConfig(gitSporkConfigFilePath)
 }
 
 func syncFile(src, dst string) error {
@@ -686,7 +687,7 @@ func migrationCompletedInDownstream(migrationID string, downstreamRepoPath strin
 	return false, nil
 }
 
-func runMigration(migrationInstructions *GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string) error {
+func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string) error {
 	if migrationInstructions.Exec != "" {
 		execParts := strings.Split(migrationInstructions.Exec, " ")
 		if _, err := os.Stat(filepath.Join(upstreamRepoRootPath, execParts[0])); err == nil {

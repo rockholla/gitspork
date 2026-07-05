@@ -1,4 +1,4 @@
-package internal
+package config
 
 import (
 	"os"
@@ -152,7 +152,7 @@ func Test_UpstreamMv(t *testing.T) {
 func Test_FindGitSporkConfig(t *testing.T) {
 	t.Run("finds .gitspork.yml in start dir", func(t *testing.T) {
 		dir := t.TempDir()
-		p := filepath.Join(dir, gitSporkConfigFileName)
+		p := filepath.Join(dir, GitSporkConfigFileName)
 		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
 		got, err := FindGitSporkConfig(dir)
 		require.NoError(t, err)
@@ -161,7 +161,7 @@ func Test_FindGitSporkConfig(t *testing.T) {
 
 	t.Run("falls back to .gitspork.yaml", func(t *testing.T) {
 		dir := t.TempDir()
-		p := filepath.Join(dir, gitSporkConfigFileNameAlt)
+		p := filepath.Join(dir, GitSporkConfigFileNameAlt)
 		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
 		got, err := FindGitSporkConfig(dir)
 		require.NoError(t, err)
@@ -172,7 +172,7 @@ func Test_FindGitSporkConfig(t *testing.T) {
 		parent := t.TempDir()
 		child := filepath.Join(parent, "subdir")
 		require.NoError(t, os.Mkdir(child, 0755))
-		p := filepath.Join(parent, gitSporkConfigFileName)
+		p := filepath.Join(parent, GitSporkConfigFileName)
 		require.NoError(t, os.WriteFile(p, []byte(""), 0644))
 		got, err := FindGitSporkConfig(child)
 		require.NoError(t, err)
@@ -189,7 +189,7 @@ func Test_FindGitSporkConfig(t *testing.T) {
 func makeConfigFile(t *testing.T, config *GitSporkConfig) string {
 	t.Helper()
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, gitSporkConfigFileName)
+	cfgPath := filepath.Join(dir, GitSporkConfigFileName)
 	b, err := yaml.Marshal(config)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(cfgPath, b, 0644))
@@ -205,7 +205,7 @@ func loadConfigFile(t *testing.T, cfgPath string) *GitSporkConfig {
 
 func Test_WriteGitSporkConfig_preservesComments(t *testing.T) {
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, gitSporkConfigFileName)
+	cfgPath := filepath.Join(dir, GitSporkConfigFileName)
 	raw := "# top-level comment\nupstream_owned:\n  # entry comment\n  - docs/guide.md\n"
 	require.NoError(t, os.WriteFile(cfgPath, []byte(raw), 0644))
 

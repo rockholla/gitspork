@@ -1,4 +1,4 @@
-package internal
+package config
 
 import (
 	"fmt"
@@ -10,15 +10,20 @@ import (
 )
 
 const (
-	gitSpork                  string = "gitspork"
-	gitSSHUsername            string = "git"
-	gitSporkConfigFileName    string = ".gitspork.yml"
-	gitSporkConfigFileNameAlt string = ".gitspork.yaml"
-	gitSporkMarkerSeparator   string = "::"
+	GitSpork                  string = "gitspork"
+	GitSSHUsername            string = "git"
+	GitSporkConfigFileName    string = ".gitspork.yml"
+	GitSporkConfigFileNameAlt string = ".gitspork.yaml"
+	GitSporkMarkerSeparator   string = "::"
+
+	// TemplatedMergeStructuredPreferUpstream / TemplatedMergeStructuredPreferDownstream
+	// are the valid values for GitSporkConfigTemplatedMerged.Structured.
+	TemplatedMergeStructuredPreferUpstream   = "prefer-upstream"
+	TemplatedMergeStructuredPreferDownstream = "prefer-downstream"
 )
 
 var (
-	gitSporkCommentMarker string = fmt.Sprintf("%s%s%s", gitSporkMarkerSeparator, gitSpork, gitSporkMarkerSeparator)
+	GitSporkCommentMarker string = fmt.Sprintf("%s%s%s", GitSporkMarkerSeparator, GitSpork, GitSporkMarkerSeparator)
 )
 
 // GitSporkConfig represents the config an upstream repo defines in .gitspork.yml
@@ -145,7 +150,7 @@ func GetGitSporkConfigSchema() (string, string, error) {
 				Template:    "meta.txt.go.tmpl",
 				Destination: "meta.txt",
 				Merged: &GitSporkConfigTemplatedMerged{
-					Structured: templatedMergeStructuredPreferDownstream,
+					Structured: TemplatedMergeStructuredPreferDownstream,
 				},
 				Inputs: []GitSporkConfigTemplatedInput{
 					{
@@ -215,10 +220,10 @@ func FindGitSporkConfig(startDir string) (string, error) {
 	}
 	dir := abs
 	for {
-		if p := filepath.Join(dir, gitSporkConfigFileName); fileExists(p) {
+		if p := filepath.Join(dir, GitSporkConfigFileName); fileExists(p) {
 			return p, nil
 		}
-		if p := filepath.Join(dir, gitSporkConfigFileNameAlt); fileExists(p) {
+		if p := filepath.Join(dir, GitSporkConfigFileNameAlt); fileExists(p) {
 			return p, nil
 		}
 		parent := filepath.Dir(dir)

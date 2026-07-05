@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -25,8 +26,8 @@ func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, 
 
 	for _, upstreamPath := range opts.UpstreamPaths {
 		opts.Logger.Log("parsing the gitspork config file at %s or %s",
-			filepath.Join(upstreamPath, gitSporkConfigFileName),
-			filepath.Join(upstreamPath, gitSporkConfigFileNameAlt))
+			filepath.Join(upstreamPath, config.GitSporkConfigFileName),
+			filepath.Join(upstreamPath, config.GitSporkConfigFileNameAlt))
 		gitSporkConfig, err := getGitSporkConfig(upstreamPath)
 		if err != nil {
 			return result, err

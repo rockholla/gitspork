@@ -1,4 +1,4 @@
-package internal
+package config
 
 import (
 	"os"
@@ -15,7 +15,7 @@ func TestInit(t *testing.T) {
 	assert.Nil(t, err)
 	err = Init(initPath, logutil.New())
 	assert.Nil(t, err)
-	initedConfigBytes, err := os.ReadFile(filepath.Join(initPath, gitSporkConfigFileName))
+	initedConfigBytes, err := os.ReadFile(filepath.Join(initPath, GitSporkConfigFileName))
 	assert.Nil(t, err)
 	assert.Contains(t, string(initedConfigBytes), gitSporkConfigHeader)
 }

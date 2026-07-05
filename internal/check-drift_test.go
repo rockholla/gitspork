@@ -9,6 +9,7 @@ import (
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -159,7 +160,7 @@ func makeBaselineRepo(t *testing.T, dir string) *gogit.Worktree {
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
 	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
-	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 	_, err = wt.Commit("baseline", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
 	return wt

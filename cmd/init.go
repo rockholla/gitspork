@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/spf13/cobra"
 )
@@ -32,13 +32,13 @@ type InitSubcommand struct{}
 func (isc *InitSubcommand) GetCmd() *cobra.Command {
 	var initPath string
 
-	configSchema, migrationsSchema, _ := internal.GetGitSporkConfigSchema()
+	configSchema, migrationsSchema, _ := config.GetGitSporkConfigSchema()
 	var cmd = &cobra.Command{
 		Use:   "init",
 		Short: initHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", initHelpShort, fmt.Sprintf(initHelpLongTemplate, logutil.ColorizeYAML(configSchema), logutil.ColorizeYAML(migrationsSchema))),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return internal.Init(initPath, logger)
+			return config.Init(initPath, logger)
 		},
 	}
 

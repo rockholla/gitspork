@@ -10,17 +10,18 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
+	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/logutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/goccy/go-yaml"
 )
 
 func Test_computeUpstreamDelta(t *testing.T) {
 	t.Run("returns empty delta when prevHash is empty", func(t *testing.T) {
 		repo, err := gogit.Init(memory.NewStorage(), nil)
 		require.NoError(t, err)
-		delta, err := computeUpstreamDelta(repo, "", "abc123", &GitSporkConfig{}, "")
+		delta, err := computeUpstreamDelta(repo, "", "abc123", &config.GitSporkConfig{}, "")
 		require.NoError(t, err)
 		assert.Empty(t, delta.Deletions)
 		assert.Empty(t, delta.Renames)
@@ -32,9 +33,9 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
 
-		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
 		require.NoError(t, err)
 		assert.Contains(t, delta.Deletions, "docs/guide.md")
 		assert.Empty(t, delta.Renames)
@@ -46,13 +47,13 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithRenamedFile(t, dir, "config/old.yml", "config/new.yml")
-		config := &GitSporkConfig{
-			SharedOwnership: GitSporkConfigSharedOwnership{
+		cfg := &config.GitSporkConfig{
+			SharedOwnership: config.GitSporkConfigSharedOwnership{
 				Merged: []string{"config/*.yml"},
 			},
 		}
 
-		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
 		require.NoError(t, err)
 		assert.Empty(t, delta.Deletions)
 		require.Len(t, delta.Renames, 1)
@@ -66,9 +67,9 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "configs/app.yml")
-		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{From: "configs/**", To: ".configs/**"}}}
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{From: "configs/**", To: ".configs/**"}}}
 
-		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
 		require.NoError(t, err)
 		assert.Contains(t, delta.Deletions, ".configs/app.yml")
 		assert.NotContains(t, delta.Deletions, "configs/app.yml")
@@ -81,9 +82,9 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{DownstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
+		cfg := &config.GitSporkConfig{DownstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
 
-		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "")
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
 		require.NoError(t, err)
 		assert.Empty(t, delta.Deletions)
 		assert.Empty(t, delta.Renames)
@@ -95,9 +96,9 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		repo, _, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
 
-		delta, err := computeUpstreamDelta(repo, "0000000000000000000000000000000000000000", newHash, config, "")
+		delta, err := computeUpstreamDelta(repo, "0000000000000000000000000000000000000000", newHash, cfg, "")
 		require.NoError(t, err)
 		assert.Empty(t, delta.Deletions)
 		assert.Empty(t, delta.Renames)
@@ -110,9 +111,9 @@ func Test_computeUpstreamDelta(t *testing.T) {
 
 		// file lives at upstream/docs/guide.md in the repo tree
 		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
-		config := &GitSporkConfig{UpstreamOwned: []OwnedEntry{{Pattern: "docs/**"}}}
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
 
-		delta, err := computeUpstreamDelta(repo, prevHash, newHash, config, "upstream")
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "upstream")
 		require.NoError(t, err)
 		assert.Contains(t, delta.Deletions, "docs/guide.md")
 	})
@@ -122,12 +123,12 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		prevCfg := &GitSporkConfig{
-			Templated: []GitSporkConfigTemplated{
+		prevCfg := &config.GitSporkConfig{
+			Templated: []config.GitSporkConfigTemplated{
 				{Template: "tmpl/foo.go.tmpl", Destination: "out/foo.txt"},
 			},
 		}
-		newCfg := &GitSporkConfig{}
+		newCfg := &config.GitSporkConfig{}
 		repo, prevHash, newHash := makeUpstreamWithTemplatedConfigChange(t, dir, prevCfg, newCfg)
 
 		delta, err := computeUpstreamDelta(repo, prevHash, newHash, newCfg, "")
@@ -140,13 +141,13 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		prevCfg := &GitSporkConfig{
-			Templated: []GitSporkConfigTemplated{
+		prevCfg := &config.GitSporkConfig{
+			Templated: []config.GitSporkConfigTemplated{
 				{Template: "tmpl/foo.go.tmpl", Destination: "out/old.txt"},
 			},
 		}
-		newCfg := &GitSporkConfig{
-			Templated: []GitSporkConfigTemplated{
+		newCfg := &config.GitSporkConfig{
+			Templated: []config.GitSporkConfigTemplated{
 				{Template: "tmpl/foo.go.tmpl", Destination: "out/new.txt"},
 			},
 		}
@@ -161,7 +162,7 @@ func Test_computeUpstreamDelta(t *testing.T) {
 }
 
 func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {
-	cfg := &GitSporkConfig{UpstreamOwned: []OwnedEntry{
+	cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{
 		{From: "configs/**", To: ".configs/**"},
 		{Pattern: "docs/**"},
 	}}
@@ -193,7 +194,7 @@ func makeUpstreamWithDeletedFile(t *testing.T, dir, filePath string) (*gogit.Rep
 	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0755))
 	require.NoError(t, os.WriteFile(fullPath, []byte("content"), 0644))
 	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
-	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 	prev, err := wt.Commit("add file", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
 
@@ -218,7 +219,7 @@ func makeUpstreamWithRenamedFile(t *testing.T, dir, oldPath, newPath string) (*g
 	require.NoError(t, os.MkdirAll(filepath.Dir(fullOld), 0755))
 	require.NoError(t, os.WriteFile(fullOld, []byte("content"), 0644))
 	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
-	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 	prev, err := wt.Commit("add file", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
 
@@ -307,7 +308,7 @@ func Test_applyUpstreamDelta(t *testing.T) {
 	})
 }
 
-func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, newCfg *GitSporkConfig) (*gogit.Repository, string, string) {
+func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, newCfg *config.GitSporkConfig) (*gogit.Repository, string, string) {
 	t.Helper()
 	repo, err := gogit.PlainInit(dir, false,
 		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
@@ -315,12 +316,12 @@ func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, ne
 	require.NoError(t, err)
 	wt, err := repo.Worktree()
 	require.NoError(t, err)
-	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 
 	// write prevCfg as .gitspork.yml and commit
 	b, err := yaml.Marshal(prevCfg)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, gitSporkConfigFileName), b, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.GitSporkConfigFileName), b, 0644))
 	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
 	prev, err := wt.Commit("add config", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
@@ -328,7 +329,7 @@ func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, ne
 	// overwrite with newCfg and commit
 	b, err = yaml.Marshal(newCfg)
 	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, gitSporkConfigFileName), b, 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.GitSporkConfigFileName), b, 0644))
 	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
 	next, err := wt.Commit("update config", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)

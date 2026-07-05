@@ -1,4 +1,4 @@
-package internal
+package config
 
 import (
 	"fmt"
@@ -29,10 +29,10 @@ func Init(initPath string, logger types.Logger) error {
 		}
 	}
 	initConfig := &GitSporkConfig{}
-	if err := WriteGitSporkConfig(filepath.Join(initPath, gitSporkConfigFileName), initConfig, gitSporkConfigHeader); err != nil {
+	if err := WriteGitSporkConfig(filepath.Join(initPath, GitSporkConfigFileName), initConfig, gitSporkConfigHeader); err != nil {
 		return fmt.Errorf("error initializing gitspork config: %v", err)
 	}
 
-	logger.Log("successfully created %s at %s, see that file for more info on what to set and a link to the docs", gitSporkConfigFileName, initPath)
+	logger.Log("successfully created %s at %s, see that file for more info on what to set and a link to the docs", GitSporkConfigFileName, initPath)
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			recursive := slices.Contains(args, "-r")
 
-			configPath, err := internal.FindGitSporkConfig(".")
+			configPath, err := config.FindGitSporkConfig(".")
 			if err != nil {
 				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
@@ -50,13 +50,13 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 				return fmt.Errorf("expected at least one path")
 			}
 
-			config, warnings, err := internal.ComputeUpstreamRm(configPath, rmPaths[0], recursive)
+			cfg, warnings, err := config.ComputeUpstreamRm(configPath, rmPaths[0], recursive)
 			if err != nil {
 				return fmt.Errorf("error computing .gitspork.yml update: %v", err)
 			}
 			for i := 1; i < len(rmPaths); i++ {
 				var w []string
-				config, w, err = internal.ComputeUpstreamRmFromConfig(config, rmPaths[i], recursive)
+				cfg, w, err = config.ComputeUpstreamRmFromConfig(cfg, rmPaths[i], recursive)
 				if err != nil {
 					return fmt.Errorf("error computing .gitspork.yml update: %v", err)
 				}
@@ -69,7 +69,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 				return fmt.Errorf("git rm failed: %v\n%s", err, out)
 			}
 
-			if err := internal.WriteGitSporkConfig(configPath, config); err != nil {
+			if err := config.WriteGitSporkConfig(configPath, cfg); err != nil {
 				return fmt.Errorf("error writing .gitspork.yml: %v", err)
 			}
 			if out, err := exec.Command("git", "-c", "safe.directory=*", "add", configPath).CombinedOutput(); err != nil {

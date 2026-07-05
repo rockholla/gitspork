@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/gobwas/glob"
 	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -25,7 +26,7 @@ type upstreamDelta struct {
 	Renames   []upstreamRename
 }
 
-func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, config *GitSporkConfig, upstreamSubpath string) (*upstreamDelta, error) {
+func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, cfg *config.GitSporkConfig, upstreamSubpath string) (*upstreamDelta, error) {
 	delta := &upstreamDelta{}
 	if prevHash == "" {
 		return delta, nil
@@ -46,13 +47,13 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 	// propagate to downstream repos.
 	prevConfig, err := readConfigFromCommit(prevCommit, upstreamSubpath)
 	if err != nil {
-		prevConfig = config // fall back to new config if prev has none
+		prevConfig = cfg // fall back to new config if prev has none
 	}
 	prevMatchers, err := buildManagedMatchers(prevConfig)
 	if err != nil {
 		return delta, err
 	}
-	newMatchers, err := buildManagedMatchers(config)
+	newMatchers, err := buildManagedMatchers(cfg)
 	if err != nil {
 		return delta, err
 	}
@@ -114,27 +115,27 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, conf
 
 type managedMatcher struct {
 	glob  glob.Glob
-	entry *OwnedEntry // non-nil only for rename entries; nil means identity dest
+	entry *config.OwnedEntry // non-nil only for rename entries; nil means identity dest
 }
 
-func buildManagedMatchers(config *GitSporkConfig) ([]managedMatcher, error) {
+func buildManagedMatchers(cfg *config.GitSporkConfig) ([]managedMatcher, error) {
 	var matchers []managedMatcher
-	for i := range config.UpstreamOwned {
-		e := config.UpstreamOwned[i]
+	for i := range cfg.UpstreamOwned {
+		e := cfg.UpstreamOwned[i]
 		g, err := glob.Compile(e.SourcePattern())
 		if err != nil {
 			return nil, fmt.Errorf("invalid glob pattern %q in .gitspork.yml: %v", e.SourcePattern(), err)
 		}
-		var ref *OwnedEntry
+		var ref *config.OwnedEntry
 		if e.IsRename() {
 			ref = &e
 		}
 		matchers = append(matchers, managedMatcher{glob: g, entry: ref})
 	}
 	var plain []string
-	plain = append(plain, config.SharedOwnership.Merged...)
-	plain = append(plain, config.SharedOwnership.Structured.PreferUpstream...)
-	plain = append(plain, config.SharedOwnership.Structured.PreferDownstream...)
+	plain = append(plain, cfg.SharedOwnership.Merged...)
+	plain = append(plain, cfg.SharedOwnership.Structured.PreferUpstream...)
+	plain = append(plain, cfg.SharedOwnership.Structured.PreferDownstream...)
 	for _, p := range plain {
 		g, err := glob.Compile(p)
 		if err != nil {
@@ -185,7 +186,7 @@ func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSub
 		return nil
 	}
 
-	newByTemplate := map[string]GitSporkConfigTemplated{}
+	newByTemplate := map[string]config.GitSporkConfigTemplated{}
 	for _, t := range newConfig.Templated {
 		newByTemplate[t.Template] = t
 	}
@@ -203,31 +204,31 @@ func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSub
 	return nil
 }
 
-func readConfigFromCommit(commit *object.Commit, subpath string) (*GitSporkConfig, error) {
+func readConfigFromCommit(commit *object.Commit, subpath string) (*config.GitSporkConfig, error) {
 	tree, err := commit.Tree()
 	if err != nil {
-		return &GitSporkConfig{}, err
+		return &config.GitSporkConfig{}, err
 	}
-	configPath := gitSporkConfigFileName
+	configPath := config.GitSporkConfigFileName
 	if subpath != "" {
-		configPath = subpath + "/" + gitSporkConfigFileName
+		configPath = subpath + "/" + config.GitSporkConfigFileName
 	}
 	f, err := tree.File(configPath)
 	if err != nil {
-		configPath = gitSporkConfigFileNameAlt
+		configPath = config.GitSporkConfigFileNameAlt
 		if subpath != "" {
-			configPath = subpath + "/" + gitSporkConfigFileNameAlt
+			configPath = subpath + "/" + config.GitSporkConfigFileNameAlt
 		}
 		f, err = tree.File(configPath)
 		if err != nil {
-			return &GitSporkConfig{}, fmt.Errorf("no .gitspork.yml found in commit tree")
+			return &config.GitSporkConfig{}, fmt.Errorf("no .gitspork.yml found in commit tree")
 		}
 	}
 	contents, err := f.Contents()
 	if err != nil {
-		return &GitSporkConfig{}, err
+		return &config.GitSporkConfig{}, err
 	}
-	cfg := &GitSporkConfig{}
+	cfg := &config.GitSporkConfig{}
 	if err := yaml.Unmarshal([]byte(contents), cfg); err != nil {
 		return cfg, err
 	}

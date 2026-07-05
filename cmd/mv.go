@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +29,7 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 		DisableFlagParsing: true,
 		Args:               cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, err := internal.FindGitSporkConfig(".")
+			configPath, err := config.FindGitSporkConfig(".")
 			if err != nil {
 				return fmt.Errorf("not in a gitspork upstream repo: %v", err)
 			}
@@ -50,13 +50,13 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 
 			// Compute all config changes before touching the index — bail early on any error.
 			// Chain rewrites through the in-memory config so multi-source moves are consistent.
-			config, warnings, err := internal.ComputeUpstreamMv(configPath, srcs[0], mvDest(srcs, dest, 0))
+			cfg, warnings, err := config.ComputeUpstreamMv(configPath, srcs[0], mvDest(srcs, dest, 0))
 			if err != nil {
 				return fmt.Errorf("error computing .gitspork.yml update: %v", err)
 			}
 			for i := 1; i < len(srcs); i++ {
 				var w []string
-				config, w, err = internal.ComputeUpstreamMvFromConfig(config, srcs[i], mvDest(srcs, dest, i))
+				cfg, w, err = config.ComputeUpstreamMvFromConfig(cfg, srcs[i], mvDest(srcs, dest, i))
 				if err != nil {
 					return fmt.Errorf("error computing .gitspork.yml update: %v", err)
 				}
@@ -69,7 +69,7 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 				return fmt.Errorf("git mv failed: %v\n%s", err, out)
 			}
 
-			if err := internal.WriteGitSporkConfig(configPath, config); err != nil {
+			if err := config.WriteGitSporkConfig(configPath, cfg); err != nil {
 				return fmt.Errorf("error writing .gitspork.yml: %v", err)
 			}
 			if out, err := exec.Command("git", "-c", "safe.directory=*", "add", configPath).CombinedOutput(); err != nil {

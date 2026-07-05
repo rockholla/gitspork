@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/types"
 )
 
@@ -212,7 +213,7 @@ func diffWorktreeAgainstHEAD(repo *gogit.Repository, wt *gogit.Worktree) (*objec
 		return nil, fmt.Errorf("error staging changes: %v", err)
 	}
 
-	sig := &object.Signature{Name: gitSpork, Email: gitSpork + "@localhost", When: time.Now()}
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 	newHash, err := wt.Commit("drift-check", &gogit.CommitOptions{Author: sig})
 	if errors.Is(err, gogit.ErrEmptyCommit) {
 		return nil, nil

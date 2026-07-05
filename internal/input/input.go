@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -25,13 +24,8 @@ const (
 	YesNo                               // 2
 )
 
-const (
-	tempFilePattern string = "gitspork"
-)
-
 // RequestInputOptions are options/args to pass to RequestInput
 type RequestInputOptions struct {
-	WorkingDir    string
 	Type          RequestInputType
 	Prompt        string
 	SelectOptions []string
@@ -58,31 +52,12 @@ func RequestInput(opts *RequestInputOptions) (*RequestInputResult, error) {
 
 	switch opts.Type {
 	case SingleValue:
-		// using bash/shell auto-complete of paths is MUCH simpler than doing a go native solution, the reason
-		// we rely upon bash/exec.Command etc.
-		inputStreamFile, err := os.CreateTemp("", tempFilePattern)
+		value, err := readLine(opts.Prompt)
 		if err != nil {
 			return result, err
 		}
-		defer func() {
-			inputStreamFile.Close()
-			os.RemoveAll(inputStreamFile.Name())
-		}()
-
-		cmd := exec.Command("/bin/bash", "-c", fmt.Sprintf("read -e -p \"➡️ \033[38;2;255;166;0m%s \033[0m\" user_input && echo \"$user_input\" > %s", strings.ReplaceAll(opts.Prompt, `"`, `\"`), inputStreamFile.Name()))
-		cmd.Dir = opts.WorkingDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		if err := cmd.Run(); err != nil {
-			return result, err
-		}
-		input, err := io.ReadAll(inputStreamFile)
-		if err != nil {
-			return result, err
-		}
-		result.StringValue = strings.TrimSpace(string(input))
-		return result, cmd.Err
+		result.StringValue = value
+		return result, nil
 	case Selection:
 		menu := NewMenu(fmt.Sprintf("➡️ %s", promptColor.Sprint(opts.Prompt)))
 		for _, selectOption := range opts.SelectOptions {

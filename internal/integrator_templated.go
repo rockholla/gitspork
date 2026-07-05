@@ -12,6 +12,7 @@ import (
 
 	"dario.cat/mergo"
 	inputpkg "github.com/rockholla/gitspork/internal/input"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -30,7 +31,7 @@ type IntegratorTemplatedData struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error {
+func (i *IntegratorTemplated) Integrate(templatedInstructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error {
 
 	// captured input values will support the input 'previous_input' type via this structure:
 	/*

@@ -9,6 +9,7 @@ import (
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ func TestCheckDrift(t *testing.T) {
 		require.NoError(t, err)
 		defer os.RemoveAll(dir)
 
-		_, err = CheckDrift(&CheckDriftOptions{
+		_, err = CheckDrift(&types.CheckDriftOptions{
 			Logger:             NewLogger(),
 			DownstreamRepoPath: dir,
 		})
@@ -35,14 +36,14 @@ func TestCheckDrift(t *testing.T) {
 		err = os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty"), 0644)
 		require.NoError(t, err)
 
-		state := &GitSporkDownstreamState{
+		state := &types.GitSporkDownstreamState{
 			LastUpstreamRepoURL:     "https://github.com/rockholla/gitspork.git",
 			LastUpstreamRepoSubpath: "docs/examples/simple/upstream",
 			LastUpstreamCommitHash:  "abc123",
 		}
 		require.NoError(t, saveDownstreamState(dir, state))
 
-		_, err = CheckDrift(&CheckDriftOptions{
+		_, err = CheckDrift(&types.CheckDriftOptions{
 			Logger:             NewLogger(),
 			DownstreamRepoPath: dir,
 		})
@@ -168,7 +169,7 @@ func TestCheckDrift_returns_report_no_drift(t *testing.T) {
 	downstreamDir := testEmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 
-	report, err := CheckDrift(&CheckDriftOptions{
+	report, err := CheckDrift(&types.CheckDriftOptions{
 		Logger:             NewLogger(),
 		DownstreamRepoPath: downstreamDir,
 	})
@@ -184,11 +185,11 @@ func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 
-	report, err := CheckDrift(&CheckDriftOptions{
+	report, err := CheckDrift(&types.CheckDriftOptions{
 		Logger:             NewLogger(),
 		DownstreamRepoPath: downstreamDir,
 	})
-	require.ErrorIs(t, err, ErrDriftDetected)
+	require.ErrorIs(t, err, types.ErrDriftDetected)
 	require.NotNil(t, report)
 	assert.True(t, report.HasDrift)
 	require.Len(t, report.Files, 1)
@@ -201,9 +202,9 @@ func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.
 // CheckDrift can operate. Returns the post-integrate commit hash.
 func testIntegrateAndCommitBaseline(t *testing.T, upstreamDir, downstreamDir string) plumbing.Hash {
 	t.Helper()
-	_, err := Integrate(&IntegrateOptions{
+	_, err := Integrate(&types.IntegrateOptions{
 		Logger:             NewLogger(),
-		Upstreams:          []UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.NoError(t, err)
@@ -230,11 +231,11 @@ func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 
-	report, err := CheckDrift(&CheckDriftOptions{
+	report, err := CheckDrift(&types.CheckDriftOptions{
 		Logger:             NewLogger(),
 		DownstreamRepoPath: downstreamDir,
 	})
-	require.ErrorIs(t, err, ErrDriftDetected)
+	require.ErrorIs(t, err, types.ErrDriftDetected)
 	require.Len(t, report.Files, 1)
 	diff := report.Files[0].Diff
 	assert.Contains(t, diff, "upstream-owned/file.txt",

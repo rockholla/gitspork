@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -42,7 +43,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := &internal.CheckDriftOptions{
+			opts := &types.CheckDriftOptions{
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
 			}
@@ -54,7 +55,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
 			report, err := internal.CheckDrift(opts)
-			if err != nil && !errors.Is(err, internal.ErrDriftDetected) {
+			if err != nil && !errors.Is(err, types.ErrDriftDetected) {
 				return err
 			}
 			if !report.HasDrift {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -11,7 +13,7 @@ const (
 )
 
 // Init will initialize a path for use as a gitspork upstream
-func Init(initPath string, logger *Logger) error {
+func Init(initPath string, logger types.Logger) error {
 	var err error
 
 	logger.Log("initializing gitspork upstream at %s", initPath)

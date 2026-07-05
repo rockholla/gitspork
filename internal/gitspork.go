@@ -57,62 +57,6 @@ type GitSporkConfigMigrationInstructions struct {
 	Exec string `yaml:"exec" comment:"command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation"`
 }
 
-// GitSporkDownstreamState represents state stored in the downstream repo to track integrations.
-type GitSporkDownstreamState struct {
-	MigrationsComplete []string                `json:"migrations_complete"`
-	Upstreams          []GitSporkUpstreamState `json:"upstreams,omitempty"`
-	// Deprecated: migrated to Upstreams on first load.
-	LastUpstreamRepoURL     string `json:"last_upstream_repo_url,omitempty"`
-	LastUpstreamRepoSubpath string `json:"last_upstream_repo_subpath,omitempty"`
-	LastUpstreamCommitHash  string `json:"last_upstream_commit_hash,omitempty"`
-}
-
-// IntegrateResult is the structural return value of Integrate and IntegrateLocal.
-// It records what was successfully integrated (in order); on partial failure
-// the successful upstreams so far are still present in this result alongside
-// the returned error.
-type IntegrateResult struct {
-	Upstreams []IntegratedUpstream
-}
-
-// IntegratedUpstream identifies a single successfully integrated upstream.
-type IntegratedUpstream struct {
-	URL        string
-	Subpath    string
-	CommitHash string
-}
-
-// DriftReport is the structural return value of CheckDrift. HasDrift is false
-// when the downstream matches the recorded integration state; true when
-// differences were found. Files enumerates the drifted entries with per-file
-// attribution to whichever upstream last wrote each path.
-type DriftReport struct {
-	HasDrift bool
-	Files    []DriftedFile
-}
-
-// DriftedFile is a single entry in a DriftReport.
-type DriftedFile struct {
-	Path          string
-	AttributedURL string // upstream URL responsible for this file; empty means unattributed
-	Diff          string // unified-diff text for this file; a `Binary files ... differ` marker line when the file is binary
-}
-
-// UpstreamSpec is a parsed --upstream flag entry.
-type UpstreamSpec struct {
-	URL     string
-	Version string
-	Subpath string
-	Token   string
-}
-
-// GitSporkUpstreamState records the last integration for a single upstream.
-type GitSporkUpstreamState struct {
-	URL        string `json:"url"`
-	Subpath    string `json:"subpath,omitempty"`
-	CommitHash string `json:"commit_hash"`
-}
-
 // GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
 type GitSporkConfigTemplated struct {
 	Template    string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
@@ -137,37 +81,6 @@ type GitSporkConfigTemplatedInputPrevious struct {
 // GitSporkConfigTemplatedMerged
 type GitSporkConfigTemplatedMerged struct {
 	Structured string `yaml:"structured" comment:"instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'"`
-}
-
-// IntegrateOptions are options for the Integrate method
-type IntegrateOptions struct {
-	Logger                 *Logger
-	UpstreamRepoURL        string
-	UpstreamRepoVersion    string
-	UpstreamRepoCommit     string
-	UpstreamRepoSubpath    string
-	UpstreamRepoToken      string
-	DownstreamRepoPath     string
-	ForceRePrompt          bool
-	ForDriftCheck          bool
-	PrevUpstreamCommitHash string
-	Upstreams              []UpstreamSpec
-}
-
-// IntegrateLocalOptions are options for the IntegrateLocal method
-type IntegrateLocalOptions struct {
-	Logger         *Logger
-	UpstreamPath   string
-	UpstreamPaths  []string
-	DownstreamPath string
-	ForceRePrompt  bool
-}
-
-// CheckDriftOptions are options for the CheckDrift method
-type CheckDriftOptions struct {
-	Logger             *Logger
-	DownstreamRepoPath string
-	Upstreams          []UpstreamSpec
 }
 
 // ParseGitSporkConfig will parse a .gitspork.yml config file at the provided path

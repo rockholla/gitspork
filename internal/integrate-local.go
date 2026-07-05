@@ -3,11 +3,13 @@ package internal
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 // IntegrateLocal integrates one or more local upstream paths into the downstream.
-func IntegrateLocal(opts *IntegrateLocalOptions) (*IntegrateResult, error) {
-	result := &IntegrateResult{}
+func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, error) {
+	result := &types.IntegrateResult{}
 
 	// Normalize: single UpstreamPath -> UpstreamPaths slice.
 	if len(opts.UpstreamPaths) == 0 && opts.UpstreamPath != "" {
@@ -28,7 +30,7 @@ func IntegrateLocal(opts *IntegrateLocalOptions) (*IntegrateResult, error) {
 		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger); err != nil {
 			return result, err
 		}
-		result.Upstreams = append(result.Upstreams, IntegratedUpstream{
+		result.Upstreams = append(result.Upstreams, types.IntegratedUpstream{
 			URL: upstreamPath, // local path recorded in URL slot; no CommitHash concept for local
 		})
 	}

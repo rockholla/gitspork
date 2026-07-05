@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -39,7 +40,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				return fmt.Errorf("cannot mix --upstream with --upstream-repo-url/version/subpath/token flags")
 			}
 
-			opts := &internal.IntegrateOptions{
+			opts := &types.IntegrateOptions{
 				Logger:              logger,
 				UpstreamRepoURL:     upstreamRepoURL,
 				UpstreamRepoVersion: upstreamRepoVersion,

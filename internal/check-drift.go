@@ -15,16 +15,14 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const driftCheckBranch = "_gitspork-check-drift"
 
-// ErrDriftDetected is returned by CheckDrift when drift is found in the downstream
-var ErrDriftDetected = errors.New("drift detected")
-
 // CheckDrift detects whether the downstream has drifted from its last integrated upstream state
-func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
-	report := &DriftReport{}
+func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
+	report := &types.DriftReport{}
 	var err error
 
 	if opts.DownstreamRepoPath == "" {
@@ -46,7 +44,7 @@ func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
 
 	// Resolve which upstreams to check and their recorded commit hashes.
 	type upstreamCheckEntry struct {
-		spec       UpstreamSpec
+		spec       types.UpstreamSpec
 		commitHash string
 	}
 	var entries []upstreamCheckEntry
@@ -73,7 +71,7 @@ func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
 		}
 		for _, su := range state.Upstreams {
 			entries = append(entries, upstreamCheckEntry{
-				spec:       UpstreamSpec{URL: su.URL, Subpath: su.Subpath},
+				spec:       types.UpstreamSpec{URL: su.URL, Subpath: su.Subpath},
 				commitHash: su.CommitHash,
 			})
 		}
@@ -130,7 +128,7 @@ func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
 			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
-		if _, err := Integrate(&IntegrateOptions{
+		if _, err := Integrate(&types.IntegrateOptions{
 			Logger:              opts.Logger,
 			UpstreamRepoURL:     entry.spec.URL,
 			UpstreamRepoSubpath: entry.spec.Subpath,
@@ -184,14 +182,14 @@ func CheckDrift(opts *CheckDriftOptions) (*DriftReport, error) {
 		if err != nil {
 			return report, fmt.Errorf("error encoding per-file diff for %s: %v", name, err)
 		}
-		report.Files = append(report.Files, DriftedFile{
+		report.Files = append(report.Files, types.DriftedFile{
 			Path:          name,
 			AttributedURL: fileOwner[name], // empty string means unattributed
 			Diff:          diffText,
 		})
 	}
 
-	return report, ErrDriftDetected
+	return report, types.ErrDriftDetected
 }
 
 // diffWorktreeAgainstHEAD stages all changes and compares against HEAD.

@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/gobwas/glob"
 	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -43,20 +44,20 @@ var (
 // `var _ Integrator[T] = (*Type)(nil)` assertion, so a newly added integrator
 // that diverges from this contract fails to build.
 type Integrator[T any] interface {
-	Integrate(items []T, upstreamPath string, downstreamPath string, logger *Logger) error
+	Integrate(items []T, upstreamPath string, downstreamPath string, logger types.Logger) error
 }
 
 // TemplatedIntegrator is kept separate from Integrator[T] because rendering
 // templates additionally needs the forceRePrompt flag to drive input
 // collection, so its Integrate signature cannot match the generic contract.
 type TemplatedIntegrator interface {
-	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger *Logger) error
+	Integrate(instructions []GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error
 }
 
 // ParseUpstreamFlag parses a comma-separated key=value --upstream flag value.
 // Valid keys: url (required), version, subpath, token.
-func ParseUpstreamFlag(val string) (UpstreamSpec, error) {
-	spec := UpstreamSpec{}
+func ParseUpstreamFlag(val string) (types.UpstreamSpec, error) {
+	spec := types.UpstreamSpec{}
 	for _, part := range strings.Split(val, ",") {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {
@@ -97,7 +98,7 @@ func normalizeUpstreamURL(rawURL string, subpath string) string {
 	return strings.ToLower(u)
 }
 
-func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamState) {
+func upsertUpstreamState(state *types.GitSporkDownstreamState, entry types.GitSporkUpstreamState) {
 	key := normalizeUpstreamURL(entry.URL, entry.Subpath)
 	for i, existing := range state.Upstreams {
 		if normalizeUpstreamURL(existing.URL, existing.Subpath) == key {
@@ -110,9 +111,9 @@ func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamS
 
 // Integrate will ensure that the downstream at opts.DownstreamRepoPath is
 // integrated with each upstream in opts.Upstreams, in order.
-func Integrate(opts *IntegrateOptions) (*IntegrateResult, error) {
+func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 	var err error
-	result := &IntegrateResult{}
+	result := &types.IntegrateResult{}
 
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
@@ -128,7 +129,7 @@ func Integrate(opts *IntegrateOptions) (*IntegrateResult, error) {
 
 	// Normalize: synthesize Upstreams from single-upstream fields for backward compat.
 	if len(opts.Upstreams) == 0 && opts.UpstreamRepoURL != "" {
-		opts.Upstreams = []UpstreamSpec{{
+		opts.Upstreams = []types.UpstreamSpec{{
 			URL:     opts.UpstreamRepoURL,
 			Version: opts.UpstreamRepoVersion,
 			Subpath: opts.UpstreamRepoSubpath,
@@ -149,12 +150,12 @@ func Integrate(opts *IntegrateOptions) (*IntegrateResult, error) {
 	return result, nil
 }
 
-func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) (IntegratedUpstream, error) {
+func integrateOne(opts *types.IntegrateOptions, upstream types.UpstreamSpec) (types.IntegratedUpstream, error) {
 	prevHash := ""
 	if !opts.ForDriftCheck {
 		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error loading downstream state for delta check: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
 		key := normalizeUpstreamURL(upstream.URL, upstream.Subpath)
 		for _, u := range existingState.Upstreams {
@@ -167,11 +168,11 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) (IntegratedUpst
 
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
-		return IntegratedUpstream{}, fmt.Errorf("error creating temporary directory: %v", err)
+		return types.IntegratedUpstream{}, fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
 
-	singleOpts := &IntegrateOptions{
+	singleOpts := &types.IntegrateOptions{
 		Logger:                 opts.Logger,
 		UpstreamRepoURL:        upstream.URL,
 		UpstreamRepoVersion:    upstream.Version,
@@ -188,57 +189,57 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) (IntegratedUpst
 	opts.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
 	commitHash, err := cloneUpstreamForIntegrate(cloneDir, singleOpts)
 	if err != nil {
-		return IntegratedUpstream{}, err
+		return types.IntegratedUpstream{}, err
 	}
 
 	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
 	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
-		return IntegratedUpstream{}, err
+		return types.IntegratedUpstream{}, err
 	}
 
 	if !opts.ForDriftCheck && prevHash != "" {
 		upstreamRepo, err := git.PlainOpen(cloneDir)
 		if err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error opening upstream clone for delta computation: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error opening upstream clone for delta computation: %v", err)
 		}
 		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, upstream.Subpath)
 		if err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error computing upstream delta: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error computing upstream delta: %v", err)
 		}
 		if err := applyUpstreamDelta(delta, opts.DownstreamRepoPath, opts.Logger); err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error applying upstream delta to downstream: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error applying upstream delta to downstream: %v", err)
 		}
 	}
 
 	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
-		return IntegratedUpstream{}, err
+		return types.IntegratedUpstream{}, err
 	}
 
 	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
-		upsertUpstreamState(state, GitSporkUpstreamState{
+		upsertUpstreamState(state, types.GitSporkUpstreamState{
 			URL:        originalUpstreamURL,
 			Subpath:    upstream.Subpath,
 			CommitHash: commitHash,
 		})
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
-			return IntegratedUpstream{}, fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
+			return types.IntegratedUpstream{}, fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}
 	}
 
-	return IntegratedUpstream{
+	return types.IntegratedUpstream{
 		URL:        originalUpstreamURL,
 		Subpath:    upstream.Subpath,
 		CommitHash: commitHash,
 	}, nil
 }
 
-func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger *Logger) error {
+func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger types.Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	preIntegrateMigrations := []*GitSporkConfigMigrationInstructions{}
@@ -380,7 +381,7 @@ func resolveUpstreamURL(url string, token string) string {
 	return url
 }
 
-func cloneUpstreamForIntegrate(cloneDir string, opts *IntegrateOptions) (string, error) {
+func cloneUpstreamForIntegrate(cloneDir string, opts *types.IntegrateOptions) (string, error) {
 	opts.UpstreamRepoURL = resolveUpstreamURL(opts.UpstreamRepoURL, opts.UpstreamRepoToken)
 	var err error
 	var authMethod transport.AuthMethod
@@ -620,12 +621,12 @@ func ensureDownstreamMetaDir(downstreamRepoPath string) (string, error) {
 	return gitSporkMetaDir, nil
 }
 
-func loadDownstreamState(downstreamRepoPath string) (*GitSporkDownstreamState, error) {
+func loadDownstreamState(downstreamRepoPath string) (*types.GitSporkDownstreamState, error) {
 	gitSporkMetaDir, err := ensureDownstreamMetaDir(downstreamRepoPath)
 	if err != nil {
 		return nil, err
 	}
-	state := &GitSporkDownstreamState{}
+	state := &types.GitSporkDownstreamState{}
 	stateFilePath := filepath.Join(gitSporkMetaDir, downstreamStateFileName)
 	if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
 		return state, nil
@@ -640,7 +641,7 @@ func loadDownstreamState(downstreamRepoPath string) (*GitSporkDownstreamState, e
 	}
 	// Migrate deprecated single-upstream fields to Upstreams slice.
 	if len(state.Upstreams) == 0 && state.LastUpstreamCommitHash != "" {
-		state.Upstreams = []GitSporkUpstreamState{{
+		state.Upstreams = []types.GitSporkUpstreamState{{
 			URL:        state.LastUpstreamRepoURL,
 			Subpath:    state.LastUpstreamRepoSubpath,
 			CommitHash: state.LastUpstreamCommitHash,
@@ -652,7 +653,7 @@ func loadDownstreamState(downstreamRepoPath string) (*GitSporkDownstreamState, e
 	return state, nil
 }
 
-func saveDownstreamState(downstreamRepoPath string, state *GitSporkDownstreamState) error {
+func saveDownstreamState(downstreamRepoPath string, state *types.GitSporkDownstreamState) error {
 	b, err := json.Marshal(state)
 	if err != nil {
 		return err

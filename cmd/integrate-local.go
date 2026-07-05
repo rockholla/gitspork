@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 const (
@@ -31,7 +32,7 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 		Short: integrateLocalHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", integrateLocalHelpShort, integrateLocalHelpLong),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := internal.IntegrateLocal(&internal.IntegrateLocalOptions{
+			if _, err := internal.IntegrateLocal(&types.IntegrateLocalOptions{
 				Logger:         logger,
 				UpstreamPaths:  upstreamPaths,
 				DownstreamPath: downstreamPath,

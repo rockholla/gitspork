@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/goccy/go-yaml/lexer"
 	"github.com/goccy/go-yaml/printer"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 // Logger is an instance of a logger
@@ -15,6 +16,9 @@ type Logger struct {
 	defaultLogger *log.Logger
 	errorLogger   *log.Logger
 }
+
+// Compile-time assertion that Logger satisfies types.Logger.
+var _ types.Logger = (*Logger)(nil)
 
 // Log will log a normal/info log message
 func (l *Logger) Log(msg string, v ...any) {

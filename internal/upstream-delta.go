@@ -12,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v6/utils/merkletrie"
 	"github.com/gobwas/glob"
 	"github.com/goccy/go-yaml"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 type upstreamRename struct {
@@ -233,7 +234,7 @@ func readConfigFromCommit(commit *object.Commit, subpath string) (*GitSporkConfi
 	return cfg, nil
 }
 
-func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger *Logger) error {
+func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger types.Logger) error {
 	for _, del := range delta.Deletions {
 		target := filepath.Join(downstreamPath, del)
 		if _, err := os.Stat(target); os.IsNotExist(err) {

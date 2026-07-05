@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"dario.cat/mergo"
+	"github.com/rockholla/gitspork/internal/types"
 )
 
 // IntegratorSharedOwnershipStructuredPreferDownstream will process a list of structured data files to be co-owned by upstream and downstream, merged with preference/precdence in favor of downstream
@@ -13,7 +14,7 @@ type IntegratorSharedOwnershipStructuredPreferDownstream struct{}
 var _ Integrator[string] = (*IntegratorSharedOwnershipStructuredPreferDownstream)(nil)
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorSharedOwnershipStructuredPreferDownstream) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger *Logger) error {
+func (i *IntegratorSharedOwnershipStructuredPreferDownstream) Integrate(configuredGlobPatterns []string, upstreamPath string, downstreamPath string, logger types.Logger) error {
 	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
 		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)

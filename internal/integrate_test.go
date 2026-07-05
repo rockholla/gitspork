@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
+	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -109,29 +110,29 @@ func Test_normalizeUpstreamURL(t *testing.T) {
 }
 
 func Test_upsertUpstreamState_newEntry(t *testing.T) {
-	state := &GitSporkDownstreamState{}
-	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
+	state := &types.GitSporkDownstreamState{}
+	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "abc"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "https://github.com/org/repo.git", state.Upstreams[0].URL)
 	assert.Equal(t, "abc", state.Upstreams[0].CommitHash)
 }
 
 func Test_upsertUpstreamState_updateExisting(t *testing.T) {
-	state := &GitSporkDownstreamState{Upstreams: []GitSporkUpstreamState{
+	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
 		{URL: "git@github.com:org/repo.git", CommitHash: "old"},
 	}}
 	// SSH and HTTPS forms of same repo — should match and update in place
-	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
+	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
 	require.Len(t, state.Upstreams, 1)
 	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
 }
 
 func Test_upsertUpstreamState_orderPreserved(t *testing.T) {
-	state := &GitSporkDownstreamState{Upstreams: []GitSporkUpstreamState{
+	state := &types.GitSporkDownstreamState{Upstreams: []types.GitSporkUpstreamState{
 		{URL: "https://github.com/org/base.git", CommitHash: "b1"},
 		{URL: "https://github.com/org/platform.git", CommitHash: "p1"},
 	}}
-	upsertUpstreamState(state, GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
+	upsertUpstreamState(state, types.GitSporkUpstreamState{URL: "https://github.com/org/base.git", CommitHash: "b2"})
 	require.Len(t, state.Upstreams, 2)
 	assert.Equal(t, "b2", state.Upstreams[0].CommitHash)
 	assert.Equal(t, "p1", state.Upstreams[1].CommitHash)
@@ -228,7 +229,7 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := NewLogger()
-	_, err = Integrate(&IntegrateOptions{
+	_, err = Integrate(&types.IntegrateOptions{
 		Logger:             logger,
 		UpstreamRepoURL:    "file://" + upstreamDir,
 		UpstreamRepoCommit: commitV1.String(),
@@ -247,9 +248,9 @@ func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 	upstreamDir, upstreamHash := testMinimalUpstream(t)
 	downstreamDir := testEmptyDownstream(t)
 
-	result, err := Integrate(&IntegrateOptions{
+	result, err := Integrate(&types.IntegrateOptions{
 		Logger:             NewLogger(),
-		Upstreams:          []UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
 	})
 	require.NoError(t, err)
@@ -264,7 +265,7 @@ func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
 	upstreamDir, _ := testMinimalUpstream(t)
 	downstreamDir := testEmptyDownstream(t)
 
-	result, err := IntegrateLocal(&IntegrateLocalOptions{
+	result, err := IntegrateLocal(&types.IntegrateLocalOptions{
 		Logger:         NewLogger(),
 		UpstreamPaths:  []string{upstreamDir},
 		DownstreamPath: downstreamDir,

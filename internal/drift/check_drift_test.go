@@ -1,4 +1,4 @@
-package internal
+package drift
 
 import (
 	"os"
@@ -10,7 +10,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/internal/config"
+	"github.com/rockholla/gitspork/internal/integrate"
 	"github.com/rockholla/gitspork/internal/logutil"
+	"github.com/rockholla/gitspork/internal/testharness"
 	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +45,7 @@ func TestCheckDrift(t *testing.T) {
 			LastUpstreamRepoSubpath: "docs/examples/simple/upstream",
 			LastUpstreamCommitHash:  "abc123",
 		}
-		require.NoError(t, saveDownstreamState(dir, state))
+		require.NoError(t, integrate.SaveDownstreamState(dir, state))
 
 		_, err = CheckDrift(&types.CheckDriftOptions{
 			Logger:             logutil.New(),
@@ -167,8 +169,8 @@ func makeBaselineRepo(t *testing.T, dir string) *gogit.Worktree {
 }
 
 func TestCheckDrift_returns_report_no_drift(t *testing.T) {
-	upstreamDir, _ := testMinimalUpstream(t)
-	downstreamDir := testEmptyDownstream(t)
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 
 	report, err := CheckDrift(&types.CheckDriftOptions{
@@ -182,8 +184,8 @@ func TestCheckDrift_returns_report_no_drift(t *testing.T) {
 }
 
 func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.T) {
-	upstreamDir, _ := testMinimalUpstream(t)
-	downstreamDir := testEmptyDownstream(t)
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 
@@ -204,7 +206,7 @@ func TestCheckDrift_returns_report_with_drifted_file_and_attribution(t *testing.
 // CheckDrift can operate. Returns the post-integrate commit hash.
 func testIntegrateAndCommitBaseline(t *testing.T, upstreamDir, downstreamDir string) plumbing.Hash {
 	t.Helper()
-	_, err := Integrate(&types.IntegrateOptions{
+	_, err := integrate.Integrate(&types.IntegrateOptions{
 		Logger:             logutil.New(),
 		Upstreams:          []types.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
 		DownstreamRepoPath: downstreamDir,
@@ -212,7 +214,7 @@ func testIntegrateAndCommitBaseline(t *testing.T, upstreamDir, downstreamDir str
 	require.NoError(t, err)
 	repo, err := gogit.PlainOpen(downstreamDir)
 	require.NoError(t, err)
-	return testCommitAll(t, repo, "post-integrate baseline")
+	return testharness.CommitAllWithMessage(t, repo, "post-integrate baseline")
 }
 
 // testWriteAndCommitInDownstream writes content to a file inside downstreamDir
@@ -224,12 +226,12 @@ func testWriteAndCommitInDownstream(t *testing.T, downstreamDir, relPath, conten
 	require.NoError(t, os.WriteFile(full, []byte(content), 0644))
 	repo, err := gogit.PlainOpen(downstreamDir)
 	require.NoError(t, err)
-	testCommitAll(t, repo, "drift edit: "+relPath)
+	testharness.CommitAllWithMessage(t, repo, "drift edit: "+relPath)
 }
 
 func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
-	upstreamDir, _ := testMinimalUpstream(t)
-	downstreamDir := testEmptyDownstream(t)
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
 	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
 

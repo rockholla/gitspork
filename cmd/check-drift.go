@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rockholla/gitspork/internal"
+	"github.com/rockholla/gitspork/internal/drift"
 	"github.com/rockholla/gitspork/internal/integrate"
 	"github.com/rockholla/gitspork/internal/types"
 )
@@ -55,7 +55,7 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 				}
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
-			report, err := internal.CheckDrift(opts)
+			report, err := drift.CheckDrift(opts)
 			if err != nil && !errors.Is(err, types.ErrDriftDetected) {
 				return err
 			}

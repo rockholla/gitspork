@@ -12,6 +12,7 @@ import (
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/rockholla/gitspork/internal/config"
 	"github.com/rockholla/gitspork/internal/logutil"
+	"github.com/rockholla/gitspork/internal/testharness"
 	"github.com/rockholla/gitspork/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,47 +160,6 @@ func Test_LoadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
-// testMinimalUpstream initialises a local upstream git repo with a minimal
-// .gitspork.yml (upstream_owned only, no templated block) and one file. Returns
-// the temp dir and the initial commit hash.
-func testMinimalUpstream(t *testing.T) (string, plumbing.Hash) {
-	t.Helper()
-	dir := t.TempDir()
-	repo, err := gogit.PlainInit(dir, false,
-		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
-	)
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "upstream-owned"), 0755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "upstream-owned", "file.txt"), []byte("upstream content\n"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitspork.yml"), []byte("upstream_owned:\n- upstream-owned/**\n"), 0644))
-	hash := testCommitAll(t, repo, "initial")
-	return dir, hash
-}
-
-// testEmptyDownstream initialises a bare local downstream git repo ready for
-// Integrate to write into.
-func testEmptyDownstream(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	_, err := gogit.PlainInit(dir, false,
-		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
-	)
-	require.NoError(t, err)
-	return dir
-}
-
-// testCommitAll stages and commits all changes in repo, returning the commit hash.
-func testCommitAll(t *testing.T, repo *gogit.Repository, message string) plumbing.Hash {
-	t.Helper()
-	wt, err := repo.Worktree()
-	require.NoError(t, err)
-	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
-	sig := &object.Signature{Name: "gitspork-test", Email: "gitspork-test@localhost", When: time.Now()}
-	hash, err := wt.Commit(message, &gogit.CommitOptions{Author: sig})
-	require.NoError(t, err)
-	return hash
-}
-
 func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	// Create a local upstream repo with two commits; verify that Integrate
 	// checks out the older commit (v1) when UpstreamRepoCommit is set.
@@ -217,11 +177,11 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(upstreamDir, "upstream-owned"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version one\n"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, ".gitspork.yml"), []byte(gitsporkYML), 0644))
-	commitV1 := testCommitAll(t, upstreamRepo, "v1")
+	commitV1 := testharness.CommitAllWithMessage(t, upstreamRepo, "v1")
 
 	// Commit v2: update to version two content.
 	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "upstream-owned", "file.txt"), []byte("version two\n"), 0644))
-	testCommitAll(t, upstreamRepo, "v2")
+	testharness.CommitAllWithMessage(t, upstreamRepo, "v2")
 
 	// Create downstream repo.
 	downstreamDir := t.TempDir()
@@ -247,8 +207,8 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 }
 
 func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
-	upstreamDir, upstreamHash := testMinimalUpstream(t)
-	downstreamDir := testEmptyDownstream(t)
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
 
 	result, err := Integrate(&types.IntegrateOptions{
 		Logger:             logutil.New(),
@@ -264,8 +224,8 @@ func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 }
 
 func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
-	upstreamDir, _ := testMinimalUpstream(t)
-	downstreamDir := testEmptyDownstream(t)
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
 
 	result, err := IntegrateLocal(&types.IntegrateLocalOptions{
 		Logger:         logutil.New(),

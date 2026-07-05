@@ -51,14 +51,12 @@ func WriteFiles(t *testing.T, dir string, files map[string]string) {
 	}
 }
 
+// CommitAll stages and commits all changes in repo. The dir parameter is
+// unused (kept for backward compatibility with functional-test callers).
+// Prefer CommitAllWithMessage when the resulting commit hash is needed.
 func CommitAll(t *testing.T, repo *gogit.Repository, dir, message string) {
 	t.Helper()
-	wt, err := repo.Worktree()
-	require.NoError(t, err)
-	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
-	sig := &object.Signature{Name: "gitspork-test", Email: "gitspork-test@localhost", When: time.Now()}
-	_, err = wt.Commit(message, &gogit.CommitOptions{Author: sig})
-	require.NoError(t, err)
+	_ = CommitAllWithMessage(t, repo, message)
 }
 
 func OpenRepo(t *testing.T, dir string) *gogit.Repository {

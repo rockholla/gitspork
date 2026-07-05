@@ -93,7 +93,7 @@ func Test_ParseUpstreamFlag(t *testing.T) {
 	})
 }
 
-func Test_normalizeUpstreamURL(t *testing.T) {
+func Test_NormalizeUpstreamURL(t *testing.T) {
 	t.Run("SSH and HTTPS same repo match", func(t *testing.T) {
 		assert.Equal(t,
 			NormalizeUpstreamURL("git@github.com:org/repo.git", ""),

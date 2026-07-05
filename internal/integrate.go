@@ -108,19 +108,21 @@ func upsertUpstreamState(state *GitSporkDownstreamState, entry GitSporkUpstreamS
 	state.Upstreams = append(state.Upstreams, entry)
 }
 
-// Integrate will ensure that the localRepoPath is integrated/re-integrated w/ the upstreamRepoURL version
-func Integrate(opts *IntegrateOptions) error {
+// Integrate will ensure that the downstream at opts.DownstreamRepoPath is
+// integrated with each upstream in opts.Upstreams, in order.
+func Integrate(opts *IntegrateOptions) (*IntegrateResult, error) {
 	var err error
+	result := &IntegrateResult{}
 
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {
-			return fmt.Errorf("unable to get the present working directory: %v", err)
+			return result, fmt.Errorf("unable to get the present working directory: %v", err)
 		}
 	} else {
 		opts.DownstreamRepoPath, err = filepath.Abs(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("unable to determine local downstream repo path: %v", err)
+			return result, fmt.Errorf("unable to determine local downstream repo path: %v", err)
 		}
 	}
 
@@ -134,23 +136,25 @@ func Integrate(opts *IntegrateOptions) error {
 		}}
 	}
 	if len(opts.Upstreams) == 0 {
-		return fmt.Errorf("no upstream specified: provide --upstream or --upstream-repo-url")
+		return result, fmt.Errorf("no upstream specified: provide --upstream or --upstream-repo-url")
 	}
 
 	for _, upstream := range opts.Upstreams {
-		if err := integrateOne(opts, upstream); err != nil {
-			return err
+		integrated, err := integrateOne(opts, upstream)
+		if err != nil {
+			return result, err
 		}
+		result.Upstreams = append(result.Upstreams, integrated)
 	}
-	return nil
+	return result, nil
 }
 
-func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
+func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) (IntegratedUpstream, error) {
 	prevHash := ""
 	if !opts.ForDriftCheck {
 		existingState, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("error loading downstream state for delta check: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error loading downstream state for delta check: %v", err)
 		}
 		key := normalizeUpstreamURL(upstream.URL, upstream.Subpath)
 		for _, u := range existingState.Upstreams {
@@ -163,7 +167,7 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 
 	cloneDir, err := os.MkdirTemp("", gitSpork)
 	if err != nil {
-		return fmt.Errorf("error creating temporary directory: %v", err)
+		return IntegratedUpstream{}, fmt.Errorf("error creating temporary directory: %v", err)
 	}
 	defer os.RemoveAll(cloneDir)
 
@@ -184,38 +188,38 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 	opts.Logger.Log("cloning gitspork upstream repo %s", upstream.URL)
 	commitHash, err := cloneUpstreamForIntegrate(cloneDir, singleOpts)
 	if err != nil {
-		return err
+		return IntegratedUpstream{}, err
 	}
 
 	upstreamRootPath := filepath.Join(cloneDir, upstream.Subpath)
 	opts.Logger.Log("parsing the gitspork config file in the upstream repo clone at %s or %s", gitSporkConfigFileName, gitSporkConfigFileNameAlt)
 	gitSporkConfig, err := getGitSporkConfig(upstreamRootPath)
 	if err != nil {
-		return err
+		return IntegratedUpstream{}, err
 	}
 
 	if !opts.ForDriftCheck && prevHash != "" {
 		upstreamRepo, err := git.PlainOpen(cloneDir)
 		if err != nil {
-			return fmt.Errorf("error opening upstream clone for delta computation: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error opening upstream clone for delta computation: %v", err)
 		}
 		delta, err := computeUpstreamDelta(upstreamRepo, prevHash, commitHash, gitSporkConfig, upstream.Subpath)
 		if err != nil {
-			return fmt.Errorf("error computing upstream delta: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error computing upstream delta: %v", err)
 		}
 		if err := applyUpstreamDelta(delta, opts.DownstreamRepoPath, opts.Logger); err != nil {
-			return fmt.Errorf("error applying upstream delta to downstream: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error applying upstream delta to downstream: %v", err)
 		}
 	}
 
 	if err := integrate(gitSporkConfig, upstreamRootPath, opts.DownstreamRepoPath, opts.ForceRePrompt, opts.ForDriftCheck, opts.Logger); err != nil {
-		return err
+		return IntegratedUpstream{}, err
 	}
 
 	if !opts.ForDriftCheck {
 		state, err := loadDownstreamState(opts.DownstreamRepoPath)
 		if err != nil {
-			return fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error loading downstream state to save upstream metadata: %v", err)
 		}
 		upsertUpstreamState(state, GitSporkUpstreamState{
 			URL:        originalUpstreamURL,
@@ -223,11 +227,15 @@ func integrateOne(opts *IntegrateOptions, upstream UpstreamSpec) error {
 			CommitHash: commitHash,
 		})
 		if err := saveDownstreamState(opts.DownstreamRepoPath, state); err != nil {
-			return fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
+			return IntegratedUpstream{}, fmt.Errorf("error saving upstream metadata to downstream state: %v", err)
 		}
 	}
 
-	return nil
+	return IntegratedUpstream{
+		URL:        originalUpstreamURL,
+		Subpath:    upstream.Subpath,
+		CommitHash: commitHash,
+	}, nil
 }
 
 func integrate(gitSporkConfig *GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger *Logger) error {

@@ -55,7 +55,10 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				}
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
-			return internal.Integrate(opts)
+			if _, err := internal.Integrate(opts); err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 

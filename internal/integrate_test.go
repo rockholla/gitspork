@@ -156,6 +156,35 @@ func Test_loadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
+// testMinimalUpstream initialises a local upstream git repo with a minimal
+// .gitspork.yml (upstream_owned only, no templated block) and one file. Returns
+// the temp dir and the initial commit hash.
+func testMinimalUpstream(t *testing.T) (string, plumbing.Hash) {
+	t.Helper()
+	dir := t.TempDir()
+	repo, err := gogit.PlainInit(dir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "upstream-owned"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "upstream-owned", "file.txt"), []byte("upstream content\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitspork.yml"), []byte("upstream_owned:\n- upstream-owned/**\n"), 0644))
+	hash := testCommitAll(t, repo, "initial")
+	return dir, hash
+}
+
+// testEmptyDownstream initialises a bare local downstream git repo ready for
+// Integrate to write into.
+func testEmptyDownstream(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	_, err := gogit.PlainInit(dir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+	return dir
+}
+
 // testCommitAll stages and commits all changes in repo, returning the commit hash.
 func testCommitAll(t *testing.T, repo *gogit.Repository, message string) plumbing.Hash {
 	t.Helper()
@@ -199,7 +228,7 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := NewLogger()
-	err = Integrate(&IntegrateOptions{
+	_, err = Integrate(&IntegrateOptions{
 		Logger:             logger,
 		UpstreamRepoURL:    "file://" + upstreamDir,
 		UpstreamRepoCommit: commitV1.String(),
@@ -212,4 +241,38 @@ func TestIntegrate_honors_UpstreamRepoCommit(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "version one\n", string(content),
 		"Integrate with UpstreamRepoCommit set to v1 should produce v1 content, not HEAD (v2)")
+}
+
+func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
+	upstreamDir, upstreamHash := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+
+	result, err := Integrate(&IntegrateOptions{
+		Logger:             NewLogger(),
+		Upstreams:          []UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, "file://"+upstreamDir, result.Upstreams[0].URL)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+	assert.Equal(t, "", result.Upstreams[0].Subpath)
+}
+
+func TestIntegrateLocal_returns_result_with_upstream_paths(t *testing.T) {
+	upstreamDir, _ := testMinimalUpstream(t)
+	downstreamDir := testEmptyDownstream(t)
+
+	result, err := IntegrateLocal(&IntegrateLocalOptions{
+		Logger:         NewLogger(),
+		UpstreamPaths:  []string{upstreamDir},
+		DownstreamPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Upstreams, 1)
+	// IntegrateLocal has no URL — record the path in the URL slot with no scheme.
+	assert.Equal(t, upstreamDir, result.Upstreams[0].URL)
+	assert.Equal(t, "", result.Upstreams[0].CommitHash)
 }

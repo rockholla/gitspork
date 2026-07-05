@@ -31,12 +31,15 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 		Short: integrateLocalHelpShort,
 		Long:  fmt.Sprintf("%s\n\n%s", integrateLocalHelpShort, integrateLocalHelpLong),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return internal.IntegrateLocal(&internal.IntegrateLocalOptions{
+			if _, err := internal.IntegrateLocal(&internal.IntegrateLocalOptions{
 				Logger:         logger,
 				UpstreamPaths:  upstreamPaths,
 				DownstreamPath: downstreamPath,
 				ForceRePrompt:  forceRePrompt,
-			})
+			}); err != nil {
+				return err
+			}
+			return nil
 		},
 	}
 

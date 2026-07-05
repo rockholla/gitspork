@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // ParseUpstreamFlag parses a comma-separated key=value --upstream flag value.
 // Valid keys: url (required), version, subpath, token.
-func ParseUpstreamFlag(val string) (types.UpstreamSpec, error) {
-	spec := types.UpstreamSpec{}
+func ParseUpstreamFlag(val string) (sdktypes.UpstreamSpec, error) {
+	spec := sdktypes.UpstreamSpec{}
 	for _, part := range strings.Split(val, ",") {
 		kv := strings.SplitN(part, "=", 2)
 		if len(kv) != 2 {

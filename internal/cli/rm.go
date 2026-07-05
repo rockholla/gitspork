@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rockholla/gitspork/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/spf13/cobra"
 )
 

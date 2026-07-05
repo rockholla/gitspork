@@ -1,4 +1,4 @@
-package types
+package sdktypes
 
 // Logger is the small interface gitspork uses for narration/progress and
 // error messages. It is deliberately narrow so SDK consumers can wire their

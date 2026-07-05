@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // IntegrateLocal integrates one or more local upstream paths into the downstream.
-func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, error) {
-	result := &types.IntegrateResult{}
+func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateResult, error) {
+	result := &sdktypes.IntegrateResult{}
 
 	if opts.Logger == nil {
-		opts.Logger = types.NoopLogger()
+		opts.Logger = sdktypes.NoopLogger()
 	}
 
 	if len(opts.UpstreamPaths) == 0 {
@@ -31,7 +31,7 @@ func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, 
 		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger); err != nil {
 			return result, err
 		}
-		result.Upstreams = append(result.Upstreams, types.IntegratedUpstream{
+		result.Upstreams = append(result.Upstreams, sdktypes.IntegratedUpstream{
 			URL: upstreamPath, // local path recorded in URL slot; no CommitHash concept for local
 		})
 	}

@@ -15,20 +15,20 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 	fdiff "github.com/go-git/go-git/v6/plumbing/format/diff"
 	"github.com/go-git/go-git/v6/plumbing/object"
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/integrate"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/integrate"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 const driftCheckBranch = "_gitspork-check-drift"
 
 // CheckDrift detects whether the downstream has drifted from its last integrated upstream state
-func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
-	report := &types.DriftReport{}
+func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error) {
+	report := &sdktypes.DriftReport{}
 	var err error
 
 	if opts.Logger == nil {
-		opts.Logger = types.NoopLogger()
+		opts.Logger = sdktypes.NoopLogger()
 	}
 
 	if opts.DownstreamRepoPath == "" {
@@ -50,7 +50,7 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 
 	// Resolve which upstreams to check and their recorded commit hashes.
 	type upstreamCheckEntry struct {
-		spec       types.UpstreamSpec
+		spec       sdktypes.UpstreamSpec
 		commitHash string
 	}
 	var entries []upstreamCheckEntry
@@ -77,7 +77,7 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 		}
 		for _, su := range state.Upstreams {
 			entries = append(entries, upstreamCheckEntry{
-				spec:       types.UpstreamSpec{URL: su.URL, Subpath: su.Subpath},
+				spec:       sdktypes.UpstreamSpec{URL: su.URL, Subpath: su.Subpath},
 				commitHash: su.CommitHash,
 			})
 		}
@@ -187,14 +187,14 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 		if err != nil {
 			return report, fmt.Errorf("error encoding per-file diff for %s: %v", name, err)
 		}
-		report.Files = append(report.Files, types.DriftedFile{
+		report.Files = append(report.Files, sdktypes.DriftedFile{
 			Path:          name,
 			AttributedURL: fileOwner[name], // empty string means unattributed
 			Diff:          diffText,
 		})
 	}
 
-	return report, types.ErrDriftDetected
+	return report, sdktypes.ErrDriftDetected
 }
 
 // diffWorktreeAgainstHEAD stages all changes and compares against HEAD.

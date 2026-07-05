@@ -1,4 +1,4 @@
-module github.com/rockholla/gitspork
+module github.com/rockholla/gitspork/v2
 
 go 1.26.0
 

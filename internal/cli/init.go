@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/logutil"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/spf13/cobra"
 )
 

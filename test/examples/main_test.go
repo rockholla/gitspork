@@ -32,7 +32,7 @@ func buildBinary(repoRoot string) string {
 		panic("cannot create temp dir for binary: " + err.Error())
 	}
 	out := filepath.Join(dir, "gitspork")
-	cmd := exec.Command("go", "build", "-o", out, ".")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/gitspork")
 	cmd.Dir = repoRoot
 	if b, err := cmd.CombinedOutput(); err != nil {
 		panic("go build failed:\n" + string(b))

@@ -1,12 +1,12 @@
 .PHONY: schema
 schema: ## Outputs the current working schema for the version of source
-	@go run main.go schema
+	@go run ./cmd/gitspork schema
 
 .PHONY: build
 build: ## Builds gitspork to dist/gitspork and builds Docker image tagged gitspork:local
 	@mkdir -p dist dist/.docker-build
-	@go build -o dist/gitspork .
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork .
+	@go build -o dist/gitspork ./cmd/gitspork
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/.docker-build/gitspork ./cmd/gitspork
 	@cp Dockerfile dist/.docker-build/Dockerfile
 	@docker build -t gitspork:local dist/.docker-build/
 	@rm -rf dist/.docker-build

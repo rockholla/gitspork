@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rockholla/gitspork/internal/config"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // IntegratorDownstreamOwned will process a list of files to be managed as owned by the downstream gitspork repo, just initially bootstrapped by the upstream
@@ -18,7 +18,7 @@ var _ Integrator[config.OwnedEntry] = (*IntegratorDownstreamOwned)(nil)
 // applying rename entries' destination resolution. A file is only copied when
 // its downstream destination does not already exist — the downstream owns it
 // thereafter.
-func (i *IntegratorDownstreamOwned) Integrate(entries []config.OwnedEntry, upstreamPath string, downstreamPath string, logger types.Logger) error {
+func (i *IntegratorDownstreamOwned) Integrate(entries []config.OwnedEntry, upstreamPath string, downstreamPath string, logger sdktypes.Logger) error {
 	for _, entry := range entries {
 		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
 		if err != nil {

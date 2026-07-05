@@ -1,4 +1,4 @@
-package types
+package sdktypes
 
 import "errors"
 

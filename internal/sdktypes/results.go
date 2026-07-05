@@ -1,4 +1,4 @@
-package types
+package sdktypes
 
 // IntegrateResult is the structural return value of Integrate and IntegrateLocal.
 // It records what was successfully integrated (in order); on partial failure

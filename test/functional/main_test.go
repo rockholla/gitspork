@@ -42,7 +42,7 @@ func buildBinary(repoRoot string) string {
 		panic("cannot create temp dir for binary: " + err.Error())
 	}
 	out := filepath.Join(dir, "gitspork")
-	cmd := exec.Command("go", "build", "-o", out, ".")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/gitspork")
 	cmd.Dir = repoRoot
 	if b, err := cmd.CombinedOutput(); err != nil {
 		panic("go build failed:\n" + string(b))
@@ -59,7 +59,7 @@ func buildDockerImageForTests(repoRoot string) {
 		panic("cannot create temp dir for docker build context: " + err.Error())
 	}
 	binaryPath := filepath.Join(dir, "gitspork")
-	buildCmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	buildCmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/gitspork")
 	buildCmd.Dir = repoRoot
 	buildCmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0")
 	if b, err := buildCmd.CombinedOutput(); err != nil {

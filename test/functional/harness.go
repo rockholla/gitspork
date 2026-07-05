@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	gogit "github.com/go-git/go-git/v6"
-	"github.com/rockholla/gitspork/internal/testharness"
+	"github.com/rockholla/gitspork/v2/internal/testharness"
 )
 
 type Runner interface {

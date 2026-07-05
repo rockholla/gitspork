@@ -3,14 +3,14 @@ package integrate
 import (
 	"fmt"
 
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // DriftCheckRequest is the internal request shape used by drift-check
 // re-integration. External SDK consumers should use Integrate; DriftCheckRequest
 // is a package-integrate contract intended only for internal/drift.
 type DriftCheckRequest struct {
-	Logger             types.Logger
+	Logger             sdktypes.Logger
 	DownstreamRepoPath string
 	UpstreamURL        string
 	UpstreamSubpath    string
@@ -24,9 +24,9 @@ type DriftCheckRequest struct {
 // commit and then diff against HEAD.
 func IntegrateForDriftCheck(req *DriftCheckRequest) error {
 	if req.Logger == nil {
-		req.Logger = types.NoopLogger()
+		req.Logger = sdktypes.NoopLogger()
 	}
-	upstream := types.UpstreamSpec{
+	upstream := sdktypes.UpstreamSpec{
 		URL:     req.UpstreamURL,
 		Subpath: req.UpstreamSubpath,
 		Token:   req.UpstreamToken,

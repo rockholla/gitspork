@@ -1,6 +1,6 @@
 // Package logutil provides gitspork's concrete Logger implementation used by
-// the CLI binary. It satisfies internal/types.Logger. SDK consumers can pass
-// this or any other types.Logger implementation (or nil for silent).
+// the CLI binary. It satisfies internal/sdktypes.Logger. SDK consumers can pass
+// this or any other sdktypes.Logger implementation (or nil for silent).
 package logutil
 
 import (
@@ -9,11 +9,11 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // Logger writes log/error messages to stdout/stderr with ANSI color when
-// stdout is a TTY. Its Log and Error methods satisfy types.Logger; Fatal
+// stdout is a TTY. Its Log and Error methods satisfy sdktypes.Logger; Fatal
 // stays concrete because it terminates the process and isn't needed by SDK
 // consumers.
 type Logger struct {
@@ -21,8 +21,8 @@ type Logger struct {
 	errorLogger   *log.Logger
 }
 
-// Compile-time assertion that Logger satisfies types.Logger.
-var _ types.Logger = (*Logger)(nil)
+// Compile-time assertion that Logger satisfies sdktypes.Logger.
+var _ sdktypes.Logger = (*Logger)(nil)
 
 // New returns a Logger configured for the CLI.
 func New() *Logger {

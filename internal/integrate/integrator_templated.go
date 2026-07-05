@@ -11,9 +11,9 @@ import (
 	"text/template"
 
 	"dario.cat/mergo"
-	"github.com/rockholla/gitspork/internal/config"
-	inputpkg "github.com/rockholla/gitspork/internal/input"
-	"github.com/rockholla/gitspork/internal/types"
+	"github.com/rockholla/gitspork/v2/internal/config"
+	inputpkg "github.com/rockholla/gitspork/v2/internal/input"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
@@ -27,7 +27,7 @@ type IntegratorTemplatedData struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger types.Logger) error {
+func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger) error {
 
 	// captured input values will support the input 'previous_input' type via this structure:
 	/*

@@ -1,4 +1,4 @@
-package types
+package sdktypes
 
 // IntegrateOptions configures a call to Integrate. Populate Upstreams (one
 // or more entries) for multi-upstream integration.

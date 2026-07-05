@@ -1,4 +1,4 @@
-package types
+package sdktypes
 
 // DownstreamState is the on-disk state stored at
 // .gitspork/downstream-state.json in the downstream repo. It records each

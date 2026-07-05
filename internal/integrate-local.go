@@ -11,6 +11,10 @@ import (
 func IntegrateLocal(opts *types.IntegrateLocalOptions) (*types.IntegrateResult, error) {
 	result := &types.IntegrateResult{}
 
+	if opts.Logger == nil {
+		opts.Logger = types.NopLogger()
+	}
+
 	// Normalize: single UpstreamPath -> UpstreamPaths slice.
 	if len(opts.UpstreamPaths) == 0 && opts.UpstreamPath != "" {
 		opts.UpstreamPaths = []string{opts.UpstreamPath}

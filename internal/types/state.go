@@ -6,9 +6,11 @@ type GitSporkDownstreamState struct {
 	MigrationsComplete []string                `json:"migrations_complete"`
 	Upstreams          []GitSporkUpstreamState `json:"upstreams,omitempty"`
 	// Deprecated: migrated to Upstreams on first load.
-	LastUpstreamRepoURL     string `json:"last_upstream_repo_url,omitempty"`
+	LastUpstreamRepoURL string `json:"last_upstream_repo_url,omitempty"`
+	// Deprecated: migrated to Upstreams on first load.
 	LastUpstreamRepoSubpath string `json:"last_upstream_repo_subpath,omitempty"`
-	LastUpstreamCommitHash  string `json:"last_upstream_commit_hash,omitempty"`
+	// Deprecated: migrated to Upstreams on first load.
+	LastUpstreamCommitHash string `json:"last_upstream_commit_hash,omitempty"`
 }
 
 // GitSporkUpstreamState records the last integration for a single upstream.

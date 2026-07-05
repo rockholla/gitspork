@@ -25,6 +25,10 @@ func CheckDrift(opts *types.CheckDriftOptions) (*types.DriftReport, error) {
 	report := &types.DriftReport{}
 	var err error
 
+	if opts.Logger == nil {
+		opts.Logger = types.NopLogger()
+	}
+
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {

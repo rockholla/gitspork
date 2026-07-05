@@ -115,6 +115,10 @@ func Integrate(opts *types.IntegrateOptions) (*types.IntegrateResult, error) {
 	var err error
 	result := &types.IntegrateResult{}
 
+	if opts.Logger == nil {
+		opts.Logger = types.NopLogger()
+	}
+
 	if opts.DownstreamRepoPath == "" {
 		opts.DownstreamRepoPath, err = os.Getwd()
 		if err != nil {

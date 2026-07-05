@@ -12,10 +12,12 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
+	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/gobwas/glob"
 	"github.com/goccy/go-yaml"
 	"github.com/rockholla/gitspork/v2/internal/config"
@@ -37,6 +39,8 @@ var (
 	structuredDataJSONExtensions []string = []string{".json"}
 	reSSHURL                               = regexp.MustCompile(`^git@([^:]+):(.+)$`)
 	reHTTPProto                            = regexp.MustCompile(`^https?://`)
+	// commitHashRe matches short (7-char) through full (40-char) git commit hashes.
+	commitHashRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 )
 
 // internalRequest carries wiring needed by integrateOneInternal that is not
@@ -394,24 +398,37 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		authMethod = agentAuth
 	}
 	cloneOptions := &git.CloneOptions{
-		URL:          upstreamURL,
-		SingleBranch: true,
-		Progress:     &logutil.LoggerWriter{L: req.Logger},
+		URL:      upstreamURL,
+		Progress: &logutil.LoggerWriter{L: req.Logger},
 	}
 	if authMethod != nil {
 		cloneOptions.Auth = authMethod
 	}
-	if upstream.Version != "" {
-		refName := fmt.Sprintf("refs/heads/%s", upstream.Version)
-		isTag, err := regexp.MatchString("^tags\\/", upstream.Version)
+
+	// Interpret upstream.Version:
+	//   1. Empty              → clone the default branch (SingleBranch).
+	//   2. Hex hash 7-40 chars → full-history clone; resolve + checkout below.
+	//   3. "tags/..." prefix   → refs/<v> (explicit tag, backward compat).
+	//   4. Otherwise           → probe remote; prefer tag, fall back to branch.
+	versionIsCommitHash := false
+	switch {
+	case upstream.Version == "":
+		cloneOptions.SingleBranch = true
+	case commitHashRe.MatchString(upstream.Version):
+		versionIsCommitHash = true
+		cloneOptions.SingleBranch = false
+	case strings.HasPrefix(upstream.Version, "tags/"):
+		cloneOptions.ReferenceName = plumbing.ReferenceName("refs/" + upstream.Version)
+		cloneOptions.SingleBranch = true
+	default:
+		resolvedRef, err := resolveUpstreamVersionRef(upstreamURL, authMethod, upstream.Version)
 		if err != nil {
-			return "", fmt.Errorf("error processing upstream gitspork repo version to use: %v", err)
+			return "", err
 		}
-		if isTag {
-			refName = fmt.Sprintf("refs/%s", upstream.Version)
-		}
-		cloneOptions.ReferenceName = plumbing.ReferenceName(refName)
+		cloneOptions.ReferenceName = resolvedRef
+		cloneOptions.SingleBranch = true
 	}
+
 	if req.upstreamCommit != "" || req.prevUpstreamCommitHash != "" {
 		// need full history to checkout a specific commit
 		cloneOptions.SingleBranch = false
@@ -432,11 +449,57 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		}
 		return req.upstreamCommit, nil
 	}
+	if versionIsCommitHash {
+		resolvedHash, err := repo.ResolveRevision(plumbing.Revision(upstream.Version))
+		if err != nil {
+			return "", fmt.Errorf("could not resolve upstream version %q as commit: %v", upstream.Version, err)
+		}
+		worktree, err := repo.Worktree()
+		if err != nil {
+			return "", fmt.Errorf("error getting worktree for commit checkout: %v", err)
+		}
+		if err := worktree.Checkout(&git.CheckoutOptions{Hash: *resolvedHash}); err != nil {
+			return "", fmt.Errorf("error checking out commit %s: %v", upstream.Version, err)
+		}
+		return resolvedHash.String(), nil
+	}
 	ref, err := repo.Head()
 	if err != nil {
 		return "", fmt.Errorf("error resolving HEAD commit from upstream clone: %v", err)
 	}
 	return ref.Hash().String(), nil
+}
+
+// resolveUpstreamVersionRef probes the remote to disambiguate a bare Version
+// value between a tag and a branch. Tags win over branches when both exist,
+// matching `git checkout`'s precedence for ambiguous refs.
+func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version string) (plumbing.ReferenceName, error) {
+	rem := git.NewRemote(memory.NewStorage(), &gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+	refs, err := rem.List(&git.ListOptions{Auth: auth})
+	if err != nil {
+		return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
+	}
+	tagRef := plumbing.ReferenceName("refs/tags/" + version)
+	branchRef := plumbing.ReferenceName("refs/heads/" + version)
+	var haveTag, haveBranch bool
+	for _, r := range refs {
+		switch r.Name() {
+		case tagRef:
+			haveTag = true
+		case branchRef:
+			haveBranch = true
+		}
+	}
+	if haveTag {
+		return tagRef, nil
+	}
+	if haveBranch {
+		return branchRef, nil
+	}
+	return "", fmt.Errorf("upstream version %q not found as branch or tag on remote", version)
 }
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {

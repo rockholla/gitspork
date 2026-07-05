@@ -177,6 +177,89 @@ func TestIntegrateForDriftCheck_honors_UpstreamCommit(t *testing.T) {
 		"IntegrateForDriftCheck with UpstreamCommit set to v1 should produce v1 content, not HEAD (v2)")
 }
 
+// upstreamWithTag builds on testharness.MinimalUpstream by creating a
+// lightweight tag pointing at HEAD. Returns the repo dir and the commit hash.
+func upstreamWithTag(t *testing.T, tagName string) (string, plumbing.Hash) {
+	t.Helper()
+	dir, hash := testharness.MinimalUpstream(t)
+	repo, err := gogit.PlainOpen(dir)
+	require.NoError(t, err)
+	_, err = repo.CreateTag(tagName, hash, nil)
+	require.NoError(t, err)
+	return dir, hash
+}
+
+func TestIntegrate_version_bareTag(t *testing.T) {
+	upstreamDir, upstreamHash := upstreamWithTag(t, "v1.0.0")
+	downstreamDir := testharness.EmptyDownstream(t)
+
+	result, err := Integrate(&sdktypes.IntegrateOptions{
+		Logger:             logutil.New(),
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "v1.0.0"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "bare tag name should resolve as a tag")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+func TestIntegrate_version_tagsPrefixed(t *testing.T) {
+	upstreamDir, upstreamHash := upstreamWithTag(t, "v1.0.0")
+	downstreamDir := testharness.EmptyDownstream(t)
+
+	result, err := Integrate(&sdktypes.IntegrateOptions{
+		Logger:             logutil.New(),
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "tags/v1.0.0"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "tags/ prefix should still work (backward compat)")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+func TestIntegrate_version_fullCommitHash(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+
+	result, err := Integrate(&sdktypes.IntegrateOptions{
+		Logger:             logutil.New(),
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: upstreamHash.String()}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "full commit hash should be resolvable")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+func TestIntegrate_version_shortCommitHash(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	shortHash := upstreamHash.String()[:7]
+
+	result, err := Integrate(&sdktypes.IntegrateOptions{
+		Logger:             logutil.New(),
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: shortHash}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "short commit hash should be resolvable")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash,
+		"short hash should resolve to the full commit hash in the result")
+}
+
+func TestIntegrate_version_unknownRef(t *testing.T) {
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+
+	_, err := Integrate(&sdktypes.IntegrateOptions{
+		Logger:             logutil.New(),
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "no-such-ref"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err, "unknown ref should fail with a clear error")
+	assert.Contains(t, err.Error(), "no-such-ref", "error should name the unresolved ref")
+}
+
 func TestIntegrate_returns_result_with_upstream_url_and_hash(t *testing.T) {
 	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)

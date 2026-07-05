@@ -7,7 +7,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/template"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
@@ -27,6 +26,19 @@ type IntegratorTemplatedData struct {
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
 func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger) error {
+	if err := migrateLegacyTemplatedCache(downstreamPath); err != nil {
+		return fmt.Errorf("error migrating legacy templated cache: %v", err)
+	}
+	existingCache, err := loadTemplatedInputs(downstreamPath)
+	if err != nil {
+		return fmt.Errorf("error loading templated inputs cache: %v", err)
+	}
+	// Nothing to do at all — no templated instructions and no lingering cache. Skip
+	// creating an empty cache file and .gitattributes on downstreams that don't use
+	// templated integration.
+	if len(templatedInstructions) == 0 && len(existingCache) == 0 {
+		return nil
+	}
 
 	// captured input values will support the input 'previous_input' type via this structure:
 	/*
@@ -38,24 +50,20 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 	*/
 	capturedInputValues := map[string]map[string]string{}
+	// nextCache is built up as we process each instruction and written at the end.
+	// Destinations no longer present in templatedInstructions are pruned by construction.
+	nextCache := map[string]map[string]string{}
+
 	for _, templatedInstruction := range templatedInstructions {
 		logger.Log("📄 executing templated instruction for rendering upstream template %s to downstream location %s", templatedInstruction.Template, templatedInstruction.Destination)
 
 		capturedInputValues[templatedInstruction.Template] = map[string]string{}
-		cachedTemplateDataFilePath := filepath.Join(downstreamPath, filepath.Join(fmt.Sprintf(".%s", config.GitSpork), fmt.Sprintf("%s.json", templatedInstruction.Destination)))
 		templateData := IntegratorTemplatedData{
 			Inputs: map[string]string{},
 		}
-		if _, err := os.Stat(cachedTemplateDataFilePath); err == nil {
-			// cached data path is there, we'll try to load it into inputs to pre-populate from pre-existing awareness of this data
-			jsonData, err := os.ReadFile(cachedTemplateDataFilePath)
-			if err != nil {
-				return fmt.Errorf("error reading cached template data file at %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
-			}
-			err = json.Unmarshal(jsonData, &templateData)
-			if err != nil {
-				return fmt.Errorf("error parsing cached template data file at %s into inputs: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
-			}
+		if cached, ok := existingCache[templatedInstruction.Destination]; ok {
+			// seed template inputs from consolidated cache so users aren't re-prompted
+			maps.Copy(templateData.Inputs, cached)
 			maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 		}
 		// we'll begin by gathering inputs to start
@@ -164,18 +172,14 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 			}
 		}
 
-		// caching input data in the path for later runs, will respect this data moving forward unless instructed to re-prompt
-		templateDataBytes, err := json.Marshal(templateData)
-		if err != nil {
-			return fmt.Errorf("error marshaling template data: %v", err)
-		}
-		if err := os.MkdirAll(filepath.Dir(cachedTemplateDataFilePath), 0755); err != nil {
-			return fmt.Errorf("error creating template data cache directory at %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
-		}
-		if err := os.WriteFile(cachedTemplateDataFilePath, templateDataBytes, 0644); err != nil {
-			return fmt.Errorf("error writing cached templated data to %s: %v", strings.TrimLeft(strings.TrimLeft(cachedTemplateDataFilePath, downstreamPath), "/"), err)
-		}
+		nextCache[templatedInstruction.Destination] = templateData.Inputs
 	}
 
+	if err := saveTemplatedInputs(downstreamPath, nextCache); err != nil {
+		return fmt.Errorf("error writing templated inputs cache: %v", err)
+	}
+	if err := ensureGitsporkAttributes(downstreamPath); err != nil {
+		return fmt.Errorf("error ensuring .gitattributes entry for templated cache: %v", err)
+	}
 	return nil
 }

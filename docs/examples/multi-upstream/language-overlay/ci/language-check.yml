@@ -1,0 +1,2 @@
+# Language-specific CI: Go vet / test workflow layered on the platform base.
+name: language-check

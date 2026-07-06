@@ -1,0 +1,4 @@
+log_level: debug
+retry_count: 5
+tags:
+  language: go

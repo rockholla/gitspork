@@ -30,6 +30,10 @@ func ComputeUpstreamMv(configPath, oldPath, newPath string) (*GitSporkConfig, []
 // ComputeUpstreamMvFromConfig applies a move rewrite to an already-parsed config.
 // Used to chain multiple source rewrites without re-reading the file between each.
 func ComputeUpstreamMvFromConfig(config *GitSporkConfig, oldPath, newPath string) (*GitSporkConfig, []string, error) {
+	// Shell tab-completion routinely appends "/" to directory arguments; strip it
+	// so the pattern-prefix comparisons below match as the user intends.
+	oldPath = strings.TrimSuffix(oldPath, "/")
+	newPath = strings.TrimSuffix(newPath, "/")
 	var warnings []string
 
 	rewritePatterns := func(patterns []string) []string {
@@ -130,6 +134,9 @@ func ComputeUpstreamRm(configPath, path string, recursive bool) (*GitSporkConfig
 // ComputeUpstreamRmFromConfig applies a removal to an already-parsed config.
 // Used to chain multiple path removals without re-reading the file between each.
 func ComputeUpstreamRmFromConfig(config *GitSporkConfig, path string, recursive bool) (*GitSporkConfig, []string, error) {
+	// Shell tab-completion routinely appends "/" to directory arguments; strip it
+	// so the pattern-prefix comparisons below match as the user intends.
+	path = strings.TrimSuffix(path, "/")
 	var warnings []string
 
 	filterPatterns := func(patterns []string) []string {

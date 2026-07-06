@@ -2,6 +2,7 @@ package integrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,7 +40,15 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, cfg 
 
 	prevCommit, err := repo.CommitObject(plumbing.NewHash(prevHash))
 	if err != nil {
-		return delta, nil // prevHash not in history — skip delta silently
+		// Only ErrObjectNotFound is legitimately "prev commit no longer in
+		// upstream history" (upstream rebased or history rewrote). Any other
+		// error — I/O failure on the packfile, permission denied, corrupted
+		// object — must surface so users don't get a silent no-op delta on a
+		// broken clone.
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return delta, nil
+		}
+		return delta, fmt.Errorf("error resolving prev upstream commit %s: %v", prevHash, err)
 	}
 	newCommit, err := repo.CommitObject(plumbing.NewHash(newHash))
 	if err != nil {

@@ -14,6 +14,13 @@ import (
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
+// requestInputFn is the templated integrator's indirection to the interactive
+// prompt package. In production it points at inputpkg.RequestInput; tests can
+// swap it (with a t.Cleanup restore) to observe or drive prompt behaviour
+// without a real terminal. Package-private and unexported — SDK consumers
+// cannot see it, so it isn't part of the public surface.
+var requestInputFn = inputpkg.RequestInput
+
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
 type IntegratorTemplated struct{}
 
@@ -88,7 +95,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 						Type:   inputpkg.SingleValue,
 						Prompt: input.Prompt,
 					}
-					requestInputResult, err := inputpkg.RequestInput(requestInputOpts)
+					requestInputResult, err := requestInputFn(requestInputOpts)
 					if err != nil {
 						return fmt.Errorf("error setting up prompt input: %v", err)
 					}

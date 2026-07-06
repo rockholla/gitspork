@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
+	inputpkg "github.com/rockholla/gitspork/v2/internal/input"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,6 +136,123 @@ func TestIntegratorTemplated_noopWithEmptyInstructionsAndNoCache(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "must not create .gitspork/ when there's nothing templated to cache")
 	_, err = os.Stat(filepath.Join(downstreamDir, ".gitattributes"))
 	assert.True(t, os.IsNotExist(err), "must not create .gitattributes on a downstream with no templated integration")
+}
+
+// stubRequestInput replaces requestInputFn with a counting stub for the
+// duration of a test. Returns a pointer to the call count and the resolved
+// values captured per call so tests can assert both invocation count and
+// argument shape. Restores the original via t.Cleanup.
+func stubRequestInput(t *testing.T, returnValue string) *stubCounter {
+	t.Helper()
+	orig := requestInputFn
+	sc := &stubCounter{returnValue: returnValue}
+	requestInputFn = func(opts *inputpkg.RequestInputOptions) (*inputpkg.RequestInputResult, error) {
+		sc.calls++
+		sc.prompts = append(sc.prompts, opts.Prompt)
+		return &inputpkg.RequestInputResult{StringValue: sc.returnValue}, nil
+	}
+	t.Cleanup(func() { requestInputFn = orig })
+	return sc
+}
+
+type stubCounter struct {
+	calls       int
+	prompts     []string
+	returnValue string
+}
+
+// TestIntegratorTemplated_forceRePrompt covers the four cells of the
+// (cached-value present) × (forceRePrompt true|false) matrix on a prompt
+// input. The seam swap on requestInputFn is what makes this testable — a
+// production regression that stopped honouring forceRePrompt would either
+// keep the stub un-called (if the seam were bypassed) or call it in a case
+// where cached content should have won.
+func TestIntegratorTemplated_forceRePrompt(t *testing.T) {
+	setupPromptFixture := func(t *testing.T, seedCache bool, cachedValue string) (string, string) {
+		t.Helper()
+		upstreamDir := t.TempDir()
+		downstreamDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+			[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+		if seedCache {
+			require.NoError(t, saveTemplatedInputs(downstreamDir, map[string]map[string]string{
+				"rendered.txt": {"name": cachedValue},
+			}))
+		}
+		return upstreamDir, downstreamDir
+	}
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", Prompt: "what is your name?"}},
+	}}
+
+	t.Run("no cache, forceRePrompt=false: prompts", func(t *testing.T) {
+		// Baseline: without a cached value, the prompt runs regardless of
+		// forceRePrompt.
+		upstream, downstream := setupPromptFixture(t, false, "")
+		stub := stubRequestInput(t, "fresh-value")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger()))
+		assert.Equal(t, 1, stub.calls, "empty cache must trigger the prompt exactly once")
+		got, err := os.ReadFile(filepath.Join(downstream, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Hello, fresh-value!", string(got))
+	})
+
+	t.Run("cached value, forceRePrompt=false: skips prompt", func(t *testing.T) {
+		// The whole point of the cache — a re-integrate must NOT re-prompt
+		// the user for values they've already given. A stub that gets called
+		// here indicates a broken cache path.
+		upstream, downstream := setupPromptFixture(t, true, "cached-value")
+		stub := stubRequestInput(t, "SHOULD-NEVER-BE-USED")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger()))
+		assert.Equal(t, 0, stub.calls,
+			"cached value must satisfy the prompt input — a call here indicates a broken cache lookup or accidental re-prompt")
+		got, err := os.ReadFile(filepath.Join(downstream, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Hello, cached-value!", string(got),
+			"rendered content must come from the cache, not the stub")
+	})
+
+	t.Run("cached value, forceRePrompt=true: re-prompts and replaces", func(t *testing.T) {
+		// The feature under test: users explicitly opt into re-prompting to
+		// change previously-captured input values (e.g. renaming a project).
+		// The prompt MUST run, and the returned value MUST replace the cache
+		// entry for subsequent runs.
+		upstream, downstream := setupPromptFixture(t, true, "cached-value")
+		stub := stubRequestInput(t, "re-prompted-value")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger()))
+
+		assert.Equal(t, 1, stub.calls,
+			"forceRePrompt=true must trigger the prompt exactly once even when a cached value exists")
+		assert.Equal(t, []string{"what is your name?"}, stub.prompts,
+			"the prompt string configured on the input must be passed through")
+
+		got, err := os.ReadFile(filepath.Join(downstream, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Hello, re-prompted-value!", string(got),
+			"the re-prompted value must win over the cached one for the render")
+
+		// And the new value must be written back to the cache so subsequent
+		// runs without forceRePrompt see the new value.
+		nextCache, err := loadTemplatedInputs(downstream)
+		require.NoError(t, err)
+		assert.Equal(t, "re-prompted-value", nextCache["rendered.txt"]["name"],
+			"post-forceRePrompt cache must carry the newly-prompted value forward")
+	})
+
+	t.Run("no cache, forceRePrompt=true: prompts (same as baseline)", func(t *testing.T) {
+		// forceRePrompt=true with no cache is not architecturally different
+		// from the baseline — the condition is (cached==empty || forceRePrompt)
+		// so either path triggers the prompt. This subtest exists to lock the
+		// invariant that the flag isn't accidentally short-circuiting away
+		// the prompt for fresh installs.
+		upstream, downstream := setupPromptFixture(t, false, "")
+		stub := stubRequestInput(t, "value")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger()))
+		assert.Equal(t, 1, stub.calls)
+	})
 }
 
 // TestIntegratorTemplated_previousInput_happyPath verifies the cross-template

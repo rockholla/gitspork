@@ -212,6 +212,50 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Contains(t, delta.Deletions, "out/foo.txt",
 			"trailing-slash subpath must not prevent nested .gitspork.yml discovery")
 	})
+
+	// path.Clean-backed normalization catches more than a naive TrimSuffix would;
+	// lock these adjacent shapes down as regressions too.
+	t.Run("upstreamSubpath with ./ prefix still strips", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "./upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"./ prefix on subpath must normalize away")
+	})
+
+	t.Run("upstreamSubpath with doubled slashes still strips", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "up/stream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "up//stream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"doubled slashes in subpath must be collapsed")
+	})
+
+	t.Run("upstreamSubpath with interior .. resolves", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "sibling/../upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"interior .. in subpath must be resolved before prefix comparison")
+	})
 }
 
 func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {

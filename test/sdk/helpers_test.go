@@ -32,6 +32,13 @@ func minimalUpstreamInSubpath(t *testing.T, subpath string) (string, plumbing.Ha
 	return testharness.MinimalUpstreamInSubpath(t, subpath)
 }
 
+// minimalUpstreamWithTag builds a local upstream git repo with a lightweight
+// tag pointing at HEAD. Used to exercise Version=<tag> resolution paths.
+func minimalUpstreamWithTag(t *testing.T, tagName string) (string, plumbing.Hash) {
+	t.Helper()
+	return testharness.MinimalUpstreamWithTag(t, tagName)
+}
+
 // emptyDownstream returns a fresh non-bare local downstream git repo dir.
 func emptyDownstream(t *testing.T) string {
 	t.Helper()

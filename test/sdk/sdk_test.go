@@ -5,6 +5,7 @@ package sdk_test
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 
@@ -421,6 +422,97 @@ func TestCheckDrift_overrideNormalizesToStateEntry(t *testing.T) {
 	require.NoError(t, err,
 		"URL-shape-varying override must normalize to the state entry and run cleanly")
 	assert.False(t, report.HasDrift)
+}
+
+// TestIntegrate_partialFailure_populatesSuccessfulUpstreams locks the
+// documented contract at gitspork.go:36-38: on partial failure, the
+// upstreams that DID succeed before the failure remain in result.Upstreams
+// alongside the returned error. SDK consumers wiring retry / cleanup logic
+// against a partial-failure result need this to be reliable.
+func TestIntegrate_partialFailure_populatesSuccessfulUpstreams(t *testing.T) {
+	upstreamA, hashA := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	// Second upstream URL points at a directory that isn't a git repo — the
+	// clone step in integrateOneInternal fails, aborting the loop mid-way.
+	bogusURL := "file:///tmp/gitspork-never-cloned-partial-failure-test"
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams: []gitspork.UpstreamSpec{
+			{URL: "file://" + upstreamA, Version: "main"},
+			{URL: bogusURL, Version: "main"},
+		},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err, "the bogus second upstream must surface as an error")
+	require.NotNil(t, result, "*IntegrateResult must be non-nil even on error — gitspork.go:37-38")
+
+	require.Len(t, result.Upstreams, 1,
+		"the first (successful) upstream must remain in result.Upstreams after the second one fails")
+	assert.Equal(t, "file://"+upstreamA, result.Upstreams[0].URL,
+		"the recorded IntegratedUpstream must reflect the first upstream, not the failing one")
+	assert.Equal(t, hashA.String(), result.Upstreams[0].CommitHash,
+		"CommitHash of the successful integration must be populated")
+
+	// The failing upstream is NOT recorded — only successes make it into
+	// result.Upstreams (see integrate.go:145-148).
+	for _, u := range result.Upstreams {
+		assert.NotEqual(t, bogusURL, u.URL, "failed upstream must not appear in result.Upstreams")
+	}
+}
+
+// TestIntegrateLocal_partialFailure_populatesSuccessfulUpstreams mirrors the
+// same contract for IntegrateLocal — see integrate_local.go:23-37.
+func TestIntegrateLocal_partialFailure_populatesSuccessfulUpstreams(t *testing.T) {
+	upstreamA, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	// Second path does not exist — getGitSporkConfig fails, aborting the loop.
+	bogusPath := filepath.Join(t.TempDir(), "does-not-exist")
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamPaths:  []string{upstreamA, bogusPath},
+		DownstreamPath: downstreamDir,
+	})
+	require.Error(t, err, "second (nonexistent) upstream path must fail")
+	require.NotNil(t, result)
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamA, result.Upstreams[0].URL,
+		"IntegrateLocal records the local path in URL — see IntegratedUpstream godoc")
+	assert.Empty(t, result.Upstreams[0].CommitHash,
+		"IntegrateLocal has no commit-hash concept — the field must be empty on local integrations")
+}
+
+// TestIntegrate_earlyError_returnsNonNilResult exercises the docs contract
+// (gitspork.go:37-38) that *IntegrateResult is ALWAYS non-nil, even on the
+// earliest error paths where no upstream ever runs. Consumers don't need to
+// nil-check before inspecting Upstreams.
+func TestIntegrate_earlyError_returnsNonNilResult(t *testing.T) {
+	downstreamDir := emptyDownstream(t)
+
+	// Empty Upstreams — the earliest post-validation error path.
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          nil,
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err)
+	require.NotNil(t, result, "*IntegrateResult must be non-nil even when no upstream ever ran")
+	assert.Empty(t, result.Upstreams,
+		"an errored-early integrate must not fabricate entries in Upstreams")
+}
+
+// TestIntegrateLocal_earlyError_returnsNonNilResult: same contract for the
+// local variant. Empty UpstreamPaths hits the earliest validation error.
+func TestIntegrateLocal_earlyError_returnsNonNilResult(t *testing.T) {
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamPaths:  nil,
+		DownstreamPath: downstreamDir,
+	})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Empty(t, result.Upstreams)
 }
 
 // Error path: no upstreams in state and no override → error mentions integrate

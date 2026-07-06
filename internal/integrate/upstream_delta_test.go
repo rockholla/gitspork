@@ -159,6 +159,103 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Equal(t, "out/old.txt", delta.Renames[0].OldPath)
 		assert.Equal(t, "out/new.txt", delta.Renames[0].NewPath)
 	})
+
+	// UpstreamSpec.Subpath may be supplied by users with trailing or leading
+	// slashes (e.g. "upstream/"). Pre-normalization such inputs made
+	// stripSubpath build a "upstream//" prefix that matched nothing, silently
+	// dropping every delta from the propagation.
+	t.Run("upstreamSubpath with trailing slash still strips prefix", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "upstream/")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"trailing-slash subpath must still strip the prefix so deletions propagate")
+	})
+
+	t.Run("upstreamSubpath with leading slash still strips prefix", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "/upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"leading-slash subpath must still strip the prefix so deletions propagate")
+	})
+
+	t.Run("upstreamSubpath with trailing slash still finds nested .gitspork.yml for templated delta", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		prevCfg := &config.GitSporkConfig{
+			Templated: []config.GitSporkConfigTemplated{
+				{Template: "tmpl/foo.go.tmpl", Destination: "out/foo.txt"},
+			},
+		}
+		newCfg := &config.GitSporkConfig{}
+		// Config lives at upstream/.gitspork.yml; readConfigFromCommit must not
+		// paste an extra "/" when the caller passed "upstream/" as the subpath.
+		repo, prevHash, newHash := makeUpstreamWithTemplatedConfigChangeInSubpath(t, dir, "upstream", prevCfg, newCfg)
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, newCfg, "upstream/")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "out/foo.txt",
+			"trailing-slash subpath must not prevent nested .gitspork.yml discovery")
+	})
+
+	// path.Clean-backed normalization catches more than a naive TrimSuffix would;
+	// lock these adjacent shapes down as regressions too.
+	t.Run("upstreamSubpath with ./ prefix still strips", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "./upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"./ prefix on subpath must normalize away")
+	})
+
+	t.Run("upstreamSubpath with doubled slashes still strips", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "up/stream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "up//stream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"doubled slashes in subpath must be collapsed")
+	})
+
+	t.Run("upstreamSubpath with interior .. resolves", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "upstream/docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "sibling/../upstream")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "docs/guide.md",
+			"interior .. in subpath must be resolved before prefix comparison")
+	})
 }
 
 func Test_buildManagedMatchers_resolvesRenameDest(t *testing.T) {
@@ -306,6 +403,38 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
 		assert.True(t, os.IsNotExist(err))
 	})
+}
+
+// makeUpstreamWithTemplatedConfigChangeInSubpath is a variant that places
+// .gitspork.yml under <dir>/<subpath>/.gitspork.yml instead of at the repo root.
+func makeUpstreamWithTemplatedConfigChangeInSubpath(t *testing.T, dir, subpath string, prevCfg, newCfg *config.GitSporkConfig) (*gogit.Repository, string, string) {
+	t.Helper()
+	repo, err := gogit.PlainInit(dir, false,
+		gogit.WithDefaultBranch(plumbing.NewBranchReferenceName("main")),
+	)
+	require.NoError(t, err)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, subpath), 0755))
+	configPath := filepath.Join(dir, subpath, config.GitSporkConfigFileName)
+
+	b, err := yaml.Marshal(prevCfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, b, 0644))
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	prev, err := wt.Commit("add subpath config", &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	b, err = yaml.Marshal(newCfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, b, 0644))
+	require.NoError(t, wt.AddWithOptions(&gogit.AddOptions{All: true}))
+	next, err := wt.Commit("update subpath config", &gogit.CommitOptions{Author: sig})
+	require.NoError(t, err)
+
+	return repo, prev.String(), next.String()
 }
 
 func makeUpstreamWithTemplatedConfigChange(t *testing.T, dir string, prevCfg, newCfg *config.GitSporkConfig) (*gogit.Repository, string, string) {

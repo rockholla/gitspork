@@ -27,6 +27,11 @@ type upstreamDelta struct {
 }
 
 func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, cfg *config.GitSporkConfig, upstreamSubpath string) (*upstreamDelta, error) {
+	// UpstreamSpec.Subpath is user-supplied and often carries slashes or "."
+	// segments that shell tab-completion and human error routinely produce
+	// ("infra/", "/infra", "./infra", "infra//"). Normalize once here so
+	// downstream helpers see a canonical forward-slash logical path.
+	upstreamSubpath = config.NormalizeUpstreamPath(upstreamSubpath)
 	delta := &upstreamDelta{}
 	if prevHash == "" {
 		return delta, nil
@@ -160,15 +165,19 @@ func resolveManagedDest(srcPath string, matchers []managedMatcher) (string, bool
 	return "", false
 }
 
-func stripSubpath(path, subpath string) string {
+func stripSubpath(p, subpath string) string {
+	// Defense-in-depth: normalize even though computeUpstreamDelta already
+	// canonicalizes its input, so a future caller can't silently break the
+	// prefix comparison by passing "infra/", "./infra", "infra//sub", etc.
+	subpath = config.NormalizeUpstreamPath(subpath)
 	if subpath == "" {
-		return path
+		return p
 	}
 	prefix := subpath + "/"
-	if len(path) > len(prefix) && path[:len(prefix)] == prefix {
-		return path[len(prefix):]
+	if len(p) > len(prefix) && p[:len(prefix)] == prefix {
+		return p[len(prefix):]
 	}
-	return path
+	return p
 }
 
 func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSubpath string, delta *upstreamDelta) error {
@@ -205,6 +214,9 @@ func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSub
 }
 
 func readConfigFromCommit(commit *object.Commit, subpath string) (*config.GitSporkConfig, error) {
+	// Defense-in-depth: normalize so "foo/", "/foo", "./foo", "foo//sub" all
+	// resolve to the same canonical prefix before we build the config path.
+	subpath = config.NormalizeUpstreamPath(subpath)
 	tree, err := commit.Tree()
 	if err != nil {
 		return &config.GitSporkConfig{}, err

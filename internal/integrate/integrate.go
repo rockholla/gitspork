@@ -650,11 +650,21 @@ func writeStructuredData(data *node, structuredDataType string, toPath string) e
 
 func ensureDownstreamMetaDir(downstreamRepoPath string) (string, error) {
 	gitSporkMetaDir := filepath.Join(downstreamRepoPath, gitSporkMetaDirName)
-	if pathInfo, err := os.Stat(gitSporkMetaDir); os.IsNotExist(err) || !pathInfo.IsDir() {
-		os.RemoveAll(gitSporkMetaDir) // remove it if it exists, since it is not a dir
-		if err := os.Mkdir(gitSporkMetaDir, 0755); err != nil {
-			return gitSporkMetaDir, err
+	pathInfo, err := os.Stat(gitSporkMetaDir)
+	switch {
+	case err == nil && pathInfo.IsDir():
+		return gitSporkMetaDir, nil
+	case err == nil:
+		// exists but is not a directory (stray file/symlink); replace it
+		if rmErr := os.RemoveAll(gitSporkMetaDir); rmErr != nil {
+			return gitSporkMetaDir, rmErr
 		}
+	case !os.IsNotExist(err):
+		// permission-denied, EIO, symlink-loop, etc. — surface, don't nil-deref
+		return gitSporkMetaDir, err
+	}
+	if err := os.Mkdir(gitSporkMetaDir, 0755); err != nil {
+		return gitSporkMetaDir, err
 	}
 	return gitSporkMetaDir, nil
 }

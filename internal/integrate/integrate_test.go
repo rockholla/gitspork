@@ -101,6 +101,21 @@ func Test_NormalizeUpstreamURL(t *testing.T) {
 			NormalizeUpstreamURL("https://github.com/org/repo.git", ""),
 			NormalizeUpstreamURL("https://github.com/org/repo.git", "/"))
 	})
+
+	// URL host+path is case-insensitive on the major forges, but subpath is a
+	// filesystem path (case-sensitive on Linux). Case-varying subpaths must
+	// stay distinct keys so two upstreams with subpaths that differ only in
+	// case don't collide into one state entry.
+	t.Run("URL host case is normalized but subpath case is preserved", func(t *testing.T) {
+		assert.Equal(t,
+			NormalizeUpstreamURL("https://GitHub.com/Org/Repo.git", "infra"),
+			NormalizeUpstreamURL("https://github.com/org/repo.git", "infra"),
+			"URL portion should be case-insensitive")
+		assert.NotEqual(t,
+			NormalizeUpstreamURL("https://github.com/org/repo.git", "Infra"),
+			NormalizeUpstreamURL("https://github.com/org/repo.git", "infra"),
+			"subpath case must be preserved so case-distinct directories stay distinct keys")
+	})
 }
 
 func Test_UpsertUpstreamState_newEntry(t *testing.T) {

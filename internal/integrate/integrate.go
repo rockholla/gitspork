@@ -87,11 +87,17 @@ func NormalizeUpstreamURL(rawURL string, subpath string) string {
 	u = reHTTPProto.ReplaceAllString(u, "")
 	// strip trailing .git
 	u = strings.TrimSuffix(u, ".git")
+	// Lowercase the URL portion only. Git host+org+repo are case-insensitive on
+	// the major forges, so "GitHub.com/Org/Repo" and "github.com/org/repo"
+	// should be one entry. Subpath, on the other hand, is a path inside a
+	// case-sensitive filesystem — "infra" and "Infra" are legitimately
+	// distinct directories on Linux and must not collapse into the same key.
+	u = strings.ToLower(u)
 	subpath = config.NormalizeUpstreamPath(subpath)
 	if subpath != "" {
 		u = u + "::" + subpath
 	}
-	return strings.ToLower(u)
+	return u
 }
 
 // UpsertUpstreamState inserts entry into state.Upstreams, replacing any existing

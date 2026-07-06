@@ -28,6 +28,115 @@ func TestIntegrate_singleUpstream(t *testing.T) {
 	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
 }
 
+// integrate: Version="" resolves to the default branch (HEAD)
+//
+// The empty-Version branch is explicitly documented in the code
+// (`cloneOptions.SingleBranch = true`, integrate.go:432) and in the field's
+// godoc but had no SDK-tier assertion. Empty means "clone the default
+// branch"; the result's CommitHash should be the HEAD commit.
+func TestIntegrate_version_empty_resolvesToDefaultBranch(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir /* Version intentionally omitted */}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "empty Version should clone the default branch")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+// integrate: Version=<bare-tag> resolves to the tag
+//
+// The bare-tag branch probes the remote for tag vs branch precedence
+// (integrate.go:439-445). Tag wins over a same-named branch — the internal
+// test Test_Integrate_bare_tag covers that at the package boundary; this
+// pins the same contract at the SDK boundary so an SDK consumer using
+// Version="v1.2.3" gets a reproducible result.
+func TestIntegrate_version_bareTag(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstreamWithTag(t, "v1.0.0")
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "v1.0.0"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "bare tag name should resolve as a tag")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+// integrate: Version="tags/<name>" is the explicit-tag form (backward-compat
+// with pre-bare-tag callers) — integrate.go:436-438.
+func TestIntegrate_version_tagsPrefixed(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstreamWithTag(t, "v1.0.0")
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "tags/v1.0.0"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "tags/ prefix should resolve as a tag (backward compat)")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+// integrate: Version=<full-40-char-commit-hash> pins to that commit
+//
+// commitHashRe matches 7-40 hex chars (integrate.go:42). The full-hash case
+// triggers a full-history clone + explicit worktree checkout at the given
+// hash (integrate.go:433-435 + 468-480).
+func TestIntegrate_version_fullCommitHash(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: upstreamHash.String()}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "full commit hash should be resolvable")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+}
+
+// integrate: Version=<7-char-short-commit-hash> resolves to full hash
+//
+// The result's CommitHash is what state persistence uses to match on
+// subsequent integrates. A short hash must resolve to the FULL 40-char hash
+// in the returned IntegratedUpstream so state lookups stay stable across
+// runs, regardless of how the caller specified the pin.
+func TestIntegrate_version_shortCommitHash(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+	shortHash := upstreamHash.String()[:7]
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: shortHash}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "short commit hash should be resolvable")
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash,
+		"short hash should resolve to the full 40-char commit hash in the result — state persistence relies on this")
+	assert.Len(t, result.Upstreams[0].CommitHash, 40,
+		"IntegratedUpstream.CommitHash must be 40 chars, not a short-hash echo")
+}
+
+// integrate: Version=<unknown> surfaces a clear error naming the ref
+func TestIntegrate_version_unknownRef_errorsWithRefName(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "no-such-ref"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no-such-ref",
+		"error must name the unresolved ref so the SDK consumer can act on it")
+}
+
 // integrate: subpath is round-tripped end-to-end
 //
 // Pins the multi-PR (#62, #64) subpath fix at the black-box SDK boundary:

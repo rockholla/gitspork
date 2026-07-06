@@ -112,6 +112,20 @@ func MinimalUpstream(t *testing.T) (string, plumbing.Hash) {
 	return dir, hash
 }
 
+// MinimalUpstreamWithTag builds on MinimalUpstream by creating a lightweight
+// tag pointing at HEAD. Callers use this to exercise Version=<tag> resolution
+// paths (bare tag name, "tags/" prefix form) without needing to reach into
+// go-git themselves.
+func MinimalUpstreamWithTag(t *testing.T, tagName string) (string, plumbing.Hash) {
+	t.Helper()
+	dir, hash := MinimalUpstream(t)
+	repo, err := gogit.PlainOpen(dir)
+	require.NoError(t, err)
+	_, err = repo.CreateTag(tagName, hash, nil)
+	require.NoError(t, err)
+	return dir, hash
+}
+
 // MinimalUpstreamInSubpath initialises a local upstream git repo whose
 // .gitspork.yml (and integratable content) sits under <dir>/<subpath>/ rather
 // than at the repo root. Also drops an unrelated marker file at the repo root

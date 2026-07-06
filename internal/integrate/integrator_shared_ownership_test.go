@@ -217,4 +217,52 @@ func TestIntegratorSharedOwnershipMerged(t *testing.T) {
 		assert.True(t, downstreamIdx < upstreamIdx,
 			"an upstream block not present in downstream should be appended after existing downstream content")
 	})
+
+	t.Run("downstream has more begin-markers than upstream: no panic, orphan block preserved", func(t *testing.T) {
+		// Upstream provides zero upstream-owned blocks (e.g. block was removed by upstream);
+		// downstream still carries a marker pair from a previous integration. This must not
+		// panic and the orphaned downstream block should be preserved verbatim so the user
+		// can reconcile — it has effectively transitioned to downstream ownership.
+		upstream := "regular upstream content\n"
+		downstream := "downstream head\n" +
+			beginMarker + "\norphan block content\n" + endMarker + "\n" +
+			"downstream tail\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "Makefile", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NotPanics(t, func() {
+			require.NoError(t, integrator.Integrate([]string{"Makefile"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+		})
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "Makefile"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "downstream head")
+		assert.Contains(t, string(got), "downstream tail")
+		assert.Contains(t, string(got), "orphan block content",
+			"content inside an unmatched downstream begin/end marker pair should be preserved (now downstream-owned)")
+		assert.Contains(t, string(got), beginMarker,
+			"the unmatched begin-marker itself should be preserved so the user can reconcile explicitly")
+	})
+
+	t.Run("downstream has second unmatched begin-marker after a matched one", func(t *testing.T) {
+		// Mixed case: first begin-marker in downstream matches the single upstream block;
+		// second begin-marker in downstream has nothing to match. Must not panic.
+		upstream := beginMarker + "\nupstream block\n" + endMarker + "\n"
+		downstream := beginMarker + "\nstale first block\n" + endMarker + "\n" +
+			"middle downstream line\n" +
+			beginMarker + "\norphan second block\n" + endMarker + "\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "Makefile", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NotPanics(t, func() {
+			require.NoError(t, integrator.Integrate([]string{"Makefile"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+		})
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "Makefile"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), "upstream block")
+		assert.NotContains(t, string(got), "stale first block")
+		assert.Contains(t, string(got), "middle downstream line")
+		assert.Contains(t, string(got), "orphan second block")
+	})
 }

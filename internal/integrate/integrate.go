@@ -87,11 +87,17 @@ func NormalizeUpstreamURL(rawURL string, subpath string) string {
 	u = reHTTPProto.ReplaceAllString(u, "")
 	// strip trailing .git
 	u = strings.TrimSuffix(u, ".git")
+	// Lowercase the URL portion only. Git host+org+repo are case-insensitive on
+	// the major forges, so "GitHub.com/Org/Repo" and "github.com/org/repo"
+	// should be one entry. Subpath, on the other hand, is a path inside a
+	// case-sensitive filesystem — "infra" and "Infra" are legitimately
+	// distinct directories on Linux and must not collapse into the same key.
+	u = strings.ToLower(u)
 	subpath = config.NormalizeUpstreamPath(subpath)
 	if subpath != "" {
 		u = u + "::" + subpath
 	}
-	return strings.ToLower(u)
+	return u
 }
 
 // UpsertUpstreamState inserts entry into state.Upstreams, replacing any existing
@@ -514,28 +520,27 @@ func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version st
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {
 	allFiles := []string{}
-	makeFileRelativePath := func(filePath string) (string, error) {
-		re, err := regexp.Compile(fmt.Sprintf("^%s%s", inDir, string(filepath.Separator)))
-		if err != nil {
-			return "", err
-		}
-		return re.ReplaceAllString(filePath, ""), nil
-	}
 	err := filepath.Walk(inDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
+		}
+		// filepath.Rel replaces an earlier regexp.Compile("^" + inDir + "/") /
+		// ReplaceAllString approach: the old version treated inDir as a raw
+		// regex, so any regex metacharacter in the upstream clone path (rare
+		// but possible — parentheses, brackets) would either fail to compile
+		// or match unrelated prefixes. filepath.Rel is the stdlib canonical
+		// way to strip a directory prefix.
+		relPath, relErr := filepath.Rel(inDir, path)
+		if relErr != nil {
+			return relErr
 		}
 		for _, configuredGlobPattern := range configuredGlobPatterns {
 			g, inErr := glob.Compile(configuredGlobPattern)
 			if inErr != nil {
 				return inErr
 			}
-			path, inErr = makeFileRelativePath(path)
-			if inErr != nil {
-				return inErr
-			}
-			if g.Match(path) {
-				allFiles = append(allFiles, path)
+			if g.Match(relPath) {
+				allFiles = append(allFiles, relPath)
 				return nil
 			}
 		}
@@ -749,7 +754,14 @@ func migrationCompletedInDownstream(migrationID string, downstreamRepoPath strin
 
 func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string, logger sdktypes.Logger) error {
 	if migrationInstructions.Exec != "" {
-		execParts := strings.Split(migrationInstructions.Exec, " ")
+		// strings.Fields splits on any run of whitespace (spaces, tabs, newlines),
+		// so double-spaced or tab-separated commands tokenize correctly. Users
+		// needing arguments that contain literal spaces should invoke a shell
+		// explicitly: `sh -c 'my-script "arg with spaces"'`.
+		execParts := strings.Fields(migrationInstructions.Exec)
+		if len(execParts) == 0 {
+			return fmt.Errorf("migration exec %q resolved to zero tokens", migrationInstructions.Exec)
+		}
 		if _, err := os.Stat(filepath.Join(upstreamRepoRootPath, execParts[0])); err == nil {
 			// this is a case where the exec is calling a script that exists in the upstream, so call from that absolute path
 			execParts[0] = filepath.Join(upstreamRepoRootPath, execParts[0])

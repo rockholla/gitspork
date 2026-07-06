@@ -244,6 +244,27 @@ func TestIntegratorSharedOwnershipMerged(t *testing.T) {
 			"the unmatched begin-marker itself should be preserved so the user can reconcile explicitly")
 	})
 
+	t.Run("handles lines larger than the stdlib bufio.Scanner default (64 KiB)", func(t *testing.T) {
+		// Real-world files under this integrator include Makefiles and lock
+		// files that occasionally carry very long lines (minified content,
+		// generated code). The default bufio.Scanner buffer capped at 64 KiB
+		// per line would return bufio.ErrTooLong; bumped to a per-file limit
+		// large enough for reasonable content.
+		const longLineLen = 200 * 1024 // 200 KiB > default 64 KiB
+		longLine := strings.Repeat("x", longLineLen)
+		upstream := beginMarker + "\n" + longLine + "\n" + endMarker + "\n"
+		downstream := beginMarker + "\nstale short line\n" + endMarker + "\n"
+		upstreamDir, downstreamDir := setupStructuredPair(t, "generated.txt", upstream, downstream)
+
+		integrator := &IntegratorSharedOwnershipMerged{}
+		require.NoError(t, integrator.Integrate([]string{"generated.txt"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		got, err := os.ReadFile(filepath.Join(downstreamDir, "generated.txt"))
+		require.NoError(t, err)
+		assert.Contains(t, string(got), longLine, "long upstream-owned line should be preserved intact")
+		assert.NotContains(t, string(got), "stale short line", "downstream block content should be replaced by upstream content")
+	})
+
 	t.Run("downstream has second unmatched begin-marker after a matched one", func(t *testing.T) {
 		// Mixed case: first begin-marker in downstream matches the single upstream block;
 		// second begin-marker in downstream has nothing to match. Must not panic.

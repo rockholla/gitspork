@@ -74,11 +74,14 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				if err != nil {
 					return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)
 				}
-				err = json.Unmarshal(jsonData, &templateData.Inputs)
-				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-				if err != nil {
+				if err := json.Unmarshal(jsonData, &templateData.Inputs); err != nil {
 					return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
 				}
+				// Only propagate inputs to capturedInputValues after a successful
+				// unmarshal — otherwise a JSON parse error would leak partially-
+				// populated data into the previous_input chain for subsequent
+				// templated instructions in this run.
+				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" {
 				if templateData.Inputs[input.Name] == "" || forceRePrompt {
 					requestInputOpts := &inputpkg.RequestInputOptions{
@@ -144,27 +147,36 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 			return fmt.Errorf("error rendering template data: %v", err)
 		}
 		if performPostMergeStructured != "" {
-			tmpDir, err := os.MkdirTemp("", config.GitSpork)
-			if err != nil {
-				return fmt.Errorf("error creating temp directory: %v", err)
-			}
-			defer os.RemoveAll(tmpDir)
-			tmpFilePath := filepath.Join(tmpDir, filepath.Base(fullDestinationPath))
-			if err := os.WriteFile(tmpFilePath, renderedBytes.Bytes(), 0644); err != nil {
-				return fmt.Errorf("error writing rendered template to temporary location: %v", err)
-			}
-			newData, existingData, structuredDataType, err := getStructuredData(tmpFilePath, fullDestinationPath)
-			if err != nil {
-				return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
-			}
-			var merged *node
-			if performPostMergeStructured == config.TemplatedMergeStructuredPreferDownstream {
-				merged = mergeNodes(newData, existingData, true)
-			} else {
-				merged = mergeNodes(existingData, newData, true)
-			}
-			if err := writeStructuredData(merged, structuredDataType, fullDestinationPath); err != nil {
-				return fmt.Errorf("error writing merged structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
+			// Wrapped in a closure so the tmpDir RemoveAll defer scopes to a
+			// single templated instruction — otherwise every render in the
+			// outer loop accumulated another defer that only ran at Integrate
+			// return, holding onto multiple temp directories for the whole run.
+			if err := func() error {
+				tmpDir, err := os.MkdirTemp("", config.GitSpork)
+				if err != nil {
+					return fmt.Errorf("error creating temp directory: %v", err)
+				}
+				defer os.RemoveAll(tmpDir)
+				tmpFilePath := filepath.Join(tmpDir, filepath.Base(fullDestinationPath))
+				if err := os.WriteFile(tmpFilePath, renderedBytes.Bytes(), 0644); err != nil {
+					return fmt.Errorf("error writing rendered template to temporary location: %v", err)
+				}
+				newData, existingData, structuredDataType, err := getStructuredData(tmpFilePath, fullDestinationPath)
+				if err != nil {
+					return fmt.Errorf("error loading structured data from existing/new template render process in %s: %v", templatedInstruction.Template, err)
+				}
+				var merged *node
+				if performPostMergeStructured == config.TemplatedMergeStructuredPreferDownstream {
+					merged = mergeNodes(newData, existingData, true)
+				} else {
+					merged = mergeNodes(existingData, newData, true)
+				}
+				if err := writeStructuredData(merged, structuredDataType, fullDestinationPath); err != nil {
+					return fmt.Errorf("error writing merged structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
+				}
+				return nil
+			}(); err != nil {
+				return err
 			}
 		} else {
 			if err := os.WriteFile(fullDestinationPath, renderedBytes.Bytes(), 0644); err != nil {

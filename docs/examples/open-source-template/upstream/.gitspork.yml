@@ -5,6 +5,11 @@ upstream_owned:
 downstream_owned:
   - README.md
   - CHANGELOG.md
+  # {from, to} rename form: upstream keeps a canonical seed at
+  # starter/AUTHORS.md; the downstream receives it at the conventional
+  # top-level AUTHORS.md location and owns it thereafter.
+  - from: starter/AUTHORS.md
+    to: AUTHORS.md
 shared_ownership:
   structured:
     prefer_downstream:

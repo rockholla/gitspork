@@ -38,6 +38,13 @@ func TestOpenSourceTemplateExample(t *testing.T) {
 	testharness.AssertFileContains(t, downstreamDir, "CHANGELOG.md", "Seeded by gitspork")
 	testharness.AssertFileContains(t, downstreamDir, "project-meta.json", "my-project")
 
+	// downstream_owned rename: upstream's canonical starter/AUTHORS.md lands
+	// in the downstream at the conventional top-level AUTHORS.md path. The
+	// raw upstream path must NOT appear in the downstream — the rename must
+	// actually rename.
+	testharness.AssertFileContains(t, downstreamDir, "AUTHORS.md", "Seeded by gitspork")
+	testharness.AssertFileAbsent(t, downstreamDir, "starter/AUTHORS.md")
+
 	// template rendered using project-meta.json
 	testharness.AssertFileContains(t, downstreamDir, "CODE_OF_CONDUCT.md", "my-project")
 
@@ -51,10 +58,15 @@ func TestOpenSourceTemplateExample(t *testing.T) {
 	}, downstreamDir)
 	require.Equal(t, 0, code, "check-drift expected no drift:\n%s", out)
 
-	// customize README and CHANGELOG, re-integrate, assert not overwritten
+	// customize README, CHANGELOG, and the renamed AUTHORS.md; re-integrate,
+	// assert none are overwritten (the defining invariant of downstream_owned,
+	// which applies to the rename form too — the destination path is what's
+	// checked for existence, and the rename lands there once, then downstream
+	// owns it).
 	testharness.WriteFiles(t, downstreamDir, map[string]string{
 		"README.md":    "# my-project\n\nCustom readme.\n",
 		"CHANGELOG.md": "# Changelog\n\n## v1.0.0\n- initial release\n",
+		"AUTHORS.md":   "# Authors\n\n- Alice <alice@example.com>\n- Bob <bob@example.com>\n",
 	})
 	testharness.CommitAll(t, testharness.OpenRepo(t, downstreamDir), downstreamDir, "customize downstream-owned files")
 
@@ -71,6 +83,17 @@ func TestOpenSourceTemplateExample(t *testing.T) {
 
 	changelog := testharness.ReadFile(t, downstreamDir, "CHANGELOG.md")
 	assert.Contains(t, changelog, "initial release", "CHANGELOG.md should not be overwritten")
+
+	// The renamed downstream_owned entry follows the same invariant: once
+	// the destination path is populated, subsequent integrates leave it alone.
+	authors := testharness.ReadFile(t, downstreamDir, "AUTHORS.md")
+	assert.Contains(t, authors, "Alice <alice@example.com>",
+		"AUTHORS.md (rename destination) should not be overwritten on re-integrate")
+	assert.NotContains(t, authors, "Seeded by gitspork",
+		"the customized content must have fully replaced the seed content")
+	// The upstream source path still must not be in the downstream even
+	// after re-integrate — the rename should not "leak" the source path.
+	testharness.AssertFileAbsent(t, downstreamDir, "starter/AUTHORS.md")
 
 	// downstream modified project-meta.json, re-integrate: prefer_downstream value survives
 	testharness.WriteFiles(t, downstreamDir, map[string]string{

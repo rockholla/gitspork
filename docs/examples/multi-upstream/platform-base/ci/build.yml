@@ -1,0 +1,2 @@
+# Platform-base CI: build workflow shared by every downstream.
+name: build

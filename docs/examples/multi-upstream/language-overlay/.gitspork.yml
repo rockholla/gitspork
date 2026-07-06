@@ -1,0 +1,6 @@
+upstream_owned:
+  - ci/**
+shared_ownership:
+  structured:
+    prefer_upstream:
+      - app-config.yaml

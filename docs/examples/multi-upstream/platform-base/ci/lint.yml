@@ -1,0 +1,2 @@
+# Platform-base CI: baseline lint workflow.
+name: lint

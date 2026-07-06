@@ -74,11 +74,20 @@ func examplePath(t *testing.T, name string) string {
 	return filepath.Join(repoRoot, "docs", "examples", name)
 }
 
-// initExampleRepo copies a docs/examples/<name>/upstream dir into a fresh temp git repo
-// and commits everything, making it cloneable via file:// URL.
-func initExampleRepo(t *testing.T, name string) string {
+// initExampleRepoAt copies a docs/examples/<name>/<subdir> tree into a fresh
+// temp git repo and commits everything, making it cloneable via file:// URL.
+// Used by multi-upstream examples where docs/examples/<name>/ contains
+// multiple sibling upstream directories rather than a single ./upstream dir.
+func initExampleRepoAt(t *testing.T, name, subdir string) string {
 	t.Helper()
-	srcDir := exampleUpstreamPath(t, name)
+	srcDir := filepath.Join(examplePath(t, name), subdir)
+	return initExampleRepoFromSrc(t, srcDir)
+}
+
+// initExampleRepoFromSrc is the shared implementation behind initExampleRepo
+// and initExampleRepoAt.
+func initExampleRepoFromSrc(t *testing.T, srcDir string) string {
+	t.Helper()
 	dstDir := t.TempDir()
 
 	repo, err := gogit.PlainInit(dstDir, false,
@@ -114,4 +123,11 @@ func initExampleRepo(t *testing.T, name string) string {
 	require.NoError(t, err)
 
 	return dstDir
+}
+
+// initExampleRepo copies a docs/examples/<name>/upstream dir into a fresh temp git repo
+// and commits everything, making it cloneable via file:// URL.
+func initExampleRepo(t *testing.T, name string) string {
+	t.Helper()
+	return initExampleRepoFromSrc(t, exampleUpstreamPath(t, name))
 }

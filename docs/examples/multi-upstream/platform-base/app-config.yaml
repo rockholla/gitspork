@@ -1,0 +1,4 @@
+log_level: info
+timeout_seconds: 30
+tags:
+  owner: platform

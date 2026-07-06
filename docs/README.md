@@ -10,6 +10,7 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 | [open-source-template](examples/open-source-template/README.md) | Open source project template pushing GitHub Actions, license, and generated docs to forks |
 | [standards-library](examples/standards-library/README.md) | Security/standards team enforcing linting rules, policy documents, and non-overridable security config |
 | [integrate-local](examples/integrate-local/README.md) | Using a local upstream directory instead of a remote repo — useful during upstream development |
+| [multi-upstream](examples/multi-upstream/README.md) | Layering standards from two upstreams — a shared platform base plus a language/team overlay, with last-writer-wins precedence |
 
 ## For Upstream Maintainers
 

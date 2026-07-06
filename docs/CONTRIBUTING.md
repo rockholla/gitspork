@@ -29,35 +29,38 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 - [goreleaser](https://goreleaser.com/) v2 — only needed if you are working on the release pipeline locally; normal development does not require it
 
-**Editor:** If you use VS Code, consider adding a `.vscode/settings.json` with `"go.buildTags": "functional"` so gopls type-checks the functional test files. Without a build tag, gopls will ignore files that have `//go:build functional` constraints.
+**Editor:** If you use VS Code, the repo's checked-in `.vscode/settings.json` sets `gopls.build.buildFlags` to `-tags=functional,functional_docker,examples,sdk,testharness` so gopls type-checks every tagged test file. Without these tags, gopls will ignore files gated by `//go:build functional` and friends.
 
 ---
 
 ## Project Layout
 
 ```
-cmd/                    # Cobra subcommands (one file per subcommand)
-internal/               # All business logic
-  gitspork.go           # Core types: GitSporkConfig, GitSporkDownstreamState, options structs
-  integrate.go          # Integrate and cloneUpstreamForIntegrate
-  integrate-local.go    # IntegrateLocal
-  check-drift.go        # CheckDrift
-  upstream-delta.go     # computeUpstreamDelta / applyUpstreamDelta
-  upstream-mv-rm.go     # UpstreamMv / UpstreamRm
-  integrator_*.go       # Per-ownership-type integration logic
-  logger.go             # Logger, Diff colorizer, ColorizeYAML
+gitspork.go             # Public SDK entry points: Integrate, IntegrateLocal, CheckDrift, type aliases
+cmd/
+  gitspork/             # main.go — CLI entry point
+internal/               # Business logic (unexported to SDK consumers)
+  cli/                  # Cobra subcommands (root, integrate, integrate-local, check-drift, mv, rm, init, schema)
+  config/               # GitSporkConfig types, YAML load/save, init scaffold, mv/rm config rewrite, NormalizeUpstreamPath
+  drift/                # CheckDrift orchestrator
+  integrate/            # Integrate, IntegrateLocal, IntegrateForDriftCheck, per-ownership integrator_*.go, upstream_delta.go
+  logutil/              # Default Logger, diff colorizer, ColorizeYAML
+  sdktypes/             # Shared SDK types (options, results, errors, Logger interface)
   input/                # Prompt and JSON input resolution
-  testharness/          # Shared test helpers (non-test package, importable by all test packages)
+  gitbin/               # Fail-fast check for the git binary on PATH
 test/
-  functional/           # Scenario tests that compile and run the binary or Docker image
-  examples/             # Tests that run against the docs/examples/ upstream directories
+  functional/           # Scenario tests against the compiled binary or Docker image (tag: functional / functional_docker)
+  examples/             # Tests that run against the docs/examples/ upstream directories (tag: examples)
+  sdk/                  # Black-box tests importing github.com/rockholla/gitspork/v2 as a library (tag: sdk)
+  testharness/          # Shared test helpers, build-tag guarded (tag: testharness)
+  security-gate/        # Bash unit tests for the CI security-gate script
 docs/
-  examples/             # Four fully worked upstream examples with READMEs
-  superpowers/          # Design specs and implementation plans
+  examples/             # Fully worked upstream examples with per-example READMEs
+  superpowers/          # Design specs and implementation plans (specs/ and plans/)
 scripts/
   release.sh            # Interactive tag-and-push script; CI handles the rest
 .github/
-  workflows/            # CI workflows (main.yml, release.yml, tests.yml)
+  workflows/            # CI workflows (main.yml, release.yml, security.yml, tests.yml)
 ```
 
 ---
@@ -128,7 +131,7 @@ make test-examples
 # equivalent: go test -tags examples -timeout 120s -v ./test/examples/...
 ```
 
-**What's covered:** Validates the four worked examples in `docs/examples/` (platform-team, open-source-template, standards-library, integrate-local). Each test integrates from the example's upstream directory into a synthetic downstream and asserts the expected result. These tests serve as living documentation — if an example breaks, the test catches it.
+**What's covered:** Validates the worked examples in `docs/examples/` (platform-team, open-source-template, standards-library, integrate-local, multi-upstream). Each test integrates from the example's upstream directory into a synthetic downstream and asserts the expected result. These tests serve as living documentation — if an example breaks, the test catches it.
 
 **Build tag:** `examples`
 
@@ -136,7 +139,7 @@ make test-examples
 
 ### Shared Test Infrastructure
 
-`internal/testharness/testharness.go` contains helpers shared across the functional and example suites — creating synthetic git repos, asserting file contents, etc. It has no build tag so it is always compiled, and both `test/functional/` and `test/examples/` import from it.
+`test/testharness/testharness.go` contains helpers shared across the unit, functional, sdk, and example suites — creating synthetic git repos, asserting file contents, etc. It is guarded by `//go:build testharness` so a production import fails at compile time (`build constraints exclude all Go files in .../test/testharness`); every `make test-*` target passes `-tags testharness` chained with its tier tag (e.g. `-tags functional,testharness`). Direct `go test ./…` invocations that import the harness must include `-tags testharness` too.
 
 ---
 
@@ -151,7 +154,7 @@ Run this checklist before opening a PR:
 - [ ] `make test-functional-docker` — Docker scenarios pass (skip only if Docker is unavailable; CI will catch it)
 - [ ] New code follows existing patterns — check the surrounding files before inventing conventions
 
-If you are touching `internal/logger.go`'s `ColorizeYAML` function: the `goccy/go-yaml` lexer/printer approach is intentional. Do not replace it with regex-based colorization — regex misses list string items and other token types that the lexer handles correctly.
+If you are touching `internal/logutil/colorize.go`'s `ColorizeYAML` function: the `goccy/go-yaml` lexer/printer approach is intentional. Do not replace it with regex-based colorization — regex misses list string items and other token types that the lexer handles correctly.
 
 ---
 

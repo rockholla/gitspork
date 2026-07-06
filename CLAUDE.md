@@ -30,11 +30,11 @@ internal/               # All business logic (unexported to SDK consumers)
   logutil/              # Default Logger, diff colorizer, ColorizeYAML
   sdktypes/             # Shared SDK types (options, results, errors, Logger interface) — reason: avoids import cycles between root gitspork, drift, and integrate packages
   input/                # Prompt and JSON input resolution
-  testharness/          # Shared test helpers (non-test package, importable by all test packages)
 test/
   functional/           # Scenario tests against compiled binary or Docker image
   examples/             # Tests that run against the docs/examples/ upstream directories
   sdk/                  # Black-box tests importing github.com/rockholla/gitspork/v2 as a library
+  testharness/          # Shared test helpers (build-tag guarded, see below)
 docs/
   examples/             # Four fully worked upstream examples (platform-team, open-source-template, standards-library, integrate-local)
   superpowers/          # Design specs and implementation plans (specs/ and plans/)
@@ -71,7 +71,7 @@ make test-sdk               # -tags sdk (black-box tests importing github.com/ro
 - `sdk` — activates `test/sdk/` (black-box library tests)
 - `harness_native.go` uses `//go:build functional && !functional_docker` to avoid gopls duplicate declaration errors when both tags are active
 
-**Shared test helpers** live in `internal/testharness/testharness.go` (no build tag). Both `test/functional/`, `test/examples/`, and `test/sdk/` import from there. `test/functional/harness.go` wraps them with thin delegating functions.
+**Shared test helpers** live in `test/testharness/testharness.go` and are guarded by `//go:build testharness`. Every `make test-*` target passes the `testharness` tag (chained with the suite tier tag, e.g. `-tags functional,testharness`); a direct `go test ./…` invocation that imports the harness must include `-tags testharness` too. A production import from anywhere under `cmd/` or `internal/` fails at compile time with `build constraints exclude all Go files in …/test/testharness`, so test-only code cannot silently leak into the release binary. Both `test/functional/`, `test/examples/`, and `test/sdk/` import from the harness; `test/functional/harness.go` wraps them with thin delegating functions.
 
 ## CI
 

@@ -10,7 +10,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/rockholla/gitspork/v2/internal/testharness"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

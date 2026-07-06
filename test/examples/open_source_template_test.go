@@ -5,7 +5,7 @@ package examples
 import (
 	"testing"
 
-	"github.com/rockholla/gitspork/v2/internal/testharness"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

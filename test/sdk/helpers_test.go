@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rockholla/gitspork/v2"
-	"github.com/rockholla/gitspork/v2/internal/testharness"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 )
 
 // minimalUpstream builds a local upstream git repo with a minimal .gitspork.yml

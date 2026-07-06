@@ -1,3 +1,13 @@
+//go:build testharness
+
+// Package testharness provides fixtures and helpers used only by gitspork's
+// own tests. It is guarded by the `testharness` build tag so a plain
+// `go build` never compiles it (production code cannot import it — the
+// import would fail with an empty-package error unless the tag is set).
+//
+// Every `make test-*` target passes `-tags testharness`. Direct
+// `go test ./…` invocations must include `-tags testharness` too, chained
+// with any other tier tag (e.g. `-tags testharness,functional`).
 package testharness
 
 import (

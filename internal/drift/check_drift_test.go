@@ -229,6 +229,43 @@ func testWriteAndCommitInDownstream(t *testing.T, downstreamDir, relPath, conten
 	testharness.CommitAllWithMessage(t, repo, "drift edit: "+relPath)
 }
 
+func TestCheckDrift_cleansUpDriftCheckBranch(t *testing.T) {
+	// Whatever the outcome of CheckDrift, the transient _gitspork-check-drift
+	// branch must not linger in the downstream repo — otherwise subsequent
+	// invocations start from an unclean state and users see stray refs.
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	t.Run("no drift path", func(t *testing.T) {
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.NoError(t, err)
+		assertDriftCheckBranchAbsent(t, downstreamDir)
+	})
+
+	t.Run("drift detected path", func(t *testing.T) {
+		testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.ErrorIs(t, err, sdktypes.ErrDriftDetected)
+		assertDriftCheckBranchAbsent(t, downstreamDir)
+	})
+}
+
+func assertDriftCheckBranchAbsent(t *testing.T, downstreamDir string) {
+	t.Helper()
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(driftCheckBranch), false)
+	assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound,
+		"transient drift-check branch %q must be cleaned up when CheckDrift returns", driftCheckBranch)
+}
+
 func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 	upstreamDir, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)

@@ -67,23 +67,34 @@ func (s *MvSubcommand) GetCmd() *cobra.Command {
 				warnings = append(warnings, w...)
 			}
 
+			dryRun := isDryRun(args)
+
 			gitCmd := exec.Command("git", append([]string{"-c", "safe.directory=*", "mv"}, args...)...)
 			gitCmd.Dir = repoPath
 			if out, err := gitCmd.CombinedOutput(); err != nil {
 				return fmt.Errorf("git mv failed: %v\n%s", err, out)
 			}
 
-			if err := config.WriteGitSporkConfig(configPath, cfg); err != nil {
-				return fmt.Errorf("error writing .gitspork.yml: %v", err)
-			}
-			if out, err := exec.Command("git", "-c", "safe.directory=*", "add", configPath).CombinedOutput(); err != nil {
-				return fmt.Errorf("git add .gitspork.yml failed: %v\n%s", err, out)
+			// dry-run: git mv did not touch the tree, so we must not rewrite or
+			// stage .gitspork.yml either — otherwise "dry-run" would still
+			// silently mutate the config.
+			if !dryRun {
+				if err := config.WriteGitSporkConfig(configPath, cfg); err != nil {
+					return fmt.Errorf("error writing .gitspork.yml: %v", err)
+				}
+				if out, err := exec.Command("git", "-c", "safe.directory=*", "add", configPath).CombinedOutput(); err != nil {
+					return fmt.Errorf("git add .gitspork.yml failed: %v\n%s", err, out)
+				}
 			}
 
 			for _, w := range warnings {
 				logger.Log("⚠️  %s", w)
 			}
-			logger.Log("✅ git mv complete and .gitspork.yml staged — ready to commit")
+			if dryRun {
+				logger.Log("🔍 dry-run: .gitspork.yml would also be rewritten — no changes made")
+			} else {
+				logger.Log("✅ git mv complete and .gitspork.yml staged — ready to commit")
+			}
 			return nil
 		},
 	}

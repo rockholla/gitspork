@@ -12,7 +12,7 @@ import (
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/integrate"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
-	"github.com/rockholla/gitspork/v2/internal/testharness"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

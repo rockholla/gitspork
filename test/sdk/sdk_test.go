@@ -28,6 +28,72 @@ func TestIntegrate_singleUpstream(t *testing.T) {
 	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
 }
 
+// integrate: subpath is round-tripped end-to-end
+//
+// Pins the multi-PR (#62, #64) subpath fix at the black-box SDK boundary:
+// an upstream whose .gitspork.yml lives under <upstream>/infra/ must
+// integrate correctly when Subpath is set, and IntegratedUpstream must
+// carry the (normalized) subpath back to the SDK caller for state matching.
+func TestIntegrate_subpath(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstreamInSubpath(t, "infra")
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams: []gitspork.UpstreamSpec{{
+			URL:     "file://" + upstreamDir,
+			Version: "main",
+			Subpath: "infra",
+		}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, "file://"+upstreamDir, result.Upstreams[0].URL)
+	assert.Equal(t, "infra", result.Upstreams[0].Subpath,
+		"IntegratedUpstream.Subpath must round-trip so consumers can match state entries by URL+subpath")
+	assert.Equal(t, upstreamHash.String(), result.Upstreams[0].CommitHash)
+
+	// Files land in the downstream WITHOUT the subpath prefix — content comes
+	// from <upstream>/infra/upstream-owned/file.txt but the downstream layout
+	// is upstream-owned/file.txt (subpath is stripped by the integrator).
+	require.NoError(t, fileExists(downstreamDir, "upstream-owned", "file.txt"),
+		"upstream-owned file should be present in downstream stripped of the subpath prefix")
+
+	// The unrelated repo-root file from the "monorepo shape" MUST NOT land in
+	// the downstream — subpath scoping should exclude everything outside it.
+	err = fileExists(downstreamDir, "README.md")
+	assert.Error(t, err, "unrelated repo-root file should NOT land in the downstream when Subpath is scoped to a subdirectory")
+}
+
+// integrate: subpath shape variants ("infra/", "/infra", "./infra") all match
+// the same state entry — pins the NormalizeUpstreamPath + NormalizeUpstreamURL
+// fix from PR #64 at the SDK boundary.
+func TestIntegrate_subpath_shape_variants_share_state_entry(t *testing.T) {
+	upstreamDir, _ := minimalUpstreamInSubpath(t, "infra")
+	downstreamDir := emptyDownstream(t)
+
+	// First integrate with the canonical form.
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main", Subpath: "infra"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+
+	// Second integrate with a trailing-slash variant — must update the same
+	// state entry, not append a duplicate.
+	_, err = gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main", Subpath: "infra/"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+
+	// Inspect state directly: must have exactly one upstream entry after two
+	// integrates against subpath-shape variants of the same upstream.
+	state := readStateJSON(t, downstreamDir)
+	assert.Len(t, state.Upstreams, 1,
+		"integrating twice with subpath shape variants must not create duplicate state entries")
+}
+
 // integrate: multi-upstream order is preserved in the result
 func TestIntegrate_multiUpstreamOrder(t *testing.T) {
 	upstreamA, hashA := minimalUpstream(t)

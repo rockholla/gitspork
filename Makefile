@@ -11,25 +11,30 @@ build: ## Builds gitspork to dist/gitspork and builds Docker image tagged gitspo
 	@docker build -t gitspork:local dist/.docker-build/
 	@rm -rf dist/.docker-build
 
+# Every test suite links against the shared testharness package under
+# ./test/testharness, which is guarded by `//go:build testharness` so a plain
+# `go build` never compiles it. Every `go test` invocation below must include
+# the testharness tag, chained with the suite-specific tier tag.
+
 .PHONY: test-unit
 test-unit: ## Run unit tests
-	@go vet ./... && go test -v ./...
+	@go vet -tags testharness ./... && go test -tags testharness -v ./...
 
 .PHONY: test-functional
 test-functional: ## Run functional tests, compiles the tool and executes in real, functional scenarios using synthetic/dynamic repos
-	@go test -tags functional -timeout 120s -v ./test/functional/...
+	@go test -tags functional,testharness -timeout 120s -v ./test/functional/...
 
 .PHONY: test-functional-docker
 test-functional-docker: ## Run tests specific to testing the containerized version of the tool
-	@go test -tags functional_docker -timeout 300s -v ./test/functional/...
+	@go test -tags functional_docker,testharness -timeout 300s -v ./test/functional/...
 
 .PHONY: test-examples
 test-examples: ## Run example scenario tests
-	@go test -tags examples -timeout 120s -v ./test/examples/...
+	@go test -tags examples,testharness -timeout 120s -v ./test/examples/...
 
 .PHONY: test-sdk
 test-sdk: ## Run black-box SDK tests
-	@go test -tags sdk -timeout 120s -v ./test/sdk/...
+	@go test -tags sdk,testharness -timeout 120s -v ./test/sdk/...
 
 .PHONY: test-security-gate
 test-security-gate: ## Run unit tests for the CI security gate script

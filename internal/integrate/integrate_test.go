@@ -82,6 +82,25 @@ func Test_NormalizeUpstreamURL(t *testing.T) {
 			NormalizeUpstreamURL("https://github.com/org/repo.git", ""),
 			NormalizeUpstreamURL("https://github.com/org/repo", ""))
 	})
+
+	// Subpath shape must not affect the state-lookup key — otherwise "infra"
+	// (persisted from a prior integrate) and "infra/" (fresh CLI arg from
+	// shell tab-completion) look like two different upstreams and the state
+	// matcher misses.
+	t.Run("subpath shape variants produce the same key", func(t *testing.T) {
+		want := NormalizeUpstreamURL("https://github.com/org/repo.git", "infra")
+		for _, variant := range []string{"infra/", "/infra", "/infra/", "./infra", "infra//"} {
+			assert.Equal(t, want,
+				NormalizeUpstreamURL("https://github.com/org/repo.git", variant),
+				"subpath variant %q should normalize to the same key as %q", variant, "infra")
+		}
+	})
+
+	t.Run("empty subpath and root-slash subpath produce the same key", func(t *testing.T) {
+		assert.Equal(t,
+			NormalizeUpstreamURL("https://github.com/org/repo.git", ""),
+			NormalizeUpstreamURL("https://github.com/org/repo.git", "/"))
+	})
 }
 
 func Test_UpsertUpstreamState_newEntry(t *testing.T) {
@@ -99,6 +118,19 @@ func Test_UpsertUpstreamState_updateExisting(t *testing.T) {
 	// SSH and HTTPS forms of same repo — should match and update in place
 	UpsertUpstreamState(state, sdktypes.UpstreamState{URL: "https://github.com/org/repo.git", CommitHash: "new"})
 	require.Len(t, state.Upstreams, 1)
+	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
+}
+
+func Test_UpsertUpstreamState_subpathShapeVariantsUpdateInPlace(t *testing.T) {
+	// State entry persisted with "infra"; caller now passes "infra/" (shell
+	// tab-completion). Must update in place rather than append a duplicate.
+	state := &sdktypes.DownstreamState{Upstreams: []sdktypes.UpstreamState{
+		{URL: "git@github.com:org/repo.git", Subpath: "infra", CommitHash: "old"},
+	}}
+	UpsertUpstreamState(state, sdktypes.UpstreamState{
+		URL: "git@github.com:org/repo.git", Subpath: "infra/", CommitHash: "new",
+	})
+	require.Len(t, state.Upstreams, 1, "trailing-slash subpath must not create a duplicate state entry")
 	assert.Equal(t, "new", state.Upstreams[0].CommitHash)
 }
 

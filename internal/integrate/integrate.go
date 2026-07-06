@@ -520,28 +520,27 @@ func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version st
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {
 	allFiles := []string{}
-	makeFileRelativePath := func(filePath string) (string, error) {
-		re, err := regexp.Compile(fmt.Sprintf("^%s%s", inDir, string(filepath.Separator)))
-		if err != nil {
-			return "", err
-		}
-		return re.ReplaceAllString(filePath, ""), nil
-	}
 	err := filepath.Walk(inDir, func(path string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
+		}
+		// filepath.Rel replaces an earlier regexp.Compile("^" + inDir + "/") /
+		// ReplaceAllString approach: the old version treated inDir as a raw
+		// regex, so any regex metacharacter in the upstream clone path (rare
+		// but possible — parentheses, brackets) would either fail to compile
+		// or match unrelated prefixes. filepath.Rel is the stdlib canonical
+		// way to strip a directory prefix.
+		relPath, relErr := filepath.Rel(inDir, path)
+		if relErr != nil {
+			return relErr
 		}
 		for _, configuredGlobPattern := range configuredGlobPatterns {
 			g, inErr := glob.Compile(configuredGlobPattern)
 			if inErr != nil {
 				return inErr
 			}
-			path, inErr = makeFileRelativePath(path)
-			if inErr != nil {
-				return inErr
-			}
-			if g.Match(path) {
-				allFiles = append(allFiles, path)
+			if g.Match(relPath) {
+				allFiles = append(allFiles, relPath)
 				return nil
 			}
 		}

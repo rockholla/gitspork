@@ -3,6 +3,7 @@ package integrate
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -255,6 +256,62 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, delta.Deletions, "docs/guide.md",
 			"interior .. in subpath must be resolved before prefix comparison")
+	})
+
+	// The prevHash lookup previously swallowed *every* CommitObject error as
+	// "not in history — skip delta silently". That masked I/O failures on the
+	// upstream clone (corrupted objects, permission-denied on .git/objects,
+	// etc.) — users saw a normal integrate but with no delta propagation.
+	// After the fix, only plumbing.ErrObjectNotFound is silent; everything
+	// else must surface.
+	t.Run("prevHash lookup I/O failure surfaces as error", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("permission-denied semantics differ on Windows")
+		}
+		if os.Getuid() == 0 {
+			t.Skip("root bypasses filesystem permission checks")
+		}
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		// Real repo with real commits so prevHash is valid.
+		repo, prevHash, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		// Sanity: the happy path yields a real deletion delta first.
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
+		require.NoError(t, err)
+		require.Contains(t, delta.Deletions, "docs/guide.md")
+
+		// Now strip read permission on .git/objects so any CommitObject read
+		// returns an I/O error (permission denied) rather than ErrObjectNotFound.
+		objectsDir := filepath.Join(dir, ".git", "objects")
+		require.NoError(t, os.Chmod(objectsDir, 0000))
+		t.Cleanup(func() { _ = os.Chmod(objectsDir, 0755) })
+
+		delta, err = computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
+		require.Error(t, err, "I/O failure on prevHash lookup must surface, not be swallowed as silent no-op")
+		assert.Contains(t, err.Error(), prevHash,
+			"error should identify which upstream commit failed to load")
+		assert.Empty(t, delta.Deletions, "no partial delta should be produced when an error is surfaced")
+	})
+
+	t.Run("prevHash genuinely missing still returns empty delta silently", func(t *testing.T) {
+		// Belt-and-suspenders next to "prevHash not in repo returns empty delta
+		// without error": guards that the fix distinguishes ErrObjectNotFound
+		// (silent) from other errors.
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, _, newHash := makeUpstreamWithDeletedFile(t, dir, "docs/guide.md")
+		cfg := &config.GitSporkConfig{UpstreamOwned: []config.OwnedEntry{{Pattern: "docs/**"}}}
+
+		// Zero-hash never resolves to a real object; storer reports not-found.
+		delta, err := computeUpstreamDelta(repo, plumbing.ZeroHash.String(), newHash, cfg, "")
+		require.NoError(t, err, "ErrObjectNotFound must still be treated as silent skip")
+		assert.Empty(t, delta.Deletions)
 	})
 }
 

@@ -60,6 +60,16 @@ func seedOldFormatState(t *testing.T, downstreamDir string, state oldFormatState
 // entry must be recognised by UpsertUpstreamState and updated in place with
 // the fresh commit hash — NOT duplicated.
 func TestStateMigration_seedMatchesFreshIntegrate(t *testing.T) {
+	if isDockerBuild {
+		// DockerRunner mounts <host-upstream-dir> at /upstream and rewrites CLI
+		// args' file:// URLs accordingly, but does not rewrite state files we
+		// seed on disk. The seeded URL uses the host path while the fresh
+		// integrate records the container-side /upstream path — so under
+		// Docker the two URLs never match and the test would spuriously
+		// produce two state entries. The migration schema behaviour is not
+		// container-runtime-specific; the native runner covers it fully.
+		t.Skip("state seeding uses host paths that DockerRunner does not rewrite; native runner covers this test's contract")
+	}
 	upstreamDir := buildSimpleUpstream(t)
 	downstreamDir := NewDownstreamRepo(t)
 	prepDownstreamWithInputData(t, downstreamDir)
@@ -114,6 +124,13 @@ func TestStateMigration_seedMatchesFreshIntegrate(t *testing.T) {
 // AND the fresh one — so downstream repos don't lose track of upstreams
 // they were previously integrated against.
 func TestStateMigration_seedForDifferentUpstream(t *testing.T) {
+	if isDockerBuild {
+		// Same DockerRunner path-rewriting limitation as
+		// TestStateMigration_seedMatchesFreshIntegrate above — the fresh
+		// integrate's recorded URL uses the container-side /upstream path,
+		// not the host path this test asserts against.
+		t.Skip("fresh-integrate URL assertion uses host path that DockerRunner rewrites to /upstream; native runner covers this test's contract")
+	}
 	upstreamDir := buildSimpleUpstream(t)
 	downstreamDir := NewDownstreamRepo(t)
 	prepDownstreamWithInputData(t, downstreamDir)

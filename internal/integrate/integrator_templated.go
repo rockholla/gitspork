@@ -74,11 +74,14 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				if err != nil {
 					return fmt.Errorf("error reading json_data_path at %s: %v", jsonDataPath, err)
 				}
-				err = json.Unmarshal(jsonData, &templateData.Inputs)
-				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-				if err != nil {
+				if err := json.Unmarshal(jsonData, &templateData.Inputs); err != nil {
 					return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
 				}
+				// Only propagate inputs to capturedInputValues after a successful
+				// unmarshal — otherwise a JSON parse error would leak partially-
+				// populated data into the previous_input chain for subsequent
+				// templated instructions in this run.
+				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" {
 				if templateData.Inputs[input.Name] == "" || forceRePrompt {
 					requestInputOpts := &inputpkg.RequestInputOptions{

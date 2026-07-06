@@ -137,6 +137,209 @@ func TestIntegratorTemplated_noopWithEmptyInstructionsAndNoCache(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "must not create .gitattributes on a downstream with no templated integration")
 }
 
+// TestIntegratorTemplated_previousInput_happyPath verifies the cross-template
+// value flow: template B pulls an input value that template A populated
+// earlier in the same Integrate call. This is the documented previous_input
+// contract (integrator_templated.go:98-112) with no direct end-to-end proof
+// prior to this test.
+func TestIntegratorTemplated_previousInput_happyPath(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+
+	// Template A resolves an input via json_data_path; template B echoes A's
+	// captured value via previous_input.
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "a.txt.go.tmpl"),
+		[]byte(`A: {{ index .Inputs "shared" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.txt.go.tmpl"),
+		[]byte(`B: {{ index .Inputs "borrowed" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"shared":"from-A"}`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{
+		{
+			Template:    "a.txt.go.tmpl",
+			Destination: "a.txt",
+			Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "shared", JSONDataPath: "inputs.json"}},
+		},
+		{
+			Template:    "b.txt.go.tmpl",
+			Destination: "b.txt",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name: "borrowed",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+					Template: "a.txt.go.tmpl",
+					Name:     "shared",
+				},
+			}},
+		},
+	}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	aOut, err := os.ReadFile(filepath.Join(downstreamDir, "a.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "A: from-A", string(aOut))
+
+	bOut, err := os.ReadFile(filepath.Join(downstreamDir, "b.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "B: from-A", string(bOut),
+		"template B should see the value template A captured earlier in the run")
+}
+
+// TestIntegratorTemplated_previousInput_templateNotFound: template B references
+// a template that was never defined in this run. previous_input reads from
+// capturedInputValues, which is only populated for templates iterated so far,
+// so a nonexistent name (or a template defined AFTER the reference) triggers
+// this branch.
+func TestIntegratorTemplated_previousInput_templateNotFound(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.txt.go.tmpl"),
+		[]byte(`B: {{ index .Inputs "borrowed" }}`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "b.txt.go.tmpl",
+		Destination: "b.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name: "borrowed",
+			PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+				Template: "nonexistent.txt.go.tmpl",
+				Name:     "shared",
+			},
+		}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "previous template not found: nonexistent.txt.go.tmpl")
+	assert.Contains(t, err.Error(), "b.txt.go.tmpl",
+		"error should identify which template's config triggered the failure")
+}
+
+// TestIntegratorTemplated_previousInput_forwardReferenceFails: previous_input
+// only looks at templates PROCESSED SO FAR — a forward reference (A references
+// B but A comes first) must fail with the same "previous template not found"
+// error rather than magically resolving. Documents the intended ordering.
+func TestIntegratorTemplated_previousInput_forwardReferenceFails(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "a.txt.go.tmpl"),
+		[]byte(`A: {{ index .Inputs "borrowed" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.txt.go.tmpl"),
+		[]byte(`B: {{ index .Inputs "shared" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"shared":"from-B"}`), 0644))
+
+	// A tries to pull from B — but A is listed first, so B hasn't been
+	// processed yet when A runs.
+	instructions := []config.GitSporkConfigTemplated{
+		{
+			Template:    "a.txt.go.tmpl",
+			Destination: "a.txt",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name: "borrowed",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+					Template: "b.txt.go.tmpl",
+					Name:     "shared",
+				},
+			}},
+		},
+		{
+			Template:    "b.txt.go.tmpl",
+			Destination: "b.txt",
+			Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "shared", JSONDataPath: "inputs.json"}},
+		},
+	}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "previous template not found: b.txt.go.tmpl",
+		"previous_input must not resolve forward references — the earlier template can't see values from a template defined later")
+}
+
+// TestIntegratorTemplated_previousInput_inputNameNotFound: template B correctly
+// references template A (which was processed earlier), but the input name it
+// asks for was never captured under A.
+func TestIntegratorTemplated_previousInput_inputNameNotFound(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "a.txt.go.tmpl"),
+		[]byte(`A: {{ index .Inputs "known_key" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.txt.go.tmpl"),
+		[]byte(`B: {{ index .Inputs "borrowed" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"known_key":"available"}`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{
+		{
+			Template:    "a.txt.go.tmpl",
+			Destination: "a.txt",
+			Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "known_key", JSONDataPath: "inputs.json"}},
+		},
+		{
+			Template:    "b.txt.go.tmpl",
+			Destination: "b.txt",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name: "borrowed",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+					Template: "a.txt.go.tmpl",
+					Name:     "missing_key", // never captured under A
+				},
+			}},
+		},
+	}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "previous input name missing_key not found in template a.txt.go.tmpl")
+	assert.Contains(t, err.Error(), "b.txt.go.tmpl",
+		"error should identify which template's config triggered the failure")
+}
+
+// TestIntegratorTemplated_previousInput_jsonParseError_bailsBeforeNextTemplate
+// pins the current behavior: a json_data_path parse failure in template A
+// aborts the whole Integrate call rather than letting subsequent templates
+// see partial data. This together with the maps.Copy ordering (PR #66) means
+// capturedInputValues cannot leak partial JSON data into a previous_input
+// chain — the check-then-copy order and the immediate return together
+// enforce the invariant.
+func TestIntegratorTemplated_previousInput_jsonParseError_bailsBeforeNextTemplate(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "a.txt.go.tmpl"),
+		[]byte(`A: {{ index .Inputs "k" }}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.txt.go.tmpl"),
+		[]byte(`B: {{ index .Inputs "borrowed" }}`), 0644))
+	// Malformed JSON — parse fails.
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"k": "unterminated`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{
+		{
+			Template:    "a.txt.go.tmpl",
+			Destination: "a.txt",
+			Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "k", JSONDataPath: "inputs.json"}},
+		},
+		{
+			Template:    "b.txt.go.tmpl",
+			Destination: "b.txt",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name: "borrowed",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+					Template: "a.txt.go.tmpl",
+					Name:     "k",
+				},
+			}},
+		},
+	}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error parsing json_data_path file",
+		"the parse error, not the previous_input error, should surface (A fails before B runs)")
+
+	// Template B must NOT have been processed — neither destination file should exist.
+	_, aErr := os.Stat(filepath.Join(downstreamDir, "a.txt"))
+	assert.True(t, os.IsNotExist(aErr), "template A should not have been rendered when its input parse failed")
+	_, bErr := os.Stat(filepath.Join(downstreamDir, "b.txt"))
+	assert.True(t, os.IsNotExist(bErr), "template B must not run when A's input capture failed")
+}
+
 // setupStructuredMergeFixture prepares an upstream template + optional
 // existing downstream file for exercising the templated Merged.Structured
 // post-merge branch. Returns upstream+downstream dirs. templateName is the

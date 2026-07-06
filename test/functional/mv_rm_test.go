@@ -112,6 +112,36 @@ func TestMv_multi_source(t *testing.T) {
 	assert.Contains(t, string(staged), "docs/archive/second.md")
 }
 
+func TestMv_dry_run_leaves_config_and_tree_untouched(t *testing.T) {
+	// git mv -n only reports what would happen; gitspork mv must mirror that
+	// by leaving both the working tree AND .gitspork.yml unchanged (and
+	// unstaged), otherwise "--dry-run" silently rewrites and stages the config.
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/old.md":  "# old doc\n",
+		"docs/keep.md": "# keep\n",
+	}, mvRmGitsporkYML)
+
+	runner := resolveRunner(t, upstreamDir, "")
+
+	origCfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+
+	out, code := runner.Run(t, []string{"mv", "-n", "docs/old.md", "docs/new.md"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork mv -n failed:\n%s", out)
+
+	AssertFileContains(t, upstreamDir, "docs/old.md", "old doc")
+	AssertFileAbsent(t, upstreamDir, "docs/new.md")
+
+	postCfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+	assert.Equal(t, origCfg, postCfg, ".gitspork.yml must be byte-identical after dry-run")
+
+	cmd := exec.Command("git", "diff", "--cached", "--name-only")
+	cmd.Dir = upstreamDir
+	staged, err := cmd.Output()
+	require.NoError(t, err)
+	assert.NotContains(t, string(staged), ".gitspork.yml",
+		"dry-run must not stage .gitspork.yml, got staged files:\n%s", staged)
+}
+
 func TestRm_updates_config_and_stages(t *testing.T) {
 	upstreamDir := NewUpstreamRepo(t, map[string]string{
 		"docs/old.md":  "# old doc\n",
@@ -136,6 +166,35 @@ func TestRm_updates_config_and_stages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(staged), ".gitspork.yml")
 	assert.Contains(t, string(staged), "docs/old.md")
+}
+
+func TestRm_dry_run_leaves_config_and_tree_untouched(t *testing.T) {
+	// git rm -n only reports what would happen; gitspork rm must mirror that
+	// by leaving both the working tree AND .gitspork.yml unchanged (and
+	// unstaged), otherwise "--dry-run" silently rewrites and stages the config.
+	upstreamDir := NewUpstreamRepo(t, map[string]string{
+		"docs/old.md":  "# old doc\n",
+		"docs/keep.md": "# keep\n",
+	}, mvRmGitsporkYML)
+
+	runner := resolveRunner(t, upstreamDir, "")
+
+	origCfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+
+	out, code := runner.Run(t, []string{"rm", "-n", "docs/old.md"}, upstreamDir)
+	require.Equal(t, 0, code, "gitspork rm -n failed:\n%s", out)
+
+	AssertFileContains(t, upstreamDir, "docs/old.md", "old doc")
+
+	postCfg := ReadFile(t, upstreamDir, ".gitspork.yml")
+	assert.Equal(t, origCfg, postCfg, ".gitspork.yml must be byte-identical after dry-run")
+
+	cmd := exec.Command("git", "diff", "--cached", "--name-only")
+	cmd.Dir = upstreamDir
+	staged, err := cmd.Output()
+	require.NoError(t, err)
+	assert.NotContains(t, string(staged), ".gitspork.yml",
+		"dry-run must not stage .gitspork.yml, got staged files:\n%s", staged)
 }
 
 // TestRm_downstream_exact runs gitspork rm on an exact path, commits the upstream

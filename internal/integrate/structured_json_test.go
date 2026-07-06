@@ -91,6 +91,73 @@ func TestWriteJSON_usesTwoSpaceIndent(t *testing.T) {
 	assert.Equal(t, "{\n  \"a\": \"one\",\n  \"b\": \"two\"\n}", string(out))
 }
 
+// TestParseJSON_preservesLargeIntegerPrecision is a regression guard against
+// dropping `dec.UseNumber()` from parseJSON. Without UseNumber, integer tokens
+// are decoded into float64 — which loses precision above 2^53 = 9007199254740992.
+// A regression would silently corrupt IDs, epoch timestamps in nanoseconds,
+// and other JSON integers users legitimately write. The test asserts the
+// literal survives a full parse+write round-trip byte-for-byte, which is only
+// possible if the scalar was captured as json.Number and not float64.
+func TestParseJSON_preservesLargeIntegerPrecision(t *testing.T) {
+	// 2^53 + 1 — the smallest positive integer that float64 cannot represent
+	// exactly. If UseNumber() is removed, this parses as float64 9007199254740992
+	// (rounded down) and the round-trip output will contain the WRONG value.
+	const largeInt = "9007199254740993"
+	in := []byte(`{"id":` + largeInt + `}`)
+
+	n, err := parseJSON(in)
+	require.NoError(t, err)
+
+	idNode, ok := n.mapping.Get("id")
+	require.True(t, ok)
+	// The scalar type is what enforces the invariant — json.Number is a string
+	// alias that carries the literal characters verbatim. Any other type
+	// (float64 in particular) indicates UseNumber() is missing.
+	num, isNumber := idNode.scalar.(json.Number)
+	require.True(t, isNumber, "large integer scalar must be json.Number (was %T) — indicates dec.UseNumber() removed from parseJSON", idNode.scalar)
+	assert.Equal(t, largeInt, string(num))
+
+	out, err := writeJSON(n)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), largeInt,
+		"round-tripped output must contain the exact %s literal — loss of precision here means dec.UseNumber() was removed from parseJSON", largeInt)
+	assert.NotContains(t, string(out), "9007199254740992",
+		"a value of 9007199254740992 in the output would indicate float64 rounding — the exact regression this test guards against")
+}
+
+func TestParseJSON_preservesLargeNegativeIntegerPrecision(t *testing.T) {
+	// Same invariant for the negative direction — a value beyond -2^53.
+	const largeNegInt = "-9007199254740993"
+	in := []byte(`{"id":` + largeNegInt + `}`)
+
+	n, err := parseJSON(in)
+	require.NoError(t, err)
+	out, err := writeJSON(n)
+	require.NoError(t, err)
+	assert.Contains(t, string(out), largeNegInt)
+}
+
+// TestParseJSON_integerScalarsRoundTripAsIntegers guards against a subtler
+// regression: even for small integers where float64 has enough precision,
+// dropping UseNumber() would decode `100` as `float64(100)`, and
+// `json.Marshal(100.0)` emits `100` — that's fine, BUT for smaller values
+// like `1e-6` or numbers that look integer-ish in JSON but round through
+// float, we can see scientific-notation output. The safer assertion is that
+// the exact input literal is preserved on round-trip.
+func TestParseJSON_integerScalarsRoundTripAsIntegers(t *testing.T) {
+	// A moderate integer that both branches handle equivalently, plus a
+	// float that must not be re-emitted as scientific notation.
+	in := []byte(`{"count":100,"ratio":0.5}`)
+
+	n, err := parseJSON(in)
+	require.NoError(t, err)
+	out, err := writeJSON(n)
+	require.NoError(t, err)
+
+	assert.Contains(t, string(out), `"count": 100`, "integer scalar must not be re-emitted as 100.0 or 1e+02")
+	assert.Contains(t, string(out), `"ratio": 0.5`, "float scalar must round-trip as decimal, not scientific notation")
+}
+
 func TestWriteJSON_emptyStructures(t *testing.T) {
 	t.Run("empty mapping", func(t *testing.T) {
 		out, err := writeJSON(newMappingNode())

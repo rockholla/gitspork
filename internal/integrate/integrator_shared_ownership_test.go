@@ -132,6 +132,48 @@ func TestIntegratorSharedOwnershipStructuredPreferDownstream_YAML(t *testing.T) 
 	})
 }
 
+// TestIntegratorSharedOwnershipStructured_preservesLargeIntegerPrecisionEndToEnd
+// locks the UseNumber() invariant through the full structured-merge pipeline.
+// The scalar-parse regression this test guards against corrupts JSON integers
+// above 2^53 as they flow through parseJSON → merge → writeJSON. A shared-
+// ownership.structured entry on a JSON file with a large integer field must
+// end with the exact literal preserved in the downstream output.
+func TestIntegratorSharedOwnershipStructured_preservesLargeIntegerPrecisionEndToEnd(t *testing.T) {
+	const largeInt = "9007199254740993"
+
+	t.Run("prefer_upstream keeps upstream's large integer verbatim", func(t *testing.T) {
+		upstreamJSON := `{"id":` + largeInt + `,"upstream_only":"u"}`
+		downstreamJSON := `{"id":123,"downstream_only":"d"}`
+		upstreamDir, downstreamDir := setupStructuredPair(t, "config.json", upstreamJSON, downstreamJSON)
+
+		integrator := &IntegratorSharedOwnershipStructuredPreferUpstream{}
+		require.NoError(t, integrator.Integrate([]string{"config.json"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		// Read the merged file as raw bytes — the merged map[string]any decoded
+		// via encoding/json without UseNumber would silently corrupt this, so
+		// the byte-level assertion is what actually pins the invariant.
+		mergedBytes, err := os.ReadFile(filepath.Join(downstreamDir, "config.json"))
+		require.NoError(t, err)
+		assert.Contains(t, string(mergedBytes), largeInt,
+			"prefer_upstream merge must not lose precision on large integers — regression here means UseNumber() was dropped somewhere in the pipeline")
+		assert.NotContains(t, string(mergedBytes), "9007199254740992",
+			"corrupted value indicates float64 rounding")
+	})
+
+	t.Run("prefer_downstream keeps downstream's large integer verbatim", func(t *testing.T) {
+		upstreamJSON := `{"id":123,"upstream_only":"u"}`
+		downstreamJSON := `{"id":` + largeInt + `,"downstream_only":"d"}`
+		upstreamDir, downstreamDir := setupStructuredPair(t, "config.json", upstreamJSON, downstreamJSON)
+
+		integrator := &IntegratorSharedOwnershipStructuredPreferDownstream{}
+		require.NoError(t, integrator.Integrate([]string{"config.json"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+		mergedBytes, err := os.ReadFile(filepath.Join(downstreamDir, "config.json"))
+		require.NoError(t, err)
+		assert.Contains(t, string(mergedBytes), largeInt)
+	})
+}
+
 func TestIntegratorSharedOwnershipStructuredPreferDownstream_JSON(t *testing.T) {
 	upstreamJSON := `{"shared_key":"from-upstream","upstream_only":"value-u"}`
 	downstreamJSON := `{"shared_key":"from-downstream","downstream_only":"value-d"}`

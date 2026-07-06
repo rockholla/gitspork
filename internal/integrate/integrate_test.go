@@ -3,6 +3,7 @@ package integrate
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -315,6 +316,63 @@ func TestIntegrate(t *testing.T) {
 
 		_, err = os.Stat(filepath.Join(downstreamDir, "upstream-owned", "sub", "sub", "sub-sub.txt"))
 		assert.NoError(t, err)
+	})
+}
+
+func Test_ensureDownstreamMetaDir(t *testing.T) {
+	t.Run("creates .gitspork when missing", func(t *testing.T) {
+		downstream := t.TempDir()
+		metaDir, err := ensureDownstreamMetaDir(downstream)
+		require.NoError(t, err)
+		info, statErr := os.Stat(metaDir)
+		require.NoError(t, statErr)
+		assert.True(t, info.IsDir())
+	})
+
+	t.Run("no-ops when .gitspork exists as a directory", func(t *testing.T) {
+		downstream := t.TempDir()
+		existing := filepath.Join(downstream, ".gitspork")
+		require.NoError(t, os.Mkdir(existing, 0755))
+		sentinel := filepath.Join(existing, "keep.txt")
+		require.NoError(t, os.WriteFile(sentinel, []byte("hi"), 0644))
+
+		_, err := ensureDownstreamMetaDir(downstream)
+		require.NoError(t, err)
+		_, err = os.Stat(sentinel)
+		assert.NoError(t, err, "existing directory contents must be preserved")
+	})
+
+	t.Run("replaces .gitspork when it exists as a non-directory", func(t *testing.T) {
+		downstream := t.TempDir()
+		strayFile := filepath.Join(downstream, ".gitspork")
+		require.NoError(t, os.WriteFile(strayFile, []byte("stray"), 0644))
+
+		metaDir, err := ensureDownstreamMetaDir(downstream)
+		require.NoError(t, err)
+		info, statErr := os.Stat(metaDir)
+		require.NoError(t, statErr)
+		assert.True(t, info.IsDir(), "stray file at .gitspork should be replaced with a directory")
+	})
+
+	t.Run("returns error, no panic, when Stat fails with permission denied", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("permission-denied semantics differ on Windows")
+		}
+		if os.Getuid() == 0 {
+			t.Skip("root bypasses filesystem permission checks")
+		}
+		downstream := t.TempDir()
+		// Strip search permission on the downstream dir so os.Stat on a child
+		// path returns EACCES (a non-IsNotExist error). Historically this
+		// short-circuited into a nil-pointer dereference on pathInfo.
+		require.NoError(t, os.Chmod(downstream, 0000))
+		t.Cleanup(func() { _ = os.Chmod(downstream, 0755) })
+
+		require.NotPanics(t, func() {
+			_, err := ensureDownstreamMetaDir(downstream)
+			require.Error(t, err, "expected error surfacing the underlying stat failure")
+			assert.False(t, os.IsNotExist(err), "error should not be masked as not-exist")
+		})
 	})
 }
 

@@ -749,7 +749,14 @@ func migrationCompletedInDownstream(migrationID string, downstreamRepoPath strin
 
 func runMigration(migrationInstructions *config.GitSporkConfigMigrationInstructions, upstreamRepoRootPath string, downstreamRepoPath string, logger sdktypes.Logger) error {
 	if migrationInstructions.Exec != "" {
-		execParts := strings.Split(migrationInstructions.Exec, " ")
+		// strings.Fields splits on any run of whitespace (spaces, tabs, newlines),
+		// so double-spaced or tab-separated commands tokenize correctly. Users
+		// needing arguments that contain literal spaces should invoke a shell
+		// explicitly: `sh -c 'my-script "arg with spaces"'`.
+		execParts := strings.Fields(migrationInstructions.Exec)
+		if len(execParts) == 0 {
+			return fmt.Errorf("migration exec %q resolved to zero tokens", migrationInstructions.Exec)
+		}
 		if _, err := os.Stat(filepath.Join(upstreamRepoRootPath, execParts[0])); err == nil {
 			// this is a case where the exec is calling a script that exists in the upstream, so call from that absolute path
 			execParts[0] = filepath.Join(upstreamRepoRootPath, execParts[0])

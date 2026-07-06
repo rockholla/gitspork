@@ -112,10 +112,14 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 	// Remember how to restore HEAD once the drift check finishes. CI runners
 	// (e.g. Buildkite) typically check out a specific commit, leaving a detached
 	// HEAD with no branch to return to; in that case restore by hash, otherwise
-	// restore the original branch.
-	restore := &gogit.CheckoutOptions{Hash: headRef.Hash()}
+	// restore the original branch. Force: true so the restore acts as a hard
+	// reset — the re-integration loop mutates worktree files, and if an error
+	// interrupts the flow before diffWorktreeAgainstHEAD stages those changes,
+	// a non-force MergeReset would fail with ErrUnstagedChanges and leave the
+	// user's worktree stuck in the upstream-canonical form.
+	restore := &gogit.CheckoutOptions{Hash: headRef.Hash(), Force: true}
 	if headRef.Name().IsBranch() {
-		restore = &gogit.CheckoutOptions{Branch: headRef.Name()}
+		restore = &gogit.CheckoutOptions{Branch: headRef.Name(), Force: true}
 	}
 
 	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)

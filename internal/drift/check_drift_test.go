@@ -266,6 +266,74 @@ func assertDriftCheckBranchAbsent(t *testing.T, downstreamDir string) {
 		"transient drift-check branch %q must be cleaned up when CheckDrift returns", driftCheckBranch)
 }
 
+func TestCheckDrift_restoresWorktreeOnMidLoopFailure(t *testing.T) {
+	// When re-integration of one upstream mutates worktree files and a *later*
+	// upstream fails to integrate, CheckDrift returns an error mid-loop and the
+	// deferred restore fires while the worktree still has uncommitted mutations.
+	// The restore must succeed and put the worktree back to the caller's original
+	// committed content — not leave the upstream-canonical mutations in place.
+	upstreamA, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+
+	// Baseline integrate of A, then commit a drifted value so the file is not
+	// what upstream A would produce, so IntegrateForDriftCheck will mutate it.
+	testIntegrateAndCommitBaseline(t, upstreamA, downstreamDir)
+	const driftedContent = "drifted-committed\n"
+	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", driftedContent)
+
+	// Swap in a second state entry that points at a bogus URL so
+	// IntegrateForDriftCheck for that entry fails (well after upstream A has
+	// mutated the worktree).
+	state, err := integrate.LoadDownstreamState(downstreamDir)
+	require.NoError(t, err)
+	require.Len(t, state.Upstreams, 1, "baseline integrate should record exactly one upstream")
+	state.Upstreams = append(state.Upstreams, sdktypes.UpstreamState{
+		URL:        "file:///nonexistent-gitspork-drift-restore-test-" + t.Name(),
+		CommitHash: state.Upstreams[0].CommitHash,
+	})
+	require.NoError(t, integrate.SaveDownstreamState(downstreamDir, state))
+	// SaveDownstreamState edits .gitspork/downstream-state.json — commit it so
+	// the working tree is clean when CheckDrift runs.
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	testharness.CommitAllWithMessage(t, repo, "add bogus state entry")
+
+	_, err = CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err, "CheckDrift must fail when a later upstream cannot be integrated")
+
+	got, readErr := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned/file.txt"))
+	require.NoError(t, readErr)
+	assert.Equal(t, driftedContent, string(got),
+		"restore must overwrite mid-loop worktree mutations left by the earlier upstream, even though those changes are unstaged")
+}
+
+func TestCheckDrift_restoresWorktreeContentAfterDrift(t *testing.T) {
+	// After CheckDrift returns, the downstream worktree files must match the
+	// caller's original HEAD content — CheckDrift must not leave the drifted
+	// upstream-canonical content in place of the user's committed content.
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	driftPath := filepath.Join(downstreamDir, "upstream-owned/file.txt")
+	driftedContent := "drifted-committed\n"
+	testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", driftedContent)
+
+	_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.ErrorIs(t, err, sdktypes.ErrDriftDetected)
+
+	got, readErr := os.ReadFile(driftPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, driftedContent, string(got),
+		"worktree should be restored to the caller's original committed content, not left with the upstream-canonical content used during drift detection")
+}
+
 func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 	upstreamDir, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)

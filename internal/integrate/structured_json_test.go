@@ -158,6 +158,77 @@ func TestParseJSON_integerScalarsRoundTripAsIntegers(t *testing.T) {
 	assert.Contains(t, string(out), `"ratio": 0.5`, "float scalar must round-trip as decimal, not scientific notation")
 }
 
+// TestParseJSON_preservesFourLevelNestingOrder pins mapping-order at 3+
+// levels of nesting on the JSON side. Existing tests only go two deep.
+func TestParseJSON_preservesFourLevelNestingOrder(t *testing.T) {
+	in := []byte(`{"root":{"layer_z":{"layer_y":{"layer_x":{"zebra":1,"apple":2,"mango":3},"layer_before_x":"before"},"layer_before_y":"before"},"layer_after_z":"after"}}`)
+	n, err := parseJSON(in)
+	require.NoError(t, err)
+
+	root, ok := n.mapping.Get("root")
+	require.True(t, ok)
+	assert.Equal(t, []string{"layer_z", "layer_after_z"}, root.mapping.Keys(), "level 2 key order")
+
+	layerZ, ok := root.mapping.Get("layer_z")
+	require.True(t, ok)
+	assert.Equal(t, []string{"layer_y", "layer_before_y"}, layerZ.mapping.Keys(), "level 3 key order")
+
+	layerY, ok := layerZ.mapping.Get("layer_y")
+	require.True(t, ok)
+	assert.Equal(t, []string{"layer_x", "layer_before_x"}, layerY.mapping.Keys(), "level 4 key order")
+
+	layerX, ok := layerY.mapping.Get("layer_x")
+	require.True(t, ok)
+	assert.Equal(t, []string{"zebra", "apple", "mango"}, layerX.mapping.Keys(), "level 5 key order")
+}
+
+// TestParseJSON_topLevelArray: existing tests only exercise arrays nested
+// inside objects. parseJSONFromToken's '[' branch is reachable at the top
+// level too, and this test locks that branch.
+func TestParseJSON_topLevelArray(t *testing.T) {
+	in := []byte(`["alpha","beta","gamma"]`)
+	n, err := parseJSON(in)
+	require.NoError(t, err)
+	require.Equal(t, nodeSequence, n.kind)
+	require.Len(t, n.seq, 3)
+	assert.Equal(t, "alpha", n.seq[0].scalar)
+	assert.Equal(t, "gamma", n.seq[2].scalar)
+
+	// Round-trip must also work at the top level.
+	out, err := writeJSON(n)
+	require.NoError(t, err)
+	roundTripped, err := parseJSON(out)
+	require.NoError(t, err)
+	require.Equal(t, nodeSequence, roundTripped.kind)
+	require.Len(t, roundTripped.seq, 3)
+	assert.Equal(t, "beta", roundTripped.seq[1].scalar)
+}
+
+// TestParseJSON_topLevelScalar: the parseJSONFromToken branch that returns
+// newScalarNode for a non-delimiter token IS reachable at the top level
+// (e.g., a JSON file containing just `"hello"` or `42`). Locks the branch
+// so a regression restricting parseJSON to object-only inputs would fail
+// here.
+func TestParseJSON_topLevelScalar(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []byte
+	}{
+		{"top-level string", []byte(`"hello"`)},
+		{"top-level bool", []byte(`true`)},
+		{"top-level null", []byte(`null`)},
+		{"top-level integer", []byte(`42`)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			n, err := parseJSON(tc.in)
+			require.NoError(t, err)
+			require.Equal(t, nodeScalar, n.kind,
+				"top-level JSON scalar must parse as nodeScalar, not fall through to a mapping or error")
+		})
+	}
+}
+
 func TestWriteJSON_emptyStructures(t *testing.T) {
 	t.Run("empty mapping", func(t *testing.T) {
 		out, err := writeJSON(newMappingNode())

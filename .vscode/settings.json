@@ -1,5 +1,5 @@
 {
   "gopls": {
-    "build.buildFlags": ["-tags=functional,functional_docker,examples,sdk"]
+    "build.buildFlags": ["-tags=functional,functional_docker,examples,sdk,testharness"]
   }
 }

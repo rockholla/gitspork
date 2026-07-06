@@ -4,6 +4,8 @@ package sdk_test
 
 import (
 	"errors"
+	"os"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -324,6 +326,101 @@ func TestLogger_customImplementation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, captured.entries, "custom Logger should receive progress calls")
+}
+
+// TestCheckDrift_overrideMatchesState_noDrift is the CheckDrift override
+// happy path — an explicit Upstreams override that matches the state entry.
+// The existing sdk tests only cover the error path (override not in state);
+// this one proves the matched-override branch actually runs.
+func TestCheckDrift_overrideMatchesState_noDrift(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	writeAndCommit(t, downstreamDir, ".gitspork/marker", "baseline")
+
+	// Override with the same URL — matched against state entry, integrator
+	// pins at the recorded commit, no drift.
+	report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+		DownstreamRepoPath: downstreamDir,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir}},
+	})
+	require.NoError(t, err, "matched override with no drifted files should return nil error")
+	require.NotNil(t, report)
+	assert.False(t, report.HasDrift, "no drift expected against a matched override")
+	assert.Empty(t, report.Files)
+}
+
+// TestCheckDrift_overrideMatchesState_driftDetected: matched-override happy
+// path with actual drift. Locks the DriftReport contract when the caller
+// scoped the check to a specific upstream via override.
+func TestCheckDrift_overrideMatchesState_driftDetected(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	writeAndCommit(t, downstreamDir, ".gitspork/marker", "baseline")
+	writeAndCommit(t, downstreamDir, "upstream-owned/file.txt", "drifted content\n")
+
+	overrideURL := "file://" + upstreamDir
+	report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+		DownstreamRepoPath: downstreamDir,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: overrideURL}},
+	})
+	require.ErrorIs(t, err, gitspork.ErrDriftDetected)
+	require.NotNil(t, report)
+	assert.True(t, report.HasDrift)
+	require.Len(t, report.Files, 1)
+	assert.Equal(t, "upstream-owned/file.txt", report.Files[0].Path)
+	// AttributedURL is the CALLER-supplied override, not whatever shape the
+	// state file records. Fixed by the current implementation
+	// (check_drift.go: fileOwner[f] = entry.spec.URL) and worth pinning so
+	// SDK consumers can rely on it.
+	assert.Equal(t, overrideURL, report.Files[0].AttributedURL,
+		"drifted-file attribution must echo the caller's override URL")
+}
+
+// TestCheckDrift_overrideNormalizesToStateEntry mirrors the functional-tier
+// TestCheckDrift_upstream_override_url_normalized at the SDK boundary: the
+// state entry is recorded under one URL form, the override is passed with a
+// trailing `.git` suffix, and NormalizeUpstreamURL matches them. Uses a
+// same-directory symlink so the `.git` alias clone-resolves to the same
+// repo. Windows is skipped because symlink semantics differ.
+func TestCheckDrift_overrideNormalizesToStateEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink alias not portable to Windows CI")
+	}
+	upstreamDir, _ := minimalUpstream(t)
+	alias := upstreamDir + ".git"
+	require.NoError(t, os.Symlink(upstreamDir, alias))
+
+	downstreamDir := emptyDownstream(t)
+	// Integrate with the un-suffixed URL; state records this form.
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	writeAndCommit(t, downstreamDir, ".gitspork/marker", "baseline")
+
+	// Override URL adds ".git" — NormalizeUpstreamURL strips it, so this must
+	// still match the state entry.
+	overrideURL := "file://" + alias
+	report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+		DownstreamRepoPath: downstreamDir,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: overrideURL}},
+	})
+	require.NoError(t, err,
+		"URL-shape-varying override must normalize to the state entry and run cleanly")
+	assert.False(t, report.HasDrift)
 }
 
 // Error path: no upstreams in state and no override → error mentions integrate

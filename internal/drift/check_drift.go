@@ -122,13 +122,18 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(driftBranchRef, headRef.Hash())); err != nil {
 		return report, fmt.Errorf("error creating/resetting drift-check branch: %v", err)
 	}
+	// Register cleanup immediately: a subsequent Checkout (or any later step) may
+	// fail, and we must still delete the drift-check branch we just created and
+	// restore the caller's original HEAD. go-git's Repository.DeleteBranch only
+	// removes the branch config section (which we never created), so we drop the
+	// reference directly via the storer.
+	defer func() {
+		_ = wt.Checkout(restore)
+		_ = repo.Storer.RemoveReference(driftBranchRef)
+	}()
 	if err := wt.Checkout(&gogit.CheckoutOptions{Branch: driftBranchRef}); err != nil {
 		return report, fmt.Errorf("error checking out drift-check branch: %v", err)
 	}
-	defer func() {
-		_ = wt.Checkout(restore)
-		_ = repo.DeleteBranch(driftCheckBranch)
-	}()
 
 	// Re-integrate each upstream; track which files each one last touched.
 	// fileOwner maps relative file path -> upstream URL that last wrote it.

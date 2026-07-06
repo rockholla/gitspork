@@ -8,6 +8,7 @@
 |---|---|---|
 | `upstream_owned` | `.github/**`, `LICENSE`, `CONTRIBUTING.md` | The template maintainer owns these — they are always synced to downstream on integrate |
 | `downstream_owned` | `README.md`, `CHANGELOG.md` | Seeded from upstream on first integrate, then never touched again — the project owner writes their own |
+| `downstream_owned` (rename form) | `starter/AUTHORS.md` → `AUTHORS.md` | Upstream keeps a canonical seed under `starter/`; downstream receives it at the conventional top-level location. `{from, to}` lets the template author use one path in the upstream and let the downstream see it at another |
 | `shared_ownership.structured.prefer_downstream` | `project-meta.json` | Upstream seeds this file with defaults; once the downstream customises it, their values survive all future re-integrates |
 | `templated` | `CODE_OF_CONDUCT.md` | Rendered from `project-meta.json` using `project_name` — re-rendered on every integrate so it always reflects the current project name |
 
@@ -43,6 +44,8 @@ upstream/                          ← the gitspork upstream repo (the template)
   CONTRIBUTING.md                  ← upstream-owned contributing guide
   README.md                        ← seeded to downstream; downstream owns it thereafter
   CHANGELOG.md                     ← seeded to downstream; downstream owns it thereafter
+  starter/
+    AUTHORS.md                     ← seeded to downstream as AUTHORS.md (via {from, to} rename)
   project-meta.json                ← prefer_downstream structured data; upstream seeds defaults
   .gitspork-templates/             ← Go templates rendered into each downstream
     CODE_OF_CONDUCT.md.go.tmpl     ← rendered using project_name from project-meta.json

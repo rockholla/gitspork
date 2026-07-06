@@ -73,8 +73,10 @@ type TemplatedIntegrator interface {
 }
 
 // NormalizeUpstreamURL returns a canonical key for an upstream URL+subpath pair
-// so that SSH and HTTPS forms of the same repo compare equal. Used to look up
-// stored state entries regardless of how the upstream URL was originally spelled.
+// so that SSH and HTTPS forms of the same repo compare equal, and so that
+// subpath shape variants ("infra", "infra/", "/infra", "./infra") produce the
+// same key. Used to look up stored state entries regardless of how the upstream
+// URL or subpath was originally spelled.
 func NormalizeUpstreamURL(rawURL string, subpath string) string {
 	u := rawURL
 	// SSH git@host:org/repo -> host/org/repo
@@ -85,6 +87,7 @@ func NormalizeUpstreamURL(rawURL string, subpath string) string {
 	u = reHTTPProto.ReplaceAllString(u, "")
 	// strip trailing .git
 	u = strings.TrimSuffix(u, ".git")
+	subpath = config.NormalizeUpstreamPath(subpath)
 	if subpath != "" {
 		u = u + "::" + subpath
 	}
@@ -158,6 +161,14 @@ func integrateOne(opts *sdktypes.IntegrateOptions, upstream sdktypes.UpstreamSpe
 // carrying the drift-check flag and pinned commit hash, and is called from
 // both integrateOne (public path) and IntegrateForDriftCheck.
 func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) (sdktypes.IntegratedUpstream, error) {
+	// Canonicalize the user-supplied subpath once at the funnel so every
+	// downstream consumer (state lookup key, filepath.Join for the clone root,
+	// computeUpstreamDelta, and the value we persist to state) sees the same
+	// shape. Otherwise "infra/" and "infra" spelled across separate invocations
+	// look like different upstreams to the state matcher — the delta propagation
+	// skips silently and UpsertUpstreamState appends a duplicate entry.
+	upstream.Subpath = config.NormalizeUpstreamPath(upstream.Subpath)
+
 	prevHash := ""
 	if !req.forDriftCheck {
 		existingState, err := LoadDownstreamState(req.DownstreamRepoPath)

@@ -186,6 +186,41 @@ func Test_UpstreamMv(t *testing.T) {
 		result := loadConfigFile(t, cfg)
 		assert.Equal(t, "out/cloud-v2/foo.txt", result.Templated[0].Destination)
 	})
+
+	// NormalizeUpstreamPath (backed by path.Clean) also catches shell shapes
+	// that a plain TrimSuffix would miss.
+	t.Run("./ prefix on oldPath still rewrites matching entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/old.md"}},
+		})
+		warnings, err := UpstreamMv(cfg, "./docs/old.md", "docs/new.md")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/new.md"}}, result.UpstreamOwned)
+	})
+
+	t.Run("doubled slashes in oldPath still rewrite matching glob", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}},
+		})
+		warnings, err := UpstreamMv(cfg, "docs//cloud-native", "docs/cloud")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/**"}}, result.UpstreamOwned)
+	})
+
+	t.Run("interior . in oldPath still rewrites", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}},
+		})
+		warnings, err := UpstreamMv(cfg, "docs/./cloud-native", "docs/cloud")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/**"}}, result.UpstreamOwned)
+	})
 }
 
 func Test_FindGitSporkConfig(t *testing.T) {
@@ -420,5 +455,40 @@ func Test_UpstreamRm(t *testing.T) {
 		result := loadConfigFile(t, cfg)
 		require.Len(t, result.Templated, 1)
 		assert.Equal(t, "templates/bar.tmpl", result.Templated[0].Template)
+	})
+
+	// NormalizeUpstreamPath (backed by path.Clean) also catches shell shapes
+	// that a plain TrimSuffix would miss.
+	t.Run("./ prefix on path still removes matching entry", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/guide.md"}, {Pattern: "docs/other.md"}},
+		})
+		warnings, err := UpstreamRm(cfg, "./docs/guide.md", false)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
+	})
+
+	t.Run("doubled slashes in path still remove matching glob (recursive)", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}, {Pattern: "docs/other.md"}},
+		})
+		warnings, err := UpstreamRm(cfg, "docs//cloud-native", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
+	})
+
+	t.Run("interior . in path still removes matching glob (recursive)", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}, {Pattern: "docs/other.md"}},
+		})
+		warnings, err := UpstreamRm(cfg, "docs/./cloud-native", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
 	})
 }

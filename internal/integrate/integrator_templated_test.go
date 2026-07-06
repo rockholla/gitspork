@@ -137,6 +137,214 @@ func TestIntegratorTemplated_noopWithEmptyInstructionsAndNoCache(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "must not create .gitattributes on a downstream with no templated integration")
 }
 
+// setupStructuredMergeFixture prepares an upstream template + optional
+// existing downstream file for exercising the templated Merged.Structured
+// post-merge branch. Returns upstream+downstream dirs. templateName is the
+// path of the template within the upstream dir; destName the path within
+// the downstream dir; existingDownstream is content to seed (empty means
+// no existing file — the "merge is skipped when dest doesn't exist" case).
+func setupStructuredMergeFixture(t *testing.T, templateName, templateBody, destName, existingDownstream string) (string, string) {
+	t.Helper()
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, templateName), []byte(templateBody), 0644))
+	if existingDownstream != "" {
+		dest := filepath.Join(downstreamDir, destName)
+		require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0755))
+		require.NoError(t, os.WriteFile(dest, []byte(existingDownstream), 0644))
+	}
+	return upstreamDir, downstreamDir
+}
+
+func TestIntegratorTemplated_structuredMerge_preferUpstream_YAML(t *testing.T) {
+	// Upstream render "wins" on collision; downstream-only keys survive.
+	upstreamTemplate := "shared_key: from-upstream\nupstream_only: value-u\n"
+	existingDownstream := "shared_key: from-downstream\ndownstream_only: value-d\n"
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.yaml.go.tmpl", upstreamTemplate,
+		"config.yaml", existingDownstream)
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml.go.tmpl",
+		Destination: "config.yaml",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	merged, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	m := readYAMLMap(t, filepath.Join(downstreamDir, "config.yaml"))
+	assert.Equal(t, "from-upstream", m["shared_key"], "upstream must win on collision")
+	assert.Equal(t, "value-u", m["upstream_only"], "upstream-only key must land in downstream")
+	assert.Equal(t, "value-d", m["downstream_only"], "downstream-only key must survive")
+	// Sanity: file wasn't left as the raw template render (which would lack downstream_only)
+	assert.Contains(t, string(merged), "downstream_only")
+}
+
+func TestIntegratorTemplated_structuredMerge_preferDownstream_YAML(t *testing.T) {
+	// Downstream "wins" on collision; upstream-only keys land in downstream.
+	upstreamTemplate := "shared_key: from-upstream\nupstream_only: value-u\n"
+	existingDownstream := "shared_key: from-downstream\ndownstream_only: value-d\n"
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.yaml.go.tmpl", upstreamTemplate,
+		"config.yaml", existingDownstream)
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml.go.tmpl",
+		Destination: "config.yaml",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferDownstream},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	m := readYAMLMap(t, filepath.Join(downstreamDir, "config.yaml"))
+	assert.Equal(t, "from-downstream", m["shared_key"], "downstream must win on collision")
+	assert.Equal(t, "value-d", m["downstream_only"])
+	assert.Equal(t, "value-u", m["upstream_only"], "upstream-only key must still land in downstream")
+}
+
+func TestIntegratorTemplated_structuredMerge_preferUpstream_JSON(t *testing.T) {
+	upstreamTemplate := `{"shared_key":"from-upstream","upstream_only":"value-u"}`
+	existingDownstream := `{"shared_key":"from-downstream","downstream_only":"value-d"}`
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.json.go.tmpl", upstreamTemplate,
+		"config.json", existingDownstream)
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.json.go.tmpl",
+		Destination: "config.json",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	m := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
+	assert.Equal(t, "from-upstream", m["shared_key"])
+	assert.Equal(t, "value-u", m["upstream_only"])
+	assert.Equal(t, "value-d", m["downstream_only"], "downstream-only JSON keys must survive")
+}
+
+func TestIntegratorTemplated_structuredMerge_preferDownstream_JSON(t *testing.T) {
+	upstreamTemplate := `{"shared_key":"from-upstream","upstream_only":"value-u"}`
+	existingDownstream := `{"shared_key":"from-downstream","downstream_only":"value-d"}`
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.json.go.tmpl", upstreamTemplate,
+		"config.json", existingDownstream)
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.json.go.tmpl",
+		Destination: "config.json",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferDownstream},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	m := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
+	assert.Equal(t, "from-downstream", m["shared_key"])
+	assert.Equal(t, "value-d", m["downstream_only"])
+	assert.Equal(t, "value-u", m["upstream_only"])
+}
+
+// TestIntegratorTemplated_structuredMerge_skippedWhenDestinationAbsent guards
+// the pre-merge Stat check at integrator_templated.go:135. When Merged.Structured
+// is set but the destination file doesn't yet exist, the merge path must be
+// skipped — otherwise a fresh downstream would try to merge against a
+// non-existent file and either error or produce garbage. Instead the template
+// render is written straight to the destination unchanged.
+func TestIntegratorTemplated_structuredMerge_skippedWhenDestinationAbsent(t *testing.T) {
+	upstreamTemplate := "shared_key: from-upstream\nupstream_only: value-u\n"
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.yaml.go.tmpl", upstreamTemplate,
+		"config.yaml", "") // no existing downstream file
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml.go.tmpl",
+		Destination: "config.yaml",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, upstreamTemplate, string(got),
+		"first-run render with no existing dest must skip the structured merge and write the template output verbatim")
+}
+
+// TestIntegratorTemplated_structuredMerge_invalidMode surfaces a clear
+// error rather than a silent no-op or panic when Merged.Structured is set
+// to an unrecognized value AND the destination already exists.
+func TestIntegratorTemplated_structuredMerge_invalidMode(t *testing.T) {
+	upstreamDir, downstreamDir := setupStructuredMergeFixture(t,
+		"template.yaml.go.tmpl", "k: v\n",
+		"config.yaml", "existing: keep\n") // dest must exist so the guard runs
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml.go.tmpl",
+		Destination: "config.yaml",
+		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: "prefer-neither"},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid templated merged.structured value")
+	assert.Contains(t, err.Error(), "prefer-neither")
+	assert.Contains(t, err.Error(), config.TemplatedMergeStructuredPreferUpstream)
+	assert.Contains(t, err.Error(), config.TemplatedMergeStructuredPreferDownstream)
+}
+
+// TestIntegratorTemplated_structuredMerge_noTmpDirLeak asserts the fix from
+// PR #66 (defer scoping) holds: rendering many templated instructions in one
+// Integrate call must not leave temp directories behind at the end of the run.
+func TestIntegratorTemplated_structuredMerge_noTmpDirLeak(t *testing.T) {
+	// Build an upstream with three templates + matching existing downstream files
+	// so all three trigger the tmpDir path.
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+
+	instructions := []config.GitSporkConfigTemplated{}
+	for i, name := range []string{"a", "b", "c"} {
+		templateFile := name + ".yaml.go.tmpl"
+		destFile := name + ".yaml"
+		_ = i
+		require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, templateFile),
+			[]byte("key_"+name+": upstream\n"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, destFile),
+			[]byte("key_"+name+": downstream\ndownstream_only_"+name+": v\n"), 0644))
+		instructions = append(instructions, config.GitSporkConfigTemplated{
+			Template:    templateFile,
+			Destination: destFile,
+			Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
+		})
+	}
+
+	// Snapshot the OS temp root's entries before the run so we can spot leaks.
+	tmpRoot := os.TempDir()
+	before, err := os.ReadDir(tmpRoot)
+	require.NoError(t, err)
+	beforeCount := countGitsporkPrefixed(before)
+
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	after, err := os.ReadDir(tmpRoot)
+	require.NoError(t, err)
+	afterCount := countGitsporkPrefixed(after)
+
+	assert.Equal(t, beforeCount, afterCount,
+		"structured-merge tmpDir defer must scope per iteration; leftover gitspork-prefixed temp dirs indicate a leak (before=%d, after=%d)", beforeCount, afterCount)
+
+	// Merged output sanity — pick one destination and verify the merge shape
+	// is what prefer-upstream should produce.
+	m := readYAMLMap(t, filepath.Join(downstreamDir, "a.yaml"))
+	assert.Equal(t, "upstream", m["key_a"])
+	assert.Equal(t, "v", m["downstream_only_a"])
+}
+
+func countGitsporkPrefixed(entries []os.DirEntry) int {
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() && len(e.Name()) >= len("gitspork") && e.Name()[:len("gitspork")] == "gitspork" {
+			n++
+		}
+	}
+	return n
+}
+
 func TestIntegratorTemplated_repeatRunProducesByteIdenticalCache(t *testing.T) {
 	upstreamDir, downstreamDir := setupTemplatedFixture(t,
 		`Hello, {{ index .Inputs "name" }}!`,

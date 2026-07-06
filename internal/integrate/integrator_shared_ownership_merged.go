@@ -101,6 +101,16 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 					continue
 				}
 			} else if strings.Contains(line, fmt.Sprintf("%s%s", config.GitSporkCommentMarker, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)) {
+				if len(upstreamOwnedBlocks) == 0 {
+					// Downstream carries an upstream-owned-block marker that has no counterpart
+					// in upstream (upstream likely removed the block, or downstream has a stray
+					// marker). Preserve the downstream line as-is so any content inside the
+					// unmatched pair is retained — it has effectively transitioned to downstream
+					// ownership — and warn so the user can reconcile.
+					logger.Log("⚠️  %s: downstream has an unmatched %s marker (no matching upstream block); preserving downstream content as-is", integrateFile, sharedOwnershipMergedBeginUpstreamOwnedBlockMarker)
+					mergedContent = fmt.Sprintf("%s%s\n", mergedContent, line)
+					continue
+				}
 				// found begin owned block begin, we can simply inject the upstream-defined owned block at the same index and then just
 				// continue scanning the downstream file until we see the next end upstream owned block marker
 				mergedContent = fmt.Sprintf("%s%s\n%s%s\n",

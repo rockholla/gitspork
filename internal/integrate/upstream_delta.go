@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -27,6 +28,9 @@ type upstreamDelta struct {
 }
 
 func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, cfg *config.GitSporkConfig, upstreamSubpath string) (*upstreamDelta, error) {
+	// Users may specify UpstreamSpec.Subpath with leading or trailing slashes
+	// (e.g. "infra/"). Normalize once here so downstream helpers don't have to.
+	upstreamSubpath = strings.Trim(upstreamSubpath, "/")
 	delta := &upstreamDelta{}
 	if prevHash == "" {
 		return delta, nil
@@ -161,6 +165,10 @@ func resolveManagedDest(srcPath string, matchers []managedMatcher) (string, bool
 }
 
 func stripSubpath(path, subpath string) string {
+	// Defense-in-depth: normalize slashes even though computeUpstreamDelta
+	// already trims its input, so a future caller can't silently break the
+	// prefix comparison by passing "infra/".
+	subpath = strings.Trim(subpath, "/")
 	if subpath == "" {
 		return path
 	}
@@ -205,6 +213,9 @@ func applyTemplatedConfigDelta(prevCommit, newCommit *object.Commit, upstreamSub
 }
 
 func readConfigFromCommit(commit *object.Commit, subpath string) (*config.GitSporkConfig, error) {
+	// Defense-in-depth: normalize slashes so a "foo/" or "/foo" subpath doesn't
+	// produce a "foo//.gitspork.yml" lookup that misses the file.
+	subpath = strings.Trim(subpath, "/")
 	tree, err := commit.Tree()
 	if err != nil {
 		return &config.GitSporkConfig{}, err

@@ -666,6 +666,101 @@ func countGitsporkPrefixed(entries []os.DirEntry) int {
 	return n
 }
 
+// TestIntegratorTemplated_inputMissingAllSources locks the input-validation
+// contract at integrator_templated.go:114 — a templated input MUST supply
+// at least one of prompt / json_data_path / previous_input. A misconfigured
+// config that supplies none should surface a clear error naming the input
+// so the user can act on it.
+func TestIntegratorTemplated_inputMissingAllSources(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "orphan_input"}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "orphan_input",
+		"error must name the offending input so users can locate it in their .gitspork.yml")
+	assert.Contains(t, err.Error(), "requires at least one of",
+		"error must indicate what the input needs to define — 'prompt', 'json_data_path', or 'previous_input'")
+}
+
+// TestIntegratorTemplated_jsonDataPath_missingFile: the input references
+// a JSON file the downstream doesn't have. The error must name the missing
+// file so the user knows what to create/commit.
+func TestIntegratorTemplated_jsonDataPath_missingFile(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+	// Note: no inputs.json file written to downstreamDir.
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error reading json_data_path",
+		"error must be the read-side wrapper so the user knows the file wasn't findable (vs a parse error)")
+	assert.Contains(t, err.Error(), "inputs.json",
+		"error must name the missing file so the user can create/commit it")
+}
+
+// TestIntegratorTemplated_missingTemplateFile: the template referenced in
+// config doesn't exist in the upstream. This surfaces as a read error from
+// os.ReadFile in the render step (integrator_templated.go around line 116).
+func TestIntegratorTemplated_missingTemplateFile(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"name":"world"}`), 0644))
+	// Note: no upstream template file written.
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "missing-template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error reading upstream template",
+		"error must indicate the template read failed (vs a parse or render error)")
+	assert.Contains(t, err.Error(), "missing-template.txt",
+		"error must name the missing template so the user can create it or fix the config path")
+}
+
+// TestIntegratorTemplated_templateParseError: the template file exists but
+// its content is not a valid Go text/template. text/template.Parse returns
+// an error, which the integrator wraps.
+func TestIntegratorTemplated_templateParseError(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "inputs.json"),
+		[]byte(`{"name":"world"}`), 0644))
+	// Unbalanced action delimiter — text/template.Parse rejects this.
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "bad.txt"),
+		[]byte(`Hello {{ .Inputs.name`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "bad.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error parsing related template",
+		"template syntax errors must surface with a distinct wrapping message so users know to fix the template source (not the input data or destination)")
+	assert.Contains(t, err.Error(), "bad.txt",
+		"error must name the offending template file")
+}
+
 func TestIntegratorTemplated_repeatRunProducesByteIdenticalCache(t *testing.T) {
 	upstreamDir, downstreamDir := setupTemplatedFixture(t,
 		`Hello, {{ index .Inputs "name" }}!`,

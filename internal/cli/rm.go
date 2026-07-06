@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
@@ -33,7 +32,7 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 			return gitbin.Require()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			recursive := slices.Contains(args, "-r")
+			recursive := isRmRecursive(args)
 
 			configPath, err := config.FindGitSporkConfig(".")
 			if err != nil {
@@ -87,4 +86,26 @@ func (s *RmSubcommand) GetCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// isRmRecursive reports whether any of args carries a `-r` short flag,
+// including bundled forms like `-rf`, `-fr`, or `-rfn`. git rm does not
+// accept a long `--recursive` form. Everything after a `--` separator is
+// treated as positional and not scanned for flags.
+func isRmRecursive(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if len(a) < 2 || a[0] != '-' {
+			continue
+		}
+		if strings.HasPrefix(a, "--") {
+			continue
+		}
+		if strings.ContainsRune(a[1:], 'r') {
+			return true
+		}
+	}
+	return false
 }

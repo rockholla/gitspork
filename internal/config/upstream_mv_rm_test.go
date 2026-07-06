@@ -147,6 +147,45 @@ func Test_UpstreamMv(t *testing.T) {
 		result := loadConfigFile(t, cfg)
 		assert.Equal(t, []OwnedEntry{{From: "renamed-seed.md", To: "seed-to.md"}}, result.DownstreamOwned)
 	})
+
+	// Shell tab-completion routinely appends "/" to directory arguments.
+	// mv/rm must treat "docs/cloud-native/" the same as "docs/cloud-native",
+	// otherwise the git operation succeeds but no config entries are rewritten
+	// and the resulting commit is silently broken.
+	t.Run("trailing slash on oldPath still rewrites matching glob", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}},
+		})
+		warnings, err := UpstreamMv(cfg, "docs/cloud-native/", "docs/cloud")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/**"}}, result.UpstreamOwned)
+	})
+
+	t.Run("trailing slash on newPath does not corrupt rewrite", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}},
+		})
+		warnings, err := UpstreamMv(cfg, "docs/cloud-native", "docs/cloud/")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/cloud/**"}}, result.UpstreamOwned)
+	})
+
+	t.Run("trailing slashes on both paths rewrite templated destination", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/foo.tmpl", Destination: "out/cloud/foo.txt"},
+			},
+		})
+		warnings, err := UpstreamMv(cfg, "out/cloud/", "out/cloud-v2/")
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, "out/cloud-v2/foo.txt", result.Templated[0].Destination)
+	})
 }
 
 func Test_FindGitSporkConfig(t *testing.T) {
@@ -353,5 +392,33 @@ func Test_UpstreamRm(t *testing.T) {
 		assert.Empty(t, warnings)
 		result := loadConfigFile(t, cfg)
 		assert.Equal(t, []OwnedEntry{{Pattern: "keep.md"}}, result.DownstreamOwned)
+	})
+
+	// Shell tab-completion routinely appends "/" to directory arguments; rm must
+	// treat "docs/cloud-native/" the same as "docs/cloud-native".
+	t.Run("trailing slash on path still removes matching glob (recursive)", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			UpstreamOwned: []OwnedEntry{{Pattern: "docs/cloud-native/**"}, {Pattern: "docs/other.md"}},
+		})
+		warnings, err := UpstreamRm(cfg, "docs/cloud-native/", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		assert.Equal(t, []OwnedEntry{{Pattern: "docs/other.md"}}, result.UpstreamOwned)
+	})
+
+	t.Run("trailing slash on path still removes matching templated entry (recursive)", func(t *testing.T) {
+		cfg := makeConfigFile(t, &GitSporkConfig{
+			Templated: []GitSporkConfigTemplated{
+				{Template: "templates/cloud-native/foo.tmpl", Destination: "out/foo.txt"},
+				{Template: "templates/bar.tmpl", Destination: "out/bar.txt"},
+			},
+		})
+		warnings, err := UpstreamRm(cfg, "templates/cloud-native/", true)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		result := loadConfigFile(t, cfg)
+		require.Len(t, result.Templated, 1)
+		assert.Equal(t, "templates/bar.tmpl", result.Templated[0].Template)
 	})
 }

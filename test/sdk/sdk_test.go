@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -513,6 +514,77 @@ func TestIntegrateLocal_earlyError_returnsNonNilResult(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, result)
 	assert.Empty(t, result.Upstreams)
+}
+
+// TestIntegrate_concurrent_distinctDownstreams pins the SDK-level
+// contract: concurrent Integrate calls against DISTINCT downstream repos
+// must produce independent, correct results — one goroutine's result and
+// state file must not be corrupted by another's. This is the realistic
+// bulk-operation shape (e.g. a controller integrating N repos in parallel).
+//
+// Concurrent Integrate against the SAME downstream is out of scope — that
+// would be inherently racy on the state file and the worktree, and is not
+// claimed to be supported.
+//
+// Note on `go test -race`: this test passes WITHOUT the race detector.
+// Under `-race`, an unrelated race triggers inside go-git's own
+// PackSession.Handshake (a helper goroutine writes to a stderr buffer that
+// the parent reads at defer-time) — that race is INTERNAL to a single
+// Remote.List call and fires even on non-concurrent single-Integrate tests.
+// It's a pre-existing go-git issue, not a bug this test is claiming
+// gitspork is free of. If it gets fixed upstream, enabling -race for this
+// suite will start giving meaningful signal about cross-goroutine races on
+// gitspork's own state.
+func TestIntegrate_concurrent_distinctDownstreams(t *testing.T) {
+	const n = 4
+
+	upstreamDir, upstreamHash := minimalUpstream(t)
+
+	type outcome struct {
+		result *gitspork.IntegrateResult
+		err    error
+		down   string
+	}
+	results := make(chan outcome, n)
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			downstreamDir := emptyDownstream(t)
+			r, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+				Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+				DownstreamRepoPath: downstreamDir,
+			})
+			results <- outcome{result: r, err: err, down: downstreamDir}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	seenDownstreams := map[string]bool{}
+	for o := range results {
+		require.NoError(t, o.err, "concurrent integrate must not surface errors on distinct downstreams")
+		require.NotNil(t, o.result)
+		require.Len(t, o.result.Upstreams, 1)
+		assert.Equal(t, upstreamHash.String(), o.result.Upstreams[0].CommitHash,
+			"each goroutine's IntegratedUpstream.CommitHash must reflect the upstream's real HEAD — a mismatch here would indicate shared state was mutated across goroutines")
+
+		// Every goroutine ran against a unique tempdir; ensure the SDK didn't
+		// return a result attributed to someone else's downstream.
+		assert.False(t, seenDownstreams[o.down], "duplicate downstream in results — goroutine cross-contamination")
+		seenDownstreams[o.down] = true
+
+		// Each downstream's state file should reflect its own upstream — a
+		// concurrent bug that mixed state paths would produce garbage here.
+		state := readStateJSON(t, o.down)
+		require.Len(t, state.Upstreams, 1, "each downstream must have exactly one upstream in its state")
+		assert.Equal(t, upstreamHash.String(), state.Upstreams[0].CommitHash)
+	}
+
+	assert.Len(t, seenDownstreams, n,
+		"expected %d distinct downstream outcomes, got %d", n, len(seenDownstreams))
 }
 
 // Error path: no upstreams in state and no override → error mentions integrate

@@ -135,3 +135,31 @@ func Test_isCacheFresh(t *testing.T) {
 		})
 	}
 }
+
+func Test_fetchedAtRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "some-key.fetched-at")
+
+	now := time.Now().Round(time.Second) // sidecar stores second-precision
+	require.NoError(t, writeFetchedAt(path, now))
+
+	got, err := readFetchedAt(path)
+	require.NoError(t, err)
+	assert.Equal(t, now.Unix(), got.Unix())
+}
+
+func Test_readFetchedAt_missingFile(t *testing.T) {
+	_, err := readFetchedAt(filepath.Join(t.TempDir(), "does-not-exist"))
+	require.Error(t, err)
+	assert.True(t, os.IsNotExist(err), "must surface os.IsNotExist so callers can branch on it")
+}
+
+func Test_readFetchedAt_malformedContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.fetched-at")
+	require.NoError(t, os.WriteFile(path, []byte("not-a-number"), 0644))
+
+	_, err := readFetchedAt(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parsing")
+}

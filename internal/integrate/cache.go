@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -94,4 +96,26 @@ func isCacheFresh(fetchedAt time.Time, ttl time.Duration) bool {
 		return false
 	}
 	return time.Since(fetchedAt) <= ttl
+}
+
+// readFetchedAt reads the Unix-timestamp sidecar file written by
+// writeFetchedAt. Returns the timestamp on success. On a missing file the
+// error satisfies os.IsNotExist so callers can treat it as "cache absent".
+func readFetchedAt(path string) (time.Time, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	secs, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing timestamp from %s: %w", path, err)
+	}
+	return time.Unix(secs, 0), nil
+}
+
+// writeFetchedAt records t as a Unix-timestamp sidecar file. Callers already
+// hold the per-URL flock when this is invoked, so no atomicity beyond
+// os.WriteFile is required.
+func writeFetchedAt(path string, t time.Time) error {
+	return os.WriteFile(path, []byte(strconv.FormatInt(t.Unix(), 10)), 0644)
 }

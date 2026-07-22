@@ -81,6 +81,14 @@ func cacheKey(url string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// CacheKeyForURL is the exported name of cacheKey, provided so the CLI
+// package can compute cache-entry paths in tests without duplicating the
+// hashing logic. Not part of the public SDK — the wrapper lives in
+// internal/ so external consumers do not see it.
+func CacheKeyForURL(url string) string {
+	return cacheKey(url)
+}
+
 // cacheEntryPaths returns the three filesystem paths associated with a cache
 // entry: the bare-mirror directory itself, the .fetched-at sidecar timestamp
 // file, and the .lock sentinel used by the per-URL flock.

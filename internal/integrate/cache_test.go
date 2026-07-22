@@ -345,7 +345,7 @@ func Test_ensureUpstreamCache_bogusURL_boundedRetry(t *testing.T) {
 	go func() {
 		defer close(done)
 		_, err := ensureUpstreamCache(cfg, "file:///absolutely-nonexistent-path-xyzzy", nil, sdktypes.NoopLogger())
-		require.Error(t, err)
+		assert.Error(t, err)
 	}()
 
 	select {

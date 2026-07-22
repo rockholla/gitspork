@@ -208,7 +208,7 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
 			return "", fmt.Errorf("writing upstream cache timestamp after recovery: %w", err)
 		}
-		logger.Log("populating upstream cache for %s at %s (after corruption recovery)", url, dir)
+		logger.Log("populating upstream cache for %s at %s", url, dir)
 	}
 	return dir, nil
 }

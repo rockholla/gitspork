@@ -44,6 +44,45 @@ func Test_applySSHKnownHosts(t *testing.T) {
 	})
 }
 
+// Test_canShallowClone locks the matrix of when cloneUpstreamForIntegrate is
+// allowed to add Depth: 1 to CloneOptions. A regression that flipped any of
+// these cases would either strip the shallow-clone bandwidth win from a safe
+// path (harmless but wasteful) OR — worse — enable shallow clone on a code
+// path that then walks history and fails, breaking drift-check or delta
+// propagation.
+func Test_canShallowClone(t *testing.T) {
+	tests := []struct {
+		name          string
+		upstreamCommit string
+		prevHash       string
+		versionIsHash  bool
+		want           bool
+	}{
+		// The three safe first-integrate shapes — no pinned commit, no prev,
+		// no hex-hash Version.
+		{name: "first integrate, empty Version", want: true},
+		{name: "first integrate, bare tag/branch", want: true /* versionIsHash=false */},
+		// versionIsHash=true blocks even without a pin (ResolveRevision
+		// needs history to find the commit).
+		{name: "first integrate against hex-hash Version", versionIsHash: true, want: false},
+		// prevUpstreamCommitHash set → re-integrate with computeUpstreamDelta;
+		// needs history to diff prev-tree against new-tree.
+		{name: "re-integrate (prev hash set)", prevHash: "abc123", want: false},
+		// upstreamCommit set → drift-check re-integrating at a pinned hash;
+		// needs history to reach the pinned commit.
+		{name: "drift-check (upstreamCommit set)", upstreamCommit: "abc123", want: false},
+		// Both set (theoretically a drift-check with a stored prev-hash);
+		// still blocked.
+		{name: "drift-check with prev hash", upstreamCommit: "abc123", prevHash: "def456", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := canShallowClone(tc.upstreamCommit, tc.prevHash, tc.versionIsHash)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func Test_resolveUpstreamURL(t *testing.T) {
 	t.Run("no token, HTTPS url -> rewrite to SSH", func(t *testing.T) {
 		result := resolveUpstreamURL("https://github.com/org/repo.git", "")

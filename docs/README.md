@@ -133,6 +133,30 @@ gitspork integrate \
 
 Valid `--upstream` keys are `url` (required), `version`, `subpath`, and `token`. All upstreams are recorded in downstream state and re-checked on `check-drift`, which reports drift per file attributed to whichever upstream last wrote it. `integrate-local` uses `--upstream-path` (also repeatable) with the same precedence semantics.
 
+## Cache management
+
+`integrate` and `check-drift` share a machine-scoped bare-mirror cache of each upstream repo. First invocation against an upstream URL populates the cache; subsequent invocations reuse it, only fetching from remote once the entry ages past the configured TTL. This is what makes coordinator fan-out efficient — running many `gitspork integrate` invocations against the same upstream from one machine only hits the remote once per TTL window instead of once per downstream.
+
+Two flags on `integrate` and `check-drift`:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--cache-ttl` | `2h` | Cache freshness threshold. Cached entries younger than this are used as-is; older triggers `git fetch`. Zero-value means "use `GITSPORK_CACHE_TTL` env if set, else 2h." Use `--no-cache` for full bypass; use `--cache-ttl 1ns` to force refresh but keep the cache warm for the next run. |
+| `--no-cache` | (unset) | Bypass the cache entirely — direct network clone on every invocation. Env: `GITSPORK_NO_CACHE` (any non-empty value bypasses). |
+
+Cache root defaults to `$XDG_CACHE_HOME/gitspork/repos/` on Linux and `~/Library/Caches/gitspork/repos/` on macOS; override via `GITSPORK_CACHE_DIR`.
+
+Two subcommands manage cache state directly:
+
+```bash
+gitspork cache dir                             # print the resolved cache root
+gitspork cache clear                           # interactive: prompt, then wipe all entries
+gitspork cache clear --force                   # non-interactive: wipe all entries
+gitspork cache clear --url <url> --force       # wipe one URL's entry
+```
+
+Non-TTY invocations of `clear` must pass `--force` (fail-loud rather than silently wipe in scripts).
+
 ## Using gitspork as a Go SDK
 
 The three top-level operations are exposed as a Go library at `github.com/rockholla/gitspork/v2`. Add it to your Go module:

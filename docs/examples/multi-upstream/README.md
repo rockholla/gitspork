@@ -19,6 +19,8 @@ Common shapes this pattern fits:
 - **Compliance + language guild.** One upstream enforces compliance-required workflows and license headers; a second, language-specific upstream (Go, TypeScript, Python) adds lint/test tooling appropriate to the language.
 - **Base template + org overlay.** A public open-source template plus a private org-specific upstream that adds internal dashboards, deploy hooks, and org-required annotations.
 
+The machine-level upstream mirror cache (`~/.cache/gitspork/repos/` by default, TTL 2h) is what makes coordinator fan-out efficient — a coordinator running many `gitspork integrate` invocations against the same upstream only fetches from remote once per TTL window, not once per downstream.
+
 ## How ordering + precedence works
 
 Upstreams are integrated in the order they appear on the command line. For `upstream_owned` files that both upstreams write, the last integrated upstream wins. For `shared_ownership.structured.prefer_upstream` files, the merge is applied per-upstream in order: the second upstream's values overwrite the first upstream's values on any shared key, while unique keys from both sides survive.

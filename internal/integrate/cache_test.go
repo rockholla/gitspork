@@ -205,3 +205,37 @@ func Test_populateCache_bogusURL_returnsError(t *testing.T) {
 	err := populateCache(cacheDir, "file:///nonexistent/absolutely-not-a-repo", nil)
 	require.Error(t, err)
 }
+
+func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
+	upstreamDir, firstHash := testharness.MinimalUpstream(t)
+	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
+
+	// Initial populate.
+	require.NoError(t, populateCache(cacheDir, "file://"+upstreamDir, nil))
+
+	// Advance the upstream with a new commit.
+	newFilePath := filepath.Join(upstreamDir, "added-later.txt")
+	require.NoError(t, os.WriteFile(newFilePath, []byte("later"), 0644))
+	upstreamRepo, err := gogit.PlainOpen(upstreamDir)
+	require.NoError(t, err)
+	secondHash := testharness.CommitAllWithMessage(t, upstreamRepo, "add another file")
+
+	// Before refresh, cache has only firstHash.
+	preRepo, err := gogit.PlainOpen(cacheDir)
+	require.NoError(t, err)
+	_, err = preRepo.CommitObject(secondHash)
+	assert.Error(t, err, "second commit must NOT be present before refresh")
+
+	// Refresh, then the cache carries secondHash too.
+	// Re-open to get a fresh object-store view — go-git builds its packfile
+	// index lazily and does not invalidate it on external writes (Reindex()).
+	require.NoError(t, refreshCache(cacheDir, nil))
+	cacheRepo, err := gogit.PlainOpen(cacheDir)
+	require.NoError(t, err)
+	_, err = cacheRepo.CommitObject(secondHash)
+	assert.NoError(t, err, "second commit must be reachable after refresh")
+
+	// And the original commit is still there.
+	_, err = cacheRepo.CommitObject(firstHash)
+	assert.NoError(t, err)
+}

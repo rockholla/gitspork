@@ -11,6 +11,7 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
@@ -135,6 +136,33 @@ func populateCache(dir, url string, auth transport.AuthMethod) error {
 	}
 	if _, err := git.PlainClone(dir, opts); err != nil {
 		return fmt.Errorf("cloning mirror for upstream cache at %s: %w", dir, err)
+	}
+	return nil
+}
+
+// refreshCache runs the equivalent of `git fetch --prune` against the origin
+// remote of an existing bare mirror at dir. Called when a cache entry is
+// stale beyond its TTL. Callers must hold the per-URL flock while this
+// runs — git-fetch inside the mirror is not safe against concurrent writers.
+func refreshCache(dir string, auth transport.AuthMethod) error {
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return fmt.Errorf("opening upstream cache at %s: %w", dir, err)
+	}
+	opts := &git.FetchOptions{
+		RemoteName: "origin",
+		Prune:      true,
+		RefSpecs: []gitconfig.RefSpec{
+			// Mirror-style refspec: mirror all refs on the remote into the local
+			// refs namespace, matching what `git clone --mirror` sets up.
+			"+refs/*:refs/*",
+		},
+	}
+	if auth != nil {
+		opts.Auth = auth
+	}
+	if err := repo.Fetch(opts); err != nil && err != git.NoErrAlreadyUpToDate {
+		return fmt.Errorf("fetching into upstream cache at %s: %w", dir, err)
 	}
 	return nil
 }

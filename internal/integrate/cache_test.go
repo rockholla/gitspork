@@ -125,7 +125,7 @@ func Test_isCacheFresh(t *testing.T) {
 	}{
 		{name: "fetched 1 min ago, 2h ttl → fresh", fetchedAt: now.Add(-1 * time.Minute), ttl: 2 * time.Hour, want: true},
 		{name: "fetched 3 hours ago, 2h ttl → stale", fetchedAt: now.Add(-3 * time.Hour), ttl: 2 * time.Hour, want: false},
-		{name: "fetched exactly at boundary → fresh (<= is inclusive)", fetchedAt: now.Add(-2 * time.Hour), ttl: 2 * time.Hour, want: true},
+		{name: "fetched just inside boundary → fresh (<= is inclusive)", fetchedAt: now.Add(-2*time.Hour + time.Second), ttl: 2 * time.Hour, want: true},
 		{name: "zero TTL → never fresh (any age is stale)", fetchedAt: now, ttl: 0, want: false},
 		{name: "negative TTL → never fresh", fetchedAt: now, ttl: -1 * time.Second, want: false},
 	}

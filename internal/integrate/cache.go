@@ -85,3 +85,13 @@ func cacheEntryPaths(root, key string) (dir, tsFile, lockFile string) {
 	lockFile = filepath.Join(root, key+".lock")
 	return
 }
+
+// isCacheFresh reports whether a cache entry whose last fetch happened at
+// fetchedAt is still within the configured TTL. A ttl of 0 (or negative) is
+// treated as "never fresh" — any positive age causes a refresh.
+func isCacheFresh(fetchedAt time.Time, ttl time.Duration) bool {
+	if ttl <= 0 {
+		return false
+	}
+	return time.Since(fetchedAt) <= ttl
+}

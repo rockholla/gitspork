@@ -114,3 +114,24 @@ func Test_cacheEntryPaths(t *testing.T) {
 	assert.Equal(t, "/var/cache/gitspork/repos/abc123.fetched-at", ts)
 	assert.Equal(t, "/var/cache/gitspork/repos/abc123.lock", lock)
 }
+
+func Test_isCacheFresh(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name      string
+		fetchedAt time.Time
+		ttl       time.Duration
+		want      bool
+	}{
+		{name: "fetched 1 min ago, 2h ttl → fresh", fetchedAt: now.Add(-1 * time.Minute), ttl: 2 * time.Hour, want: true},
+		{name: "fetched 3 hours ago, 2h ttl → stale", fetchedAt: now.Add(-3 * time.Hour), ttl: 2 * time.Hour, want: false},
+		{name: "fetched exactly at boundary → fresh (<= is inclusive)", fetchedAt: now.Add(-2 * time.Hour), ttl: 2 * time.Hour, want: true},
+		{name: "zero TTL → never fresh (any age is stale)", fetchedAt: now, ttl: 0, want: false},
+		{name: "negative TTL → never fresh", fetchedAt: now, ttl: -1 * time.Second, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, isCacheFresh(tc.fetchedAt, tc.ttl))
+		})
+	}
+}

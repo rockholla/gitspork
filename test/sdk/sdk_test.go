@@ -680,6 +680,7 @@ func (c *captureLogger) Error(msg string, args ...any) { c.entries = append(c.en
 // (asserted via a captureLogger).
 func TestIntegrate_cache_SDK_CacheTTL_honored(t *testing.T) {
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir, _ := minimalUpstream(t)
@@ -716,6 +717,7 @@ func TestIntegrate_cache_SDK_CacheTTL_honored(t *testing.T) {
 // entirely — no cache log lines emitted and no cache dir populated.
 func TestIntegrate_cache_SDK_NoCache_bypasses(t *testing.T) {
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir, _ := minimalUpstream(t)

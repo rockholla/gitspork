@@ -449,6 +449,11 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		// need full history to checkout a specific commit
 		cloneOptions.SingleBranch = false
 	}
+
+	if canShallowClone(req.upstreamCommit, req.prevUpstreamCommitHash, versionIsCommitHash) {
+		cloneOptions.Depth = 1
+	}
+
 	repo, err := git.PlainClone(cloneDir, cloneOptions)
 	if err != nil {
 		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
@@ -484,6 +489,26 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		return "", fmt.Errorf("error resolving HEAD commit from upstream clone: %v", err)
 	}
 	return ref.Hash().String(), nil
+}
+
+// canShallowClone reports whether an upstream clone can be limited to Depth: 1
+// (HEAD-tree only). It is safe — and a meaningful bandwidth win on large
+// upstreams — when none of the code paths that follow the clone need commit
+// history:
+//
+//   - upstreamCommit empty:      drift-check isn't asking us to check out a
+//                                specific pinned hash (which requires history
+//                                to reach).
+//   - prevUpstreamCommitHash empty: computeUpstreamDelta isn't going to walk
+//                                parents to diff prev-tree against new-tree.
+//   - versionIsCommitHash false: the caller didn't pass a hex-hash Version
+//                                that ResolveRevision needs history to find.
+//
+// The remaining code paths — empty Version, bare tag, bare branch,
+// tags/-prefix — only read HEAD's working tree, so downloading parents is
+// pure waste.
+func canShallowClone(upstreamCommit, prevUpstreamCommitHash string, versionIsCommitHash bool) bool {
+	return upstreamCommit == "" && prevUpstreamCommitHash == "" && !versionIsCommitHash
 }
 
 // resolveUpstreamVersionRef probes the remote to disambiguate a bare Version

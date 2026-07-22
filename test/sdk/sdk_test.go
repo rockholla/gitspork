@@ -526,6 +526,18 @@ func TestIntegrateLocal_earlyError_returnsNonNilResult(t *testing.T) {
 // would be inherently racy on the state file and the worktree, and is not
 // claimed to be supported.
 //
+// Test-fixture note: each goroutine gets its OWN upstream too, not just
+// its own downstream. go-git's file:// transport shells out to
+// git-upload-pack --stateless-rpc, and concurrent invocations against
+// the SAME repo path have been observed to interleave stdio at the
+// pkt-line boundary under Linux CI timing (surfaces as
+// "pkt-line 1: NULL not found"). That's a file-transport-specific
+// concurrency limitation of the test harness, not a real-user shape —
+// real consumers use HTTPS/SSH URLs where every connection is a separate
+// socket to a real server. Distinct upstreams here still lock the
+// contract we care about (per-downstream state integrity across
+// goroutines) without depending on that transport's concurrency behavior.
+//
 // Note on `go test -race`: this test passes WITHOUT the race detector.
 // Under `-race`, an unrelated race triggers inside go-git's own
 // PackSession.Handshake (a helper goroutine writes to a stderr buffer that
@@ -538,7 +550,15 @@ func TestIntegrateLocal_earlyError_returnsNonNilResult(t *testing.T) {
 func TestIntegrate_concurrent_distinctDownstreams(t *testing.T) {
 	const n = 4
 
-	upstreamDir, upstreamHash := minimalUpstream(t)
+	// Build all upstreams up front (sequentially) — the concurrency contract
+	// under test is about Integrate, not fixture setup.
+	upstreamDirs := make([]string, n)
+	upstreamHashes := make([]string, n)
+	for i := 0; i < n; i++ {
+		dir, hash := minimalUpstream(t)
+		upstreamDirs[i] = dir
+		upstreamHashes[i] = hash.String()
+	}
 
 	type outcome struct {
 		result *gitspork.IntegrateResult
@@ -550,26 +570,37 @@ func TestIntegrate_concurrent_distinctDownstreams(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)
-		go func() {
+		go func(idx int) {
 			defer wg.Done()
 			downstreamDir := emptyDownstream(t)
 			r, err := gitspork.Integrate(&gitspork.IntegrateOptions{
-				Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+				Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDirs[idx], Version: "main"}},
 				DownstreamRepoPath: downstreamDir,
 			})
 			results <- outcome{result: r, err: err, down: downstreamDir}
-		}()
+		}(i)
 	}
 	wg.Wait()
 	close(results)
+
+	// Build URL → expected-hash map so the assertions can identify which
+	// upstream each outcome corresponds to (order isn't guaranteed via the
+	// results channel).
+	hashByURL := make(map[string]string, n)
+	for i := 0; i < n; i++ {
+		hashByURL["file://"+upstreamDirs[i]] = upstreamHashes[i]
+	}
 
 	seenDownstreams := map[string]bool{}
 	for o := range results {
 		require.NoError(t, o.err, "concurrent integrate must not surface errors on distinct downstreams")
 		require.NotNil(t, o.result)
 		require.Len(t, o.result.Upstreams, 1)
-		assert.Equal(t, upstreamHash.String(), o.result.Upstreams[0].CommitHash,
-			"each goroutine's IntegratedUpstream.CommitHash must reflect the upstream's real HEAD — a mismatch here would indicate shared state was mutated across goroutines")
+
+		wantHash, ok := hashByURL[o.result.Upstreams[0].URL]
+		require.True(t, ok, "result URL %q does not match any upstream we set up — indicates cross-goroutine data leak", o.result.Upstreams[0].URL)
+		assert.Equal(t, wantHash, o.result.Upstreams[0].CommitHash,
+			"IntegratedUpstream.CommitHash must reflect THIS goroutine's upstream HEAD — a mismatch would indicate cross-goroutine result corruption")
 
 		// Every goroutine ran against a unique tempdir; ensure the SDK didn't
 		// return a result attributed to someone else's downstream.
@@ -580,7 +611,7 @@ func TestIntegrate_concurrent_distinctDownstreams(t *testing.T) {
 		// concurrent bug that mixed state paths would produce garbage here.
 		state := readStateJSON(t, o.down)
 		require.Len(t, state.Upstreams, 1, "each downstream must have exactly one upstream in its state")
-		assert.Equal(t, upstreamHash.String(), state.Upstreams[0].CommitHash)
+		assert.Equal(t, wantHash, state.Upstreams[0].CommitHash)
 	}
 
 	assert.Len(t, seenDownstreams, n,

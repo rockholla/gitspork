@@ -22,6 +22,15 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("cannot resolve repo root: " + err.Error())
 	}
+
+	// Bypass the machine-scoped upstream cache for examples-tier tests. Many
+	// scenarios advance the upstream between two integrates and expect the
+	// second to see the updated state — cache hit semantics would return the
+	// stale-but-fresh entry from the first integrate.
+	if err := os.Setenv("GITSPORK_NO_CACHE", "1"); err != nil {
+		panic("cannot set GITSPORK_NO_CACHE: " + err.Error())
+	}
+
 	binaryPath = buildBinary(repoRoot)
 	os.Exit(m.Run())
 }

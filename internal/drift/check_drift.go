@@ -158,6 +158,8 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			UpstreamSubpath:    entry.spec.Subpath,
 			UpstreamToken:      entry.spec.Token,
 			UpstreamCommit:     entry.commitHash,
+			CacheTTL:           opts.CacheTTL,
+			NoCache:            opts.NoCache,
 		}); err != nil {
 			return report, fmt.Errorf("error running integration for drift check: %v", err)
 		}

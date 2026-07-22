@@ -22,6 +22,16 @@ func TestMain(m *testing.M) {
 		panic("cannot resolve repo root: " + err.Error())
 	}
 
+	// Default to cache-bypassed for all functional tests. Cache-specific tests
+	// (test/functional/cache_test.go) override with t.Setenv per-test to
+	// exercise cache behavior explicitly. This restores the pre-cache "every
+	// integrate reads current upstream state" invariant that the majority of
+	// functional tests depend on (e.g., upstream-adds-file scenarios that
+	// advance the upstream between integrates).
+	if err := os.Setenv("GITSPORK_NO_CACHE", "1"); err != nil {
+		panic("cannot set GITSPORK_NO_CACHE: " + err.Error())
+	}
+
 	if isFunctionalDocker() {
 		buildDockerImageForTests(repoRoot)
 		// DockerRunner is constructed per-test via resolveRunner with scenario-specific dirs.

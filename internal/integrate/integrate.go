@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/go-git/go-git/v6"
@@ -53,6 +54,10 @@ type internalRequest struct {
 	forDriftCheck          bool   // true = skip state write, skip delta
 	upstreamCommit         string // when forDriftCheck: the pinned commit
 	prevUpstreamCommitHash string // set by integrateOne between calls
+
+	// Cache controls, propagated from IntegrateOptions / CheckDriftOptions.
+	cacheTTL time.Duration
+	noCache  bool
 }
 
 // Integrator is implemented by the ownership integrators that process a
@@ -157,6 +162,8 @@ func integrateOne(opts *sdktypes.IntegrateOptions, upstream sdktypes.UpstreamSpe
 		Logger:             opts.Logger,
 		DownstreamRepoPath: opts.DownstreamRepoPath,
 		ForceRePrompt:      opts.ForceRePrompt,
+		cacheTTL:           opts.CacheTTL,
+		noCache:            opts.NoCache,
 		// forDriftCheck / upstreamCommit / prevUpstreamCommitHash stay zero-value:
 		// public Integrate never runs drift-check semantics.
 	}
@@ -203,6 +210,8 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		forDriftCheck:          req.forDriftCheck,
 		upstreamCommit:         req.upstreamCommit,
 		prevUpstreamCommitHash: prevHash,
+		cacheTTL:               req.cacheTTL,
+		noCache:                req.noCache,
 	}
 
 	originalUpstreamURL := upstream.URL
@@ -413,11 +422,29 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		}
 		authMethod = agentAuth
 	}
+	// Resolve cache configuration (merging CLI/env/defaults). If enabled and
+	// healthy, we clone from the machine-scoped bare mirror rather than the
+	// network.
+	var cacheCfg cacheConfig
+	cacheCfg, err = resolveCacheConfig(req.cacheTTL, req.noCache)
+	if err != nil {
+		return "", err
+	}
+	var cacheDir string
+	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, authMethod, req.Logger)
+	if err != nil {
+		return "", err
+	}
+
 	cloneOptions := &git.CloneOptions{
 		URL:      upstreamURL,
 		Progress: &logutil.LoggerWriter{L: req.Logger},
 	}
-	if authMethod != nil {
+	if cacheDir != "" {
+		// Working clone reads from the local bare mirror. No network, no auth.
+		cloneOptions.URL = "file://" + cacheDir
+		cloneOptions.Auth = nil
+	} else if authMethod != nil {
 		cloneOptions.Auth = authMethod
 	}
 
@@ -455,6 +482,16 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 	}
 
 	repo, err := git.PlainClone(cloneDir, cloneOptions)
+	if err != nil && cacheDir != "" {
+		// Rare: a concurrent fetch-prune in the cache deleted a ref this
+		// working clone snapshotted. Retry once against the same cache; the
+		// deleting fetch is one-shot so a second attempt has fresh refs.
+		_ = os.RemoveAll(cloneDir)
+		if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
+			return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
+		}
+		repo, err = git.PlainClone(cloneDir, cloneOptions)
+	}
 	if err != nil {
 		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
 	}

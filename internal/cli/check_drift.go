@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -33,6 +34,8 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 	var downstreamRepoPath string
 	var upstreamFlags []string
 	var verbose bool
+	var cacheTTL time.Duration
+	var noCache bool
 
 	var cmd = &cobra.Command{
 		Use:   "check-drift",
@@ -47,6 +50,8 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 			opts := &sdktypes.CheckDriftOptions{
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
+				CacheTTL:           cacheTTL,
+				NoCache:            noCache,
 			}
 			for _, f := range upstreamFlags {
 				spec, err := ParseUpstreamFlag(f)
@@ -94,6 +99,11 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 		"override upstream(s) as comma-separated key=value pairs (url, version, subpath, token); repeatable")
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "V", false,
 		"print full git diff output when drift is detected")
+	cmd.PersistentFlags().DurationVar(&cacheTTL, "cache-ttl", 0,
+		"upstream mirror cache freshness threshold (e.g. 2h, 30m); if a cached upstream is younger than this, no fetch is performed. "+
+			"Zero-value means 'use GITSPORK_CACHE_TTL env if set, else 2h'. Use --no-cache to bypass entirely.")
+	cmd.PersistentFlags().BoolVar(&noCache, "no-cache", false,
+		"bypass the upstream mirror cache entirely — direct network clone on every invocation. Overrides --cache-ttl.")
 
 	return cmd
 }

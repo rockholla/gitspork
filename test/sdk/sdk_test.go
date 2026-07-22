@@ -7,8 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -672,3 +674,82 @@ type captureLogger struct {
 
 func (c *captureLogger) Log(msg string, args ...any)   { c.entries = append(c.entries, "log: "+msg) }
 func (c *captureLogger) Error(msg string, args ...any) { c.entries = append(c.entries, "err: "+msg) }
+
+// TestIntegrate_cache_SDK_CacheTTL_honored: calling Integrate twice from the
+// SDK with a tiny CacheTTL on the second call must trigger a refresh
+// (asserted via a captureLogger).
+func TestIntegrate_cache_SDK_CacheTTL_honored(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
+	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
+
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	captured := &captureLogger{}
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Logger:             captured,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	assert.True(t, hasLog(captured, "populating upstream cache"),
+		"first Integrate must populate the cache")
+
+	// Commit the downstream so the second Integrate can proceed with a clean tree.
+	writeAndCommit(t, downstreamDir, ".gitspork/marker", "baseline")
+
+	captured2 := &captureLogger{}
+	_, err = gitspork.Integrate(&gitspork.IntegrateOptions{
+		Logger:             captured2,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+		CacheTTL:           1 * time.Nanosecond,
+	})
+	require.NoError(t, err)
+	assert.True(t, hasLog(captured2, "refreshing upstream cache"),
+		"CacheTTL=1ns on the second Integrate must trigger a refresh log line")
+	assert.False(t, hasLog(captured2, "upstream cache hit"),
+		"tiny TTL must not be a cache hit")
+}
+
+// TestIntegrate_cache_SDK_NoCache_bypasses: NoCache=true bypasses the cache
+// entirely — no cache log lines emitted and no cache dir populated.
+func TestIntegrate_cache_SDK_NoCache_bypasses(t *testing.T) {
+	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
+	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
+
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	captured := &captureLogger{}
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Logger:             captured,
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+		NoCache:            true,
+	})
+	require.NoError(t, err)
+
+	// None of the three cache log lines appear.
+	assert.False(t, hasLog(captured, "populating upstream cache"))
+	assert.False(t, hasLog(captured, "refreshing upstream cache"))
+	assert.False(t, hasLog(captured, "upstream cache hit"))
+
+	// Cache dir remains empty.
+	entries, err := os.ReadDir(cacheDir)
+	if err == nil {
+		assert.Empty(t, entries, "NoCache=true must leave the cache dir untouched")
+	}
+}
+
+// hasLog reports whether any captured entry contains substr.
+func hasLog(c *captureLogger, substr string) bool {
+	for _, e := range c.entries {
+		if strings.Contains(e, substr) {
+			return true
+		}
+	}
+	return false
+}

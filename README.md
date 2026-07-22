@@ -30,6 +30,7 @@ What `gitspork` provides for upstream -> downstream integrations
 * **Upstream -> Downstream delta resolutions** for moves, renames, and deletes. As the upstream evolves, downstreams will follow along with these types of iterations.
 * **Migrations Support**: some ability for the upstream to instruct downstream repos in particular migration-related operations:
   * **Exec**: arbitrary commands or scripts defined in the upstream to run against the downstream either _pre_ `integrate` or _post_ integrate
+* **Machine-Level Upstream Cache**: subsequent `integrate` and `check-drift` invocations reuse a bare-mirror cache under your OS user cache directory (`os.UserCacheDir()`), only fetching from remote when the entry is older than the configured TTL (default: 2h). Purpose-built for coordinator scenarios that fan out across hundreds of downstreams against a small set of shared upstreams from one machine. Per-URL cross-process locking via `flock`. Opt-out via `--no-cache` or `GITSPORK_NO_CACHE`.
 
 ## Getting Started
 

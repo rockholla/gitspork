@@ -2,6 +2,7 @@ package integrate
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
@@ -16,6 +17,8 @@ type DriftCheckRequest struct {
 	UpstreamSubpath    string
 	UpstreamToken      string
 	UpstreamCommit     string
+	CacheTTL           time.Duration
+	NoCache            bool
 }
 
 // IntegrateForDriftCheck runs a single-upstream integrate pinned to a specific
@@ -36,6 +39,8 @@ func IntegrateForDriftCheck(req *DriftCheckRequest) error {
 		DownstreamRepoPath: req.DownstreamRepoPath,
 		forDriftCheck:      true,
 		upstreamCommit:     req.UpstreamCommit,
+		cacheTTL:           req.CacheTTL,
+		noCache:            req.NoCache,
 	}
 	if _, err := integrateOneInternal(internalReq, upstream); err != nil {
 		return fmt.Errorf("drift-check re-integration failed: %v", err)

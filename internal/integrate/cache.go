@@ -28,6 +28,12 @@ type cacheConfig struct {
 	TTL time.Duration
 	// Disabled indicates the cache is bypassed entirely for this run.
 	Disabled bool
+	// RootIsDefault is true when Root was derived from os.UserCacheDir() (no
+	// GITSPORK_CACHE_DIR set). ensureUpstreamCache uses this to decide whether
+	// a mkdir failure on Root triggers a graceful fallback to os.TempDir()
+	// (default path, likely unwritable in containers) or a hard error
+	// (explicit user config, don't second-guess).
+	RootIsDefault bool
 }
 
 const (
@@ -47,7 +53,8 @@ func resolveCacheConfig(cliTTL time.Duration, cliNoCache bool) (cacheConfig, err
 	}
 
 	root := os.Getenv(envCacheDir)
-	if root == "" {
+	rootIsDefault := root == ""
+	if rootIsDefault {
 		userCache, err := os.UserCacheDir()
 		if err != nil {
 			return cacheConfig{}, fmt.Errorf("resolving user cache dir for upstream mirror cache: %w", err)
@@ -68,7 +75,7 @@ func resolveCacheConfig(cliTTL time.Duration, cliNoCache bool) (cacheConfig, err
 		}
 	}
 
-	return cacheConfig{Root: root, TTL: ttl}, nil
+	return cacheConfig{Root: root, TTL: ttl, RootIsDefault: rootIsDefault}, nil
 }
 
 // cacheKey derives a stable filesystem-safe identifier for an upstream URL,
@@ -193,7 +200,22 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 	}
 
 	if err := os.MkdirAll(cfg.Root, 0755); err != nil {
-		return "", fmt.Errorf("creating upstream cache root %s: %w", cfg.Root, err)
+		// Explicit user config (GITSPORK_CACHE_DIR set) — surface the error;
+		// don't second-guess.
+		if !cfg.RootIsDefault {
+			return "", fmt.Errorf("creating upstream cache root %s: %w", cfg.Root, err)
+		}
+		// Default path unwritable — common in containers with no writable
+		// HOME/XDG_CACHE_HOME. Fall back to os.TempDir() so cache still
+		// works within-invocation. Cache lives only for the container's
+		// lifetime; users who want persistence set GITSPORK_CACHE_DIR to a
+		// mounted volume.
+		tmpRoot := filepath.Join(os.TempDir(), "gitspork", "repos")
+		if mkErr := os.MkdirAll(tmpRoot, 0755); mkErr != nil {
+			return "", fmt.Errorf("creating upstream cache root %s: %w (tempdir fallback %s also failed: %v)", cfg.Root, err, tmpRoot, mkErr)
+		}
+		logger.Log("upstream cache root %s not writable (%v); falling back to ephemeral tempdir at %s", cfg.Root, err, tmpRoot)
+		cfg.Root = tmpRoot
 	}
 
 	key := cacheKey(url)

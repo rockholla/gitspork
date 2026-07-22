@@ -3,6 +3,7 @@ package integrate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -354,4 +355,50 @@ func Test_ensureUpstreamCache_bogusURL_boundedRetry(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("ensureUpstreamCache did not surface an error within 10s — retry loop is not bounded")
 	}
+}
+
+// Test_ensureUpstreamCache_defaultRootUnwritable_fallsBackToTmp locks the
+// container fallback: when the default cache root can't be created (e.g.
+// container with no writable HOME → os.UserCacheDir() = "/.cache"), the code
+// silently retries under os.TempDir() so cache still works within-invocation.
+func Test_ensureUpstreamCache_defaultRootUnwritable_fallsBackToTmp(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+
+	// Force MkdirAll to fail by making the parent a regular file rather than
+	// a directory. Works regardless of test uid (root or otherwise).
+	parent := t.TempDir()
+	blocker := filepath.Join(parent, "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0644))
+	unwritable := filepath.Join(blocker, "cache") // MkdirAll fails: "not a directory"
+
+	cfg := cacheConfig{Root: unwritable, TTL: time.Hour, RootIsDefault: true}
+	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err, "default-root mkdir failure must fall back to os.TempDir, not surface as error")
+	require.NotEmpty(t, dir)
+
+	// Returned dir lives under os.TempDir()/gitspork/repos/
+	expectedRoot := filepath.Join(os.TempDir(), "gitspork", "repos")
+	assert.True(t, strings.HasPrefix(dir, expectedRoot+string(filepath.Separator)),
+		"expected fallback dir under %s, got %s", expectedRoot, dir)
+
+	// Cache is actually populated in the fallback location.
+	repo, err := gogit.PlainOpen(dir)
+	require.NoError(t, err)
+	_, err = repo.CommitObject(upstreamHash)
+	assert.NoError(t, err)
+}
+
+// Test_ensureUpstreamCache_explicitRootUnwritable_errors verifies that when
+// the user explicitly set GITSPORK_CACHE_DIR to an unwritable path, we
+// surface the error rather than silently falling back.
+func Test_ensureUpstreamCache_explicitRootUnwritable_errors(t *testing.T) {
+	parent := t.TempDir()
+	blocker := filepath.Join(parent, "blocker")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0644))
+	unwritable := filepath.Join(blocker, "cache")
+
+	cfg := cacheConfig{Root: unwritable, TTL: time.Hour, RootIsDefault: false}
+	_, err := ensureUpstreamCache(cfg, "file:///anywhere", nil, sdktypes.NoopLogger())
+	require.Error(t, err, "explicit user-configured unwritable root must surface as error, not silently fall back")
+	assert.Contains(t, err.Error(), unwritable)
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -238,4 +239,119 @@ func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
 	// And the original commit is still there.
 	_, err = cacheRepo.CommitObject(firstHash)
 	assert.NoError(t, err)
+}
+
+func Test_ensureUpstreamCache_disabled_returnsEmpty(t *testing.T) {
+	cfg := cacheConfig{Disabled: true}
+	dir, err := ensureUpstreamCache(cfg, "file:///somewhere", nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+	assert.Empty(t, dir, "disabled cache must return empty dir (caller falls back to direct clone)")
+}
+
+func Test_ensureUpstreamCache_missingEntry_populates(t *testing.T) {
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
+
+	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+	require.NotEmpty(t, dir)
+	assert.DirExists(t, dir)
+	assert.FileExists(t, dir+".fetched-at")
+}
+
+func Test_ensureUpstreamCache_freshEntry_noFetch(t *testing.T) {
+	upstreamDir, firstHash := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
+
+	// First call populates.
+	dir1, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+
+	// Advance upstream — the fresh cache must NOT pick this up.
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "later.txt"), []byte("x"), 0644))
+	upstreamRepo, err := gogit.PlainOpen(upstreamDir)
+	require.NoError(t, err)
+	newHash := testharness.CommitAllWithMessage(t, upstreamRepo, "advance")
+
+	// Second call within TTL: no fetch.
+	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+	assert.Equal(t, dir1, dir2)
+
+	// Re-open to get a fresh object-store view (go-git packfile-index quirk).
+	repo, err := gogit.PlainOpen(dir2)
+	require.NoError(t, err)
+	_, err = repo.CommitObject(firstHash)
+	assert.NoError(t, err, "original commit still reachable")
+	_, err = repo.CommitObject(newHash)
+	assert.Error(t, err, "new commit MUST NOT be present — fresh cache skipped the fetch")
+}
+
+func Test_ensureUpstreamCache_staleEntry_refreshes(t *testing.T) {
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 1 * time.Nanosecond} // instantly stale
+
+	_, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+
+	// Advance upstream and re-run — the tiny TTL forces a fetch.
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "later.txt"), []byte("x"), 0644))
+	upstreamRepo, err := gogit.PlainOpen(upstreamDir)
+	require.NoError(t, err)
+	newHash := testharness.CommitAllWithMessage(t, upstreamRepo, "advance")
+	time.Sleep(2 * time.Nanosecond) // ensure now > fetched-at + ttl
+
+	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err)
+
+	repo, err := gogit.PlainOpen(dir2)
+	require.NoError(t, err)
+	_, err = repo.CommitObject(newHash)
+	assert.NoError(t, err, "stale cache must have been refreshed and now carries new commits")
+}
+
+func Test_ensureUpstreamCache_corruptEntry_wipesAndRetries(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 1 * time.Nanosecond}
+	key := cacheKey("file://" + upstreamDir)
+	dir, tsFile, _ := cacheEntryPaths(root, key)
+
+	// Fabricate a corrupt "cache entry" that looks like a repo but isn't:
+	// go-git PlainOpen will refuse to reopen it and refreshCache will error.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "HEAD"), []byte("garbage"), 0644))
+	require.NoError(t, writeFetchedAt(tsFile, time.Now()))
+	time.Sleep(2 * time.Nanosecond)
+
+	returnedDir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	require.NoError(t, err, "corrupt cache must be wiped and repopulated, not surfaced as an error")
+	assert.Equal(t, dir, returnedDir)
+
+	repo, err := gogit.PlainOpen(returnedDir)
+	require.NoError(t, err)
+	_, err = repo.CommitObject(upstreamHash)
+	assert.NoError(t, err)
+}
+
+func Test_ensureUpstreamCache_bogusURL_boundedRetry(t *testing.T) {
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, err := ensureUpstreamCache(cfg, "file:///absolutely-nonexistent-path-xyzzy", nil, sdktypes.NoopLogger())
+		require.Error(t, err)
+	}()
+
+	select {
+	case <-done:
+		// Fine — errored out promptly.
+	case <-time.After(10 * time.Second):
+		t.Fatal("ensureUpstreamCache did not surface an error within 10s — retry loop is not bounded")
+	}
 }

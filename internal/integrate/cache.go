@@ -13,6 +13,7 @@ import (
 	git "github.com/go-git/go-git/v6"
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
 // cacheConfig is the resolved configuration for the machine-scoped upstream
@@ -164,5 +165,87 @@ func refreshCache(dir string, auth transport.AuthMethod) error {
 	if err := repo.Fetch(opts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("fetching into upstream cache at %s: %w", dir, err)
 	}
+	return nil
+}
+
+// ensureUpstreamCache is the main entry point for the upstream mirror cache.
+// It resolves the cache directory for a given canonical URL, populating or
+// refreshing as needed under an exclusive per-URL flock, and returns the
+// absolute path to a healthy bare mirror. Returns "" (no error) when the
+// cache is disabled — the caller must fall back to a direct clone in that
+// case.
+//
+// Corruption recovery: any cache-side error (populate or refresh) triggers
+// a single wipe-and-repopulate retry. On second failure the wrapped error
+// is surfaced. Retries are hard-bounded to prevent infinite loops against
+// a genuinely broken remote.
+func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod, logger sdktypes.Logger) (string, error) {
+	if cfg.Disabled {
+		return "", nil
+	}
+
+	if err := os.MkdirAll(cfg.Root, 0755); err != nil {
+		return "", fmt.Errorf("creating upstream cache root %s: %w", cfg.Root, err)
+	}
+
+	key := cacheKey(url)
+	dir, tsFile, lockFile := cacheEntryPaths(cfg.Root, key)
+
+	fl := getOrCreateFlock(lockFile)
+	if err := fl.Lock(); err != nil {
+		return "", fmt.Errorf("acquiring upstream cache lock at %s: %w", lockFile, err)
+	}
+	defer func() { _ = fl.Unlock() }()
+
+	// First attempt.
+	if err := runCacheOp(dir, tsFile, url, cfg.TTL, auth, logger); err != nil {
+		// Wipe and retry once.
+		_ = os.RemoveAll(dir)
+		_ = os.Remove(tsFile)
+		if err := populateCache(dir, url, auth); err != nil {
+			return "", fmt.Errorf("upstream cache populate failed after wipe-and-retry: %w", err)
+		}
+		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
+			return "", fmt.Errorf("writing upstream cache timestamp after recovery: %w", err)
+		}
+		logger.Log("populating upstream cache for %s at %s (after corruption recovery)", url, dir)
+	}
+	return dir, nil
+}
+
+// runCacheOp inspects the state of a cache entry and performs the appropriate
+// operation — no-op if fresh, refresh if stale, populate if missing. Emits a
+// distinct log line per branch matching Section 1's Log-line contract.
+func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthMethod, logger sdktypes.Logger) error {
+	fetchedAt, tsErr := readFetchedAt(tsFile)
+	tsPresent := tsErr == nil
+
+	// Populate path: no timestamp file OR no cache dir yet.
+	if !tsPresent {
+		if err := populateCache(dir, url, auth); err != nil {
+			return err
+		}
+		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
+			return err
+		}
+		logger.Log("populating upstream cache for %s at %s", url, dir)
+		return nil
+	}
+
+	if isCacheFresh(fetchedAt, ttl) {
+		age := time.Since(fetchedAt).Round(time.Second)
+		logger.Log("upstream cache hit for %s (fetched %s ago, ttl: %s)", url, age, ttl)
+		return nil
+	}
+
+	// Stale — refresh.
+	age := time.Since(fetchedAt).Round(time.Second)
+	if err := refreshCache(dir, auth); err != nil {
+		return err
+	}
+	if err := writeFetchedAt(tsFile, time.Now()); err != nil {
+		return err
+	}
+	logger.Log("refreshing upstream cache for %s (last fetch: %s ago, ttl: %s)", url, age, ttl)
 	return nil
 }

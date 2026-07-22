@@ -63,4 +63,5 @@ func init() {
 	rootCmd.AddCommand(mvSubcommand.GetCmd())
 	rootCmd.AddCommand(rmSubcommand.GetCmd())
 	rootCmd.AddCommand(schemaSubcommand.GetCmd())
+	rootCmd.AddCommand((&CacheSubcommand{}).GetCmd())
 }

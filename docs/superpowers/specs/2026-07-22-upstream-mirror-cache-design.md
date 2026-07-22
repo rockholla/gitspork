@@ -70,8 +70,10 @@ On opt-out, no cache-specific log line is emitted — the pre-cache network-clon
 
 | Flag | Default | Format | Meaning |
 |---|---|---|---|
-| `--cache-ttl` | `2h` | Go duration string (`time.ParseDuration` — `2h`, `30m`, `1h30m`, `0s`) | Cache is considered fresh if `(now - fetched-at) <= ttl`. `0s` forces a fetch on every run. |
-| `--no-cache` | (unset) | boolean | Bypass the cache entirely for this run. Direct network clone; cache neither read nor written. |
+| `--cache-ttl` | `2h` | Go duration string (`time.ParseDuration` — `2h`, `30m`, `1h30m`) | Cache is considered fresh if `(now - fetched-at) <= ttl`. Set to a very small value (`1ns`) to force refresh on every run; use `--no-cache` for full bypass. |
+| `--no-cache` | (unset) | boolean | Bypass the cache entirely for this run. Direct network clone; cache neither read nor written. Use this when you want fresh-every-run semantics. |
+
+**On `--cache-ttl 0s`**: treated identically to "flag not set" — the SDK type is `time.Duration` (non-pointer), and its zero-value semantic is "use env var if set, else compiled default (2h)". A user wanting fetch-every-run behavior should use `--no-cache` (which touches nothing and is unambiguous) or `--cache-ttl 1ns` (which still populates the cache after fetching, so subsequent runs benefit).
 
 ### Environment-variable equivalents
 
@@ -97,7 +99,7 @@ NoCache  bool          // true = skip the cache entirely
 ### Interaction rules
 
 - `--no-cache` overrides `--cache-ttl` — no-cache wins; TTL is moot.
-- `--cache-ttl 0s` still populates the cache after fetching (subsequent runs benefit), unlike `--no-cache` which leaves the cache untouched.
+- `--cache-ttl 0s` and `--cache-ttl` unset are equivalent (both mean "use env or 2h default"). Users wanting force-refresh use `--no-cache` (touches nothing) or `--cache-ttl 1ns` (fetches but still updates the cache).
 - On a first-ever run against an upstream (no cache dir yet), TTL is irrelevant — cache doesn't exist so we populate. TTL only gates fetches on existing entries.
 
 ---
@@ -202,7 +204,8 @@ The tests grep for the stable prefixes of the log lines defined in Section 1's *
 
 - **Cache hit within TTL:** first `integrate` populates cache and emits the `populating upstream cache` line; second `integrate` within TTL emits `upstream cache hit` and performs NO network operation (asserted by grepping the log output).
 - **Cache stale beyond TTL:** run with `--cache-ttl 1ns` on second invocation — emits `refreshing upstream cache` and performs a fetch.
-- **`--cache-ttl 0s`:** forces fetch on every run even when cache is fresh — emits `refreshing upstream cache`.
+- **`--cache-ttl 1ns`:** effectively forces fetch on every run (cache is considered stale on second use) — emits `refreshing upstream cache`.
+- **`--cache-ttl 0s` is equivalent to unset:** cache uses env/default (2h). Populates on first run, hits cache on second within TTL.
 - **`--no-cache`:** bypasses entirely. No cache dir created, none of the three cache log lines emitted.
 - **Cross-process fan-out:** N=4 concurrent gitspork subprocesses via the functional runner, all against the same upstream URL with distinct downstream tempdirs. All succeed; exactly one populates the cache (assert by counting `populating upstream cache` occurrences across the four stdout captures — expect exactly one). Locks in the cross-process flock contract.
 - **`gitspork cache dir` output** is the resolved cache root.

@@ -3,6 +3,8 @@ package integrate
 import (
 	_ "github.com/gofrs/flock" // anchor: used by getOrCreateFlock in Task 7 (cache_lock.go)
 
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,4 +64,14 @@ func resolveCacheConfig(cliTTL time.Duration, cliNoCache bool) (cacheConfig, err
 	}
 
 	return cacheConfig{Root: root, TTL: ttl}, nil
+}
+
+// cacheKey derives a stable filesystem-safe identifier for an upstream URL,
+// using NormalizeUpstreamURL for canonicalization so SSH/HTTPS variants and
+// case-insensitive host names collapse to the same key. Result is the
+// lowercase hex encoding of sha256(canonicalized-url), length 64.
+func cacheKey(url string) string {
+	canonical := NormalizeUpstreamURL(url, "")
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])
 }

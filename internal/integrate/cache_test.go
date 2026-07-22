@@ -82,3 +82,28 @@ func Test_resolveCacheConfig(t *testing.T) {
 		assert.False(t, cfg.Disabled)
 	})
 }
+
+func Test_cacheKey(t *testing.T) {
+	t.Run("SSH and HTTPS variants of the same repo collapse to the same key", func(t *testing.T) {
+		ssh := cacheKey("git@github.com:org/repo.git")
+		https := cacheKey("https://github.com/org/repo")
+		assert.Equal(t, ssh, https, "SSH and HTTPS variants must map to the same cache entry")
+	})
+
+	t.Run("mixed-case URLs collapse to the same key", func(t *testing.T) {
+		lower := cacheKey("https://github.com/org/repo")
+		upper := cacheKey("https://GitHub.com/Org/Repo")
+		assert.Equal(t, lower, upper, "URL case-insensitivity is inherited from NormalizeUpstreamURL")
+	})
+
+	t.Run("different URLs produce different keys", func(t *testing.T) {
+		a := cacheKey("https://github.com/org/repo-a")
+		b := cacheKey("https://github.com/org/repo-b")
+		assert.NotEqual(t, a, b)
+	})
+
+	t.Run("output is stable hex-encoded sha256 (64 chars)", func(t *testing.T) {
+		k := cacheKey("https://github.com/org/repo")
+		assert.Len(t, k, 64, "sha256 hex is 64 chars")
+	})
+}

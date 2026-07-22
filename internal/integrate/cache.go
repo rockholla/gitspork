@@ -1,6 +1,8 @@
 package integrate
 
 import (
+	_ "github.com/gofrs/flock" // anchor: used by getOrCreateFlock in Task 7 (cache_lock.go)
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,7 +43,7 @@ func resolveCacheConfig(cliTTL time.Duration, cliNoCache bool) (cacheConfig, err
 	if root == "" {
 		userCache, err := os.UserCacheDir()
 		if err != nil {
-			return cacheConfig{}, fmt.Errorf("resolving user cache dir for upstream mirror cache: %v", err)
+			return cacheConfig{}, fmt.Errorf("resolving user cache dir for upstream mirror cache: %w", err)
 		}
 		root = filepath.Join(userCache, "gitspork", "repos")
 	}
@@ -51,7 +53,7 @@ func resolveCacheConfig(cliTTL time.Duration, cliNoCache bool) (cacheConfig, err
 		if envTTL := os.Getenv(envCacheTTL); envTTL != "" {
 			parsed, err := time.ParseDuration(envTTL)
 			if err != nil {
-				return cacheConfig{}, fmt.Errorf("invalid %s %q: %v", envCacheTTL, envTTL, err)
+				return cacheConfig{}, fmt.Errorf("invalid %s %q: %w", envCacheTTL, envTTL, err)
 			}
 			ttl = parsed
 		} else {

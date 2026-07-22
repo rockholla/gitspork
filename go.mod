@@ -8,6 +8,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-20250701074610-5d6af409877b
 	github.com/gobwas/glob v0.2.3
 	github.com/goccy/go-yaml v1.19.2
+	github.com/gofrs/flock v0.13.0
 	github.com/pkg/term v1.1.0
 	github.com/rockholla/go-lib v0.0.0-20241023190122-11eccca156c1
 	github.com/spf13/cobra v1.9.1
@@ -24,7 +25,6 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/go-git/gcfg/v2 v2.0.2 // indirect
 	github.com/go-git/go-billy/v6 v6.0.0-20250627091229-31e2a16eef30 // indirect
-	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect

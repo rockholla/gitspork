@@ -102,5 +102,44 @@ func TestIntegrate_cache_noCache_bypassesEntirely(t *testing.T) {
 	}
 }
 
-// Keep the strings import active once the cross-process test is added below.
-var _ = strings.Contains
+func TestIntegrate_cache_crossProcess_singlePopulate(t *testing.T) {
+	if isDockerBuild {
+		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
+	}
+	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
+
+	upstreamDir := buildSimpleUpstream(t)
+
+	// 4 concurrent gitspork subprocesses, each with its own downstream but
+	// all against the same upstream URL. Locks in the cross-process flock
+	// contract: exactly one populates the cache, the other three either
+	// hit or wait-then-hit.
+	const n = 4
+	type outcome struct {
+		stdout string
+		code   int
+	}
+	results := make(chan outcome, n)
+
+	for i := 0; i < n; i++ {
+		go func() {
+			downstreamDir := NewDownstreamRepo(t)
+			prepDownstreamWithInputData(t, downstreamDir)
+			runner := resolveRunner(t, upstreamDir, downstreamDir)
+			out, code := runner.Run(t, integrateArgs(upstreamDir, downstreamDir), downstreamDir)
+			results <- outcome{stdout: out, code: code}
+		}()
+	}
+
+	populates := 0
+	for i := 0; i < n; i++ {
+		o := <-results
+		assert.Equal(t, 0, o.code, "goroutine %d exited non-zero:\n%s", i, o.stdout)
+		if strings.Contains(o.stdout, "populating upstream cache") {
+			populates++
+		}
+	}
+	assert.Equal(t, 1, populates,
+		"exactly one subprocess must have populated the cache; %d did", populates)
+}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +30,8 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 	var upstreamFlags []string
 	var downstreamRepoPath string
 	var forceRePrompt bool
+	var cacheTTL time.Duration
+	var noCache bool
 
 	var cmd = &cobra.Command{
 		Use:   "integrate",
@@ -44,6 +47,8 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
 				ForceRePrompt:      forceRePrompt,
+				CacheTTL:           cacheTTL,
+				NoCache:            noCache,
 			}
 			if oldFlagsSet {
 				opts.Upstreams = []sdktypes.UpstreamSpec{{
@@ -81,6 +86,11 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 		"local path to the downstream repo clone to integrate/re-integrate, defaults to the present working directory")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
 		"If true, will disregard any previous prompt input value caches for templated instructions")
+	cmd.PersistentFlags().DurationVar(&cacheTTL, "cache-ttl", 0,
+		"upstream mirror cache freshness threshold (e.g. 2h, 30m); if a cached upstream is younger than this, no fetch is performed. "+
+			"Zero-value means 'use GITSPORK_CACHE_TTL env if set, else 2h'. Use --no-cache to bypass entirely.")
+	cmd.PersistentFlags().BoolVar(&noCache, "no-cache", false,
+		"bypass the upstream mirror cache entirely — direct network clone on every invocation. Overrides --cache-ttl.")
 
 	return cmd
 }

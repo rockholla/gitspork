@@ -20,6 +20,7 @@ func TestIntegrate_cache_populatesAndHitsWithinTTL(t *testing.T) {
 	}
 
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir := buildSimpleUpstream(t)
@@ -53,6 +54,7 @@ func TestIntegrate_cache_staleTTL_refreshes(t *testing.T) {
 		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
 	}
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir := buildSimpleUpstream(t)
@@ -79,6 +81,7 @@ func TestIntegrate_cache_noCache_bypassesEntirely(t *testing.T) {
 		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
 	}
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir := buildSimpleUpstream(t)
@@ -107,6 +110,7 @@ func TestIntegrate_cache_crossProcess_singlePopulate(t *testing.T) {
 		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
 	}
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	upstreamDir := buildSimpleUpstream(t)
@@ -149,6 +153,7 @@ func TestCache_dirSubcommand_printsResolvedRoot(t *testing.T) {
 		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
 	}
 	dir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", dir)
 
 	runner := resolveRunner(t, "", "")
@@ -162,6 +167,7 @@ func TestCache_clearSubcommand_wipesAll(t *testing.T) {
 		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
 	}
 	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_NO_CACHE", "")
 	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
 
 	// Populate by running one integrate.

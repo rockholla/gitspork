@@ -143,3 +143,46 @@ func TestIntegrate_cache_crossProcess_singlePopulate(t *testing.T) {
 	assert.Equal(t, 1, populates,
 		"exactly one subprocess must have populated the cache; %d did", populates)
 }
+
+func TestCache_dirSubcommand_printsResolvedRoot(t *testing.T) {
+	if isDockerBuild {
+		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
+	}
+	dir := t.TempDir()
+	t.Setenv("GITSPORK_CACHE_DIR", dir)
+
+	runner := resolveRunner(t, "", "")
+	out, code := runner.Run(t, []string{"cache", "dir"}, dir)
+	require.Equal(t, 0, code, "cache dir exited non-zero:\n%s", out)
+	assert.Equal(t, dir+"\n", out)
+}
+
+func TestCache_clearSubcommand_wipesAll(t *testing.T) {
+	if isDockerBuild {
+		t.Skip("cache tests require host-side GITSPORK_CACHE_DIR")
+	}
+	cacheDir := t.TempDir()
+	t.Setenv("GITSPORK_CACHE_DIR", cacheDir)
+
+	// Populate by running one integrate.
+	upstreamDir := buildSimpleUpstream(t)
+	downstreamDir := NewDownstreamRepo(t)
+	prepDownstreamWithInputData(t, downstreamDir)
+	runner := resolveRunner(t, upstreamDir, downstreamDir)
+	_, code := runner.Run(t, integrateArgs(upstreamDir, downstreamDir), downstreamDir)
+	require.Equal(t, 0, code)
+
+	// Verify cache is non-empty before clearing.
+	entries, err := os.ReadDir(cacheDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries, "cache must be populated before clear test")
+
+	// Clear.
+	out, code := runner.Run(t, []string{"cache", "clear", "--force"}, cacheDir)
+	require.Equal(t, 0, code, "cache clear --force exited non-zero:\n%s", out)
+
+	entries, err = os.ReadDir(cacheDir)
+	if err == nil {
+		assert.Empty(t, entries, "cache root must be empty after clear --force")
+	}
+}

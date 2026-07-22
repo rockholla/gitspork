@@ -75,3 +75,13 @@ func cacheKey(url string) string {
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])
 }
+
+// cacheEntryPaths returns the three filesystem paths associated with a cache
+// entry: the bare-mirror directory itself, the .fetched-at sidecar timestamp
+// file, and the .lock sentinel used by the per-URL flock.
+func cacheEntryPaths(root, key string) (dir, tsFile, lockFile string) {
+	dir = filepath.Join(root, key)
+	tsFile = filepath.Join(root, key+".fetched-at")
+	lockFile = filepath.Join(root, key+".lock")
+	return
+}

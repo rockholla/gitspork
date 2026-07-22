@@ -107,3 +107,10 @@ func Test_cacheKey(t *testing.T) {
 		assert.Len(t, k, 64, "sha256 hex is 64 chars")
 	})
 }
+
+func Test_cacheEntryPaths(t *testing.T) {
+	dir, ts, lock := cacheEntryPaths("/var/cache/gitspork/repos", "abc123")
+	assert.Equal(t, "/var/cache/gitspork/repos/abc123", dir)
+	assert.Equal(t, "/var/cache/gitspork/repos/abc123.fetched-at", ts)
+	assert.Equal(t, "/var/cache/gitspork/repos/abc123.lock", lock)
+}

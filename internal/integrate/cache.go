@@ -1,8 +1,6 @@
 package integrate
 
 import (
-	_ "github.com/gofrs/flock" // anchor: used by getOrCreateFlock in Task 7 (cache_lock.go)
-
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"

@@ -163,3 +163,17 @@ func Test_readFetchedAt_malformedContent(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing")
 }
+
+func Test_getOrCreateFlock_returnsSameInstancePerPath(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "one.lock")
+	b := filepath.Join(dir, "two.lock")
+
+	// Same path → same instance (identity check).
+	assert.Same(t, getOrCreateFlock(a), getOrCreateFlock(a),
+		"repeated calls with the same path must return the same *flock.Flock")
+
+	// Different paths → different instances.
+	assert.NotSame(t, getOrCreateFlock(a), getOrCreateFlock(b),
+		"different paths must yield distinct *flock.Flock instances")
+}

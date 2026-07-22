@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	git "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing/transport"
 )
 
 // cacheConfig is the resolved configuration for the machine-scoped upstream
@@ -116,4 +119,22 @@ func readFetchedAt(path string) (time.Time, error) {
 // os.WriteFile is required.
 func writeFetchedAt(path string, t time.Time) error {
 	return os.WriteFile(path, []byte(strconv.FormatInt(t.Unix(), 10)), 0644)
+}
+
+// populateCache clones url as a bare mirror at dir. Uses go-git's
+// PlainClone with Mirror: true, which fetches all reachable refs (branches,
+// tags, notes) so subsequent working clones can resolve any Version the
+// integrator asks for.
+func populateCache(dir, url string, auth transport.AuthMethod) error {
+	opts := &git.CloneOptions{
+		URL:    url,
+		Mirror: true,
+	}
+	if auth != nil {
+		opts.Auth = auth
+	}
+	if _, err := git.PlainClone(dir, opts); err != nil {
+		return fmt.Errorf("cloning mirror for upstream cache at %s: %w", dir, err)
+	}
+	return nil
 }

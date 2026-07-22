@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	gogit "github.com/go-git/go-git/v6"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -176,4 +178,30 @@ func Test_getOrCreateFlock_returnsSameInstancePerPath(t *testing.T) {
 	// Different paths → different instances.
 	assert.NotSame(t, getOrCreateFlock(a), getOrCreateFlock(b),
 		"different paths must yield distinct *flock.Flock instances")
+}
+
+func Test_populateCache_localFileURL(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
+
+	err := populateCache(cacheDir, "file://"+upstreamDir, nil)
+	require.NoError(t, err)
+
+	// A bare mirror has HEAD and packed-refs (or refs/) but NO working tree.
+	_, err = os.Stat(filepath.Join(cacheDir, "HEAD"))
+	assert.NoError(t, err, "bare mirror must have HEAD")
+	_, err = os.Stat(filepath.Join(cacheDir, ".git"))
+	assert.True(t, os.IsNotExist(err), "bare mirror must NOT have a nested .git dir")
+
+	// The upstream's HEAD commit hash is reachable in the mirror.
+	repo, err := gogit.PlainOpen(cacheDir)
+	require.NoError(t, err)
+	_, err = repo.CommitObject(upstreamHash)
+	assert.NoError(t, err, "mirror must carry the upstream's HEAD commit")
+}
+
+func Test_populateCache_bogusURL_returnsError(t *testing.T) {
+	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
+	err := populateCache(cacheDir, "file:///nonexistent/absolutely-not-a-repo", nil)
+	require.Error(t, err)
 }

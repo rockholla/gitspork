@@ -22,6 +22,7 @@ Exit codes:
   0 - no drift detected
   1 - error (missing state, unclean working tree, clone failure, etc.)
   2 - drift detected
+  3 - self-integration blocked (upstream and downstream identify the same repo)
 
 See https://github.com/rockholla/gitspork/docs for more info.`
 )

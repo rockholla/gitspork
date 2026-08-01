@@ -81,7 +81,7 @@ func pathIsInside(parent, child string) bool {
 	if rel == "." || rel == ".." {
 		return false
 	}
-	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func selfGuardURLCheck(downstreamRepoPath, upstreamURL string) error {
@@ -123,7 +123,7 @@ func newSelfIntegrationURLError(upstreamURL, matchedOriginURL string) error {
 
 func newSelfIntegrationPathError(upstream, downstream string) error {
 	return fmt.Errorf(
-		"self-integration blocked: upstream local path resolves inside the downstream repo (upstream=%s, downstream=%s) — cannot integrate a repo against itself: %w",
+		"self-integration blocked: upstream and downstream local paths overlap (upstream=%s, downstream=%s) — cannot integrate a repo against itself: %w",
 		upstream, downstream, sdktypes.ErrSelfIntegration,
 	)
 }

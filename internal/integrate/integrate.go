@@ -182,6 +182,10 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 	// skips silently and UpsertUpstreamState appends a duplicate entry.
 	upstream.Subpath = config.NormalizeUpstreamPath(upstream.Subpath)
 
+	if err := EnsureNotSelfIntegration(req.DownstreamRepoPath, upstream.URL, ""); err != nil {
+		return sdktypes.IntegratedUpstream{}, err
+	}
+
 	prevHash := ""
 	if !req.forDriftCheck {
 		existingState, err := LoadDownstreamState(req.DownstreamRepoPath)

@@ -87,6 +87,11 @@ var ErrDriftDetected = sdktypes.ErrDriftDetected
 // git CLI. Detect via errors.Is(err, gitspork.ErrGitBinaryMissing).
 var ErrGitBinaryMissing = sdktypes.ErrGitBinaryMissing
 
+// ErrSelfIntegration is returned by Integrate, IntegrateLocal, and CheckDrift
+// when the upstream identifies the same repo as the downstream. Callers can
+// distinguish this from other errors via errors.Is(err, ErrSelfIntegration).
+var ErrSelfIntegration = sdktypes.ErrSelfIntegration
+
 // NoopLogger returns a Logger implementation that discards all messages.
 // SDK consumers can pass this (or nil, which is treated equivalently by the
 // coordinator entry-points) to silence gitspork output.

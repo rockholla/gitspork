@@ -22,6 +22,7 @@ Exit codes:
   0 - no drift detected
   1 - error (missing state, unclean working tree, clone failure, etc.)
   2 - drift detected
+  3 - self-integration blocked (upstream and downstream identify the same repo)
 
 See https://github.com/rockholla/gitspork/docs for more info.`
 )
@@ -62,6 +63,10 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 			}
 			report, err := drift.CheckDrift(opts)
 			if err != nil && !errors.Is(err, sdktypes.ErrDriftDetected) {
+				if errors.Is(err, sdktypes.ErrSelfIntegration) {
+					logger.Log("%v", err)
+					os.Exit(3)
+				}
 				return err
 			}
 			if !report.HasDrift {

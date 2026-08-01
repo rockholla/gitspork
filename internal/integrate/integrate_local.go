@@ -21,6 +21,9 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 	}
 
 	for _, upstreamPath := range opts.UpstreamPaths {
+		if err := EnsureNotSelfIntegration(opts.DownstreamPath, "", upstreamPath); err != nil {
+			return result, err
+		}
 		opts.Logger.Log("parsing the gitspork config file at %s or %s",
 			filepath.Join(upstreamPath, config.GitSporkConfigFileName),
 			filepath.Join(upstreamPath, config.GitSporkConfigFileNameAlt))

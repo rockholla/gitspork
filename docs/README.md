@@ -189,3 +189,10 @@ func main() {
 ```
 
 The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.
+
+## Exit codes
+
+- `0` — success.
+- `1` — generic failure (any error not covered by a dedicated code).
+- `2` — drift detected (returned by `check-drift` when the downstream has diverged from the recorded upstream state).
+- `3` — self-integration blocked (returned by `integrate`, `integrate-local`, and `check-drift` when the upstream and downstream identify the same repo).

@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +40,10 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 				DownstreamPath: downstreamPath,
 				ForceRePrompt:  forceRePrompt,
 			}); err != nil {
+				if errors.Is(err, sdktypes.ErrSelfIntegration) {
+					logger.Log("%v", err)
+					os.Exit(3)
+				}
 				return err
 			}
 			return nil

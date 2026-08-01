@@ -161,7 +161,7 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			CacheTTL:           opts.CacheTTL,
 			NoCache:            opts.NoCache,
 		}); err != nil {
-			return report, fmt.Errorf("error running integration for drift check: %v", err)
+			return report, fmt.Errorf("error running integration for drift check: %w", err)
 		}
 
 		afterFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)

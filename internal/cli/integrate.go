@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -66,6 +68,10 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				opts.Upstreams = append(opts.Upstreams, spec)
 			}
 			if _, err := integrate.Integrate(opts); err != nil {
+				if errors.Is(err, sdktypes.ErrSelfIntegration) {
+					logger.Log("%v", err)
+					os.Exit(3)
+				}
 				return err
 			}
 			return nil

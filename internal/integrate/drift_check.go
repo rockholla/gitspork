@@ -43,7 +43,7 @@ func IntegrateForDriftCheck(req *DriftCheckRequest) error {
 		noCache:            req.NoCache,
 	}
 	if _, err := integrateOneInternal(internalReq, upstream); err != nil {
-		return fmt.Errorf("drift-check re-integration failed: %v", err)
+		return fmt.Errorf("drift-check re-integration failed: %w", err)
 	}
 	return nil
 }

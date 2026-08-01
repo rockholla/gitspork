@@ -1,6 +1,7 @@
 package integrate
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ func selfGuardURLCheck(downstreamRepoPath, upstreamURL string) error {
 
 	repo, err := gogit.PlainOpen(downstreamRepoPath)
 	if err != nil {
-		if err == gogit.ErrRepositoryNotExists {
+		if errors.Is(err, gogit.ErrRepositoryNotExists) {
 			return nil // no git repo, nothing to compare
 		}
 		return fmt.Errorf("opening downstream repo for self-integration check: %w", err)
@@ -98,7 +99,7 @@ func selfGuardURLCheck(downstreamRepoPath, upstreamURL string) error {
 
 	origin, err := repo.Remote("origin")
 	if err != nil {
-		if err == gogit.ErrRemoteNotFound {
+		if errors.Is(err, gogit.ErrRemoteNotFound) {
 			return nil // no origin, nothing to compare
 		}
 		return fmt.Errorf("reading origin remote: %w", err)

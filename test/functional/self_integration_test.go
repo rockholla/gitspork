@@ -15,6 +15,14 @@ import (
 // downstream has its origin remote pointing at the upstream URL, `gitspork
 // integrate` refuses to proceed and exits with code 3.
 func TestIntegrate_selfIntegrationBlocked_byOrigin(t *testing.T) {
+	if isDockerBuild {
+		// The Docker runner mounts the downstream at a container-side path
+		// (e.g. /downstream) that differs from the host-side path the origin
+		// URL was set against. We can't stage a matching origin URL across
+		// that boundary from the test — the guard itself is exercised by the
+		// native-runner variant of this test and the SDK-tier test.
+		t.Skip("origin URL cannot be aligned with the container-mounted upstream path under DockerRunner")
+	}
 	upstreamDir := buildSimpleUpstream(t)
 	upstreamURL := "file://" + upstreamDir
 	downstreamDir := NewDownstreamRepo(t)
@@ -64,6 +72,12 @@ func TestIntegrateLocal_selfIntegrationBlocked_samePath(t *testing.T) {
 // writes state), then add origin pointing at the upstream URL, then run
 // check-drift.
 func TestCheckDrift_selfIntegrationBlocked_byOrigin(t *testing.T) {
+	if isDockerBuild {
+		// Same host/container path mismatch as TestIntegrate_selfIntegrationBlocked_byOrigin —
+		// the origin URL stored on the host can't match the container-side
+		// upstream URL. The guard is exercised by the native-runner variant.
+		t.Skip("origin URL cannot be aligned with the container-mounted upstream path under DockerRunner")
+	}
 	upstreamDir := buildSimpleUpstream(t)
 	upstreamURL := "file://" + upstreamDir
 	downstreamDir := NewDownstreamRepo(t)

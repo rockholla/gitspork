@@ -502,3 +502,18 @@ func Test_integrateOneInternal_blocksSelfIntegrationByURL(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, sdktypes.ErrSelfIntegration))
 }
+
+func TestIntegrateLocal_blocksSelfIntegrationByPath(t *testing.T) {
+	dir := t.TempDir()
+	_, err := gogit.PlainInit(dir, false)
+	require.NoError(t, err)
+	// Give it a valid .gitspork.yml so we'd otherwise progress past parsing.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitspork.yml"), []byte("{}\n"), 0644))
+
+	_, err = IntegrateLocal(&sdktypes.IntegrateLocalOptions{
+		UpstreamPaths:  []string{dir},
+		DownstreamPath: dir,
+	})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, sdktypes.ErrSelfIntegration))
+}

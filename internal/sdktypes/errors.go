@@ -9,3 +9,8 @@ var ErrDriftDetected = errors.New("drift detected")
 // binary but it is not present on PATH. SDK consumers can check via
 // errors.Is(err, gitspork.ErrGitBinaryMissing) to detect this condition.
 var ErrGitBinaryMissing = errors.New("git binary not found on PATH")
+
+// ErrSelfIntegration is returned when integrate / integrate-local / check-drift
+// detects that the upstream identifies the same repo as the downstream. SDK
+// consumers can check via errors.Is(err, gitspork.ErrSelfIntegration).
+var ErrSelfIntegration = errors.New("upstream and downstream identify the same repo")

@@ -1,6 +1,7 @@
 package integrate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,13 +9,14 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
-	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -481,4 +483,22 @@ func makeUpstreamRepo(t *testing.T, dir string) {
 	sig := &object.Signature{Name: config.GitSpork, Email: config.GitSpork + "@localhost", When: time.Now()}
 	_, err = wt.Commit("initial", &gogit.CommitOptions{Author: sig})
 	require.NoError(t, err)
+}
+
+func Test_integrateOneInternal_blocksSelfIntegrationByURL(t *testing.T) {
+	downstream := t.TempDir()
+	repo, err := gogit.PlainInit(downstream, false)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"git@github.com:acme/foo.git"},
+	})
+	require.NoError(t, err)
+
+	req := &internalRequest{
+		DownstreamRepoPath: downstream,
+	}
+	_, err = integrateOneInternal(req, sdktypes.UpstreamSpec{URL: "https://github.com/acme/foo"})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, sdktypes.ErrSelfIntegration))
 }

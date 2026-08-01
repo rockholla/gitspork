@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	gogit "github.com/go-git/go-git/v6"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
@@ -23,7 +24,9 @@ func EnsureNotSelfIntegration(downstreamRepoPath, upstreamURL, upstreamLocalPath
 	if err := selfGuardPathCheck(downstreamRepoPath, upstreamLocalPath); err != nil {
 		return err
 	}
-	// URL check is added in a later task.
+	if err := selfGuardURLCheck(downstreamRepoPath, upstreamURL); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -78,6 +81,43 @@ func pathIsInside(parent, child string) bool {
 		return false
 	}
 	return !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".."
+}
+
+func selfGuardURLCheck(downstreamRepoPath, upstreamURL string) error {
+	if upstreamURL == "" {
+		return nil
+	}
+
+	repo, err := gogit.PlainOpen(downstreamRepoPath)
+	if err != nil {
+		if err == gogit.ErrRepositoryNotExists {
+			return nil // no git repo, nothing to compare
+		}
+		return fmt.Errorf("opening downstream repo for self-integration check: %w", err)
+	}
+
+	origin, err := repo.Remote("origin")
+	if err != nil {
+		if err == gogit.ErrRemoteNotFound {
+			return nil // no origin, nothing to compare
+		}
+		return fmt.Errorf("reading origin remote: %w", err)
+	}
+
+	targetKey := NormalizeUpstreamURL(upstreamURL, "")
+	for _, remoteURL := range origin.Config().URLs {
+		if NormalizeUpstreamURL(remoteURL, "") == targetKey {
+			return newSelfIntegrationURLError(upstreamURL, remoteURL)
+		}
+	}
+	return nil
+}
+
+func newSelfIntegrationURLError(upstreamURL, matchedOriginURL string) error {
+	return fmt.Errorf(
+		"self-integration blocked: upstream URL matches the downstream's origin remote (upstream=%s, origin=%s) — cannot integrate a repo against itself: %w",
+		upstreamURL, matchedOriginURL, sdktypes.ErrSelfIntegration,
+	)
 }
 
 func newSelfIntegrationPathError(upstream, downstream string) error {

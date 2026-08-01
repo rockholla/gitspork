@@ -62,6 +62,10 @@ func (cds *CheckDriftSubcommand) GetCmd() *cobra.Command {
 			}
 			report, err := drift.CheckDrift(opts)
 			if err != nil && !errors.Is(err, sdktypes.ErrDriftDetected) {
+				if errors.Is(err, sdktypes.ErrSelfIntegration) {
+					logger.Log("%v", err)
+					os.Exit(3)
+				}
 				return err
 			}
 			if !report.HasDrift {

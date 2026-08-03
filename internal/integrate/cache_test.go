@@ -186,7 +186,7 @@ func Test_populateCache_localFileURL(t *testing.T) {
 	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
 	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
 
-	err := populateCache(cacheDir, "file://"+upstreamDir, nil)
+	err := populateCache(cacheDir, "file://"+upstreamDir, nil, nil)
 	require.NoError(t, err)
 
 	// A bare mirror has HEAD and packed-refs (or refs/) but NO working tree.
@@ -204,7 +204,7 @@ func Test_populateCache_localFileURL(t *testing.T) {
 
 func Test_populateCache_bogusURL_returnsError(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
-	err := populateCache(cacheDir, "file:///nonexistent/absolutely-not-a-repo", nil)
+	err := populateCache(cacheDir, "file:///nonexistent/absolutely-not-a-repo", nil, nil)
 	require.Error(t, err)
 }
 
@@ -213,7 +213,7 @@ func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
 	cacheDir := filepath.Join(t.TempDir(), "cache-entry")
 
 	// Initial populate.
-	require.NoError(t, populateCache(cacheDir, "file://"+upstreamDir, nil))
+	require.NoError(t, populateCache(cacheDir, "file://"+upstreamDir, nil, nil))
 
 	// Advance the upstream with a new commit.
 	newFilePath := filepath.Join(upstreamDir, "added-later.txt")
@@ -231,7 +231,7 @@ func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
 	// Refresh, then the cache carries secondHash too.
 	// Re-open to get a fresh object-store view — go-git builds its packfile
 	// index lazily and does not invalidate it on external writes (Reindex()).
-	require.NoError(t, refreshCache(cacheDir, nil))
+	require.NoError(t, refreshCache(cacheDir, nil, nil))
 	cacheRepo, err := gogit.PlainOpen(cacheDir)
 	require.NoError(t, err)
 	_, err = cacheRepo.CommitObject(secondHash)
@@ -244,7 +244,7 @@ func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
 
 func Test_ensureUpstreamCache_disabled_returnsEmpty(t *testing.T) {
 	cfg := cacheConfig{Disabled: true}
-	dir, err := ensureUpstreamCache(cfg, "file:///somewhere", nil, sdktypes.NoopLogger())
+	dir, err := ensureUpstreamCache(cfg, "file:///somewhere", nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 	assert.Empty(t, dir, "disabled cache must return empty dir (caller falls back to direct clone)")
 }
@@ -254,7 +254,7 @@ func Test_ensureUpstreamCache_missingEntry_populates(t *testing.T) {
 	root := t.TempDir()
 	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
 
-	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, dir)
 	assert.DirExists(t, dir)
@@ -267,7 +267,7 @@ func Test_ensureUpstreamCache_freshEntry_noFetch(t *testing.T) {
 	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
 
 	// First call populates.
-	dir1, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	dir1, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 
 	// Advance upstream — the fresh cache must NOT pick this up.
@@ -277,7 +277,7 @@ func Test_ensureUpstreamCache_freshEntry_noFetch(t *testing.T) {
 	newHash := testharness.CommitAllWithMessage(t, upstreamRepo, "advance")
 
 	// Second call within TTL: no fetch.
-	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 	assert.Equal(t, dir1, dir2)
 
@@ -295,7 +295,7 @@ func Test_ensureUpstreamCache_staleEntry_refreshes(t *testing.T) {
 	root := t.TempDir()
 	cfg := cacheConfig{Root: root, TTL: 1 * time.Nanosecond} // instantly stale
 
-	_, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	_, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 
 	// Advance upstream and re-run — the tiny TTL forces a fetch.
@@ -305,7 +305,7 @@ func Test_ensureUpstreamCache_staleEntry_refreshes(t *testing.T) {
 	newHash := testharness.CommitAllWithMessage(t, upstreamRepo, "advance")
 	time.Sleep(2 * time.Nanosecond) // ensure now > fetched-at + ttl
 
-	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	dir2, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err)
 
 	repo, err := gogit.PlainOpen(dir2)
@@ -328,7 +328,7 @@ func Test_ensureUpstreamCache_corruptEntry_wipesAndRetries(t *testing.T) {
 	require.NoError(t, writeFetchedAt(tsFile, time.Now()))
 	time.Sleep(2 * time.Nanosecond)
 
-	returnedDir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	returnedDir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err, "corrupt cache must be wiped and repopulated, not surfaced as an error")
 	assert.Equal(t, dir, returnedDir)
 
@@ -345,7 +345,7 @@ func Test_ensureUpstreamCache_bogusURL_boundedRetry(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, err := ensureUpstreamCache(cfg, "file:///absolutely-nonexistent-path-xyzzy", nil, sdktypes.NoopLogger())
+		_, err := ensureUpstreamCache(cfg, "file:///absolutely-nonexistent-path-xyzzy", nil, sdktypes.NoopLogger(), nil)
 		assert.Error(t, err)
 	}()
 
@@ -372,7 +372,7 @@ func Test_ensureUpstreamCache_defaultRootUnwritable_fallsBackToTmp(t *testing.T)
 	unwritable := filepath.Join(blocker, "cache") // MkdirAll fails: "not a directory"
 
 	cfg := cacheConfig{Root: unwritable, TTL: time.Hour, RootIsDefault: true}
-	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger())
+	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, nil, sdktypes.NoopLogger(), nil)
 	require.NoError(t, err, "default-root mkdir failure must fall back to os.TempDir, not surface as error")
 	require.NotEmpty(t, dir)
 
@@ -398,7 +398,7 @@ func Test_ensureUpstreamCache_explicitRootUnwritable_errors(t *testing.T) {
 	unwritable := filepath.Join(blocker, "cache")
 
 	cfg := cacheConfig{Root: unwritable, TTL: time.Hour, RootIsDefault: false}
-	_, err := ensureUpstreamCache(cfg, "file:///anywhere", nil, sdktypes.NoopLogger())
+	_, err := ensureUpstreamCache(cfg, "file:///anywhere", nil, sdktypes.NoopLogger(), nil)
 	require.Error(t, err, "explicit user-configured unwritable root must surface as error, not silently fall back")
 	assert.Contains(t, err.Error(), unwritable)
 }

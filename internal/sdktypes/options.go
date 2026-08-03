@@ -1,6 +1,9 @@
 package sdktypes
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // IntegrateOptions configures a call to Integrate. Populate Upstreams (one
 // or more entries) for multi-upstream integration.
@@ -22,6 +25,13 @@ type IntegrateOptions struct {
 	// CacheTTL. Also settable via GITSPORK_NO_CACHE env var. Ignored for
 	// IntegrateLocalOptions because IntegrateLocal doesn't clone remotes.
 	NoCache bool
+
+	// Progress, if non-nil, receives git progress output during upstream cache
+	// clone/fetch operations (populating the machine-scoped mirror on first use,
+	// refreshing on TTL expiry). Consumers typically pass os.Stderr for
+	// terminal-style progress; leave nil to suppress. Ignored when NoCache is
+	// true (direct clone path).
+	Progress io.Writer
 }
 
 // IntegrateLocalOptions configures a call to IntegrateLocal. Populate
@@ -66,6 +76,13 @@ type CheckDriftOptions struct {
 	// CacheTTL. Also settable via GITSPORK_NO_CACHE env var. Ignored for
 	// IntegrateLocalOptions because IntegrateLocal doesn't clone remotes.
 	NoCache bool
+
+	// Progress, if non-nil, receives git progress output during upstream cache
+	// clone/fetch operations (populating the machine-scoped mirror on first use,
+	// refreshing on TTL expiry). Consumers typically pass os.Stderr for
+	// terminal-style progress; leave nil to suppress. Ignored when NoCache is
+	// true (direct clone path).
+	Progress io.Writer
 }
 
 // UpstreamSpec identifies a single upstream to integrate from.

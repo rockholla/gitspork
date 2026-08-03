@@ -58,6 +58,9 @@ type internalRequest struct {
 	// Cache controls, propagated from IntegrateOptions / CheckDriftOptions.
 	cacheTTL time.Duration
 	noCache  bool
+	// progress, when non-nil, is passed through to go-git as the Progress
+	// writer for upstream mirror cache clone/fetch operations.
+	progress io.Writer
 }
 
 // Integrator is implemented by the ownership integrators that process a
@@ -164,6 +167,7 @@ func integrateOne(opts *sdktypes.IntegrateOptions, upstream sdktypes.UpstreamSpe
 		ForceRePrompt:      opts.ForceRePrompt,
 		cacheTTL:           opts.CacheTTL,
 		noCache:            opts.NoCache,
+		progress:           opts.Progress,
 		// forDriftCheck / upstreamCommit / prevUpstreamCommitHash stay zero-value:
 		// public Integrate never runs drift-check semantics.
 	}
@@ -216,6 +220,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		prevUpstreamCommitHash: prevHash,
 		cacheTTL:               req.cacheTTL,
 		noCache:                req.noCache,
+		progress:               req.progress,
 	}
 
 	originalUpstreamURL := upstream.URL
@@ -435,7 +440,7 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		return "", err
 	}
 	var cacheDir string
-	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, authMethod, req.Logger)
+	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, authMethod, req.Logger, req.progress)
 	if err != nil {
 		return "", err
 	}

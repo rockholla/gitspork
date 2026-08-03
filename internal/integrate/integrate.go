@@ -1,6 +1,7 @@
 package integrate
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -490,21 +491,69 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		cloneOptions.Depth = 1
 	}
 
-	repo, err := git.PlainClone(cloneDir, cloneOptions)
-	if err != nil && cacheDir != "" {
-		// Rare: a concurrent fetch-prune in the cache deleted a ref this
-		// working clone snapshotted. Retry once against the same cache; the
-		// deleting fetch is one-shot so a second attempt has fresh refs.
-		_ = os.RemoveAll(cloneDir)
-		if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
-			return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
+	req.Logger.Log("checking out upstream %s from cache at %s (this may take a moment on large upstreams)", upstream.URL, cloneOptions.URL)
+
+	// Fast path: when the git binary is available, shell out to `git clone`
+	// for both cache-served (file://) and network sources. --local hardlinks
+	// the object database instead of copying it, producing a working checkout
+	// dramatically faster than go-git's PlainClone (typically 5-10x on large
+	// repos). For network URLs, shell git handles SSH via ssh-agent natively;
+	// HTTPS auth is passed through by embedding the token in the URL. Shell
+	// git emits clone progress on stderr natively.
+	//
+	// The four shell-git call sites (populateCache, refreshCache, and both
+	// branches here) all gate on useShellGitFastPath so a machine either runs
+	// shell git everywhere or go-git everywhere — one consistent decision.
+	useShellGit := useShellGitFastPath()
+	isFileURL := strings.HasPrefix(cloneOptions.URL, "file://")
+	var repo *git.Repository
+	if useShellGit {
+		shellOpts := shellGitCloneOptions{
+			SingleBranch:  cloneOptions.SingleBranch,
+			ReferenceName: string(cloneOptions.ReferenceName),
+			Depth:         cloneOptions.Depth,
+			Local:         isFileURL, // --local only makes sense for filesystem sources
+			// upstream.Token is ignored by shellGitClone unless the URL is
+			// https:// (file:// and ssh flows leave the URL untouched).
+			Token: upstream.Token,
 		}
+		if err := shellGitClone(context.TODO(), cloneOptions.URL, cloneDir, shellOpts, req.progress, req.Logger); err != nil {
+			return "", fmt.Errorf("shell git clone failed: %w", err)
+		}
+		repo, err = git.PlainOpen(cloneDir)
+		if err != nil {
+			return "", fmt.Errorf("opening shell-git clone at %s: %w", cloneDir, err)
+		}
+	} else {
 		repo, err = git.PlainClone(cloneDir, cloneOptions)
-	}
-	if err != nil {
-		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+		if err != nil && cacheDir != "" {
+			// Rare: a concurrent fetch-prune in the cache deleted a ref this
+			// working clone snapshotted. Retry once against the same cache; the
+			// deleting fetch is one-shot so a second attempt has fresh refs.
+			// Only meaningful on the go-git path — the shell git --local path
+			// snapshots refs atomically via a single git clone invocation.
+			_ = os.RemoveAll(cloneDir)
+			if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
+				return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
+			}
+			repo, err = git.PlainClone(cloneDir, cloneOptions)
+		}
+		if err != nil {
+			return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+		}
 	}
 	if req.upstreamCommit != "" {
+		if useShellGit {
+			// Shell git checkout on our own fresh clone. -c advice.detachedHead=false
+			// silences the "you're in detached HEAD state" warning that would
+			// otherwise print for every drift-check re-integrate.
+			checkoutCmd := exec.CommandContext(context.TODO(), "git", "-c", "safe.directory=*", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", req.upstreamCommit)
+			checkoutCmd.Stderr = &logutil.LoggerWriter{L: req.Logger}
+			if err := checkoutCmd.Run(); err != nil {
+				return "", fmt.Errorf("git checkout %s in %s: %w", req.upstreamCommit, cloneDir, err)
+			}
+			return req.upstreamCommit, nil
+		}
 		worktree, err := repo.Worktree()
 		if err != nil {
 			return "", fmt.Errorf("error getting worktree for commit checkout: %v", err)

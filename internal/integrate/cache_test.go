@@ -231,7 +231,7 @@ func Test_refreshCache_picksUpNewUpstreamCommits(t *testing.T) {
 	// Refresh, then the cache carries secondHash too.
 	// Re-open to get a fresh object-store view — go-git builds its packfile
 	// index lazily and does not invalidate it on external writes (Reindex()).
-	require.NoError(t, refreshCache(cacheDir, nil, nil))
+	require.NoError(t, refreshCache(cacheDir, "file://"+upstreamDir, nil, nil))
 	cacheRepo, err := gogit.PlainOpen(cacheDir)
 	require.NoError(t, err)
 	_, err = cacheRepo.CommitObject(secondHash)

@@ -339,3 +339,30 @@ func TestUseShellGitFastPath_gitMissing(t *testing.T) {
 	t.Setenv("PATH", "/nonexistent-path-for-gitspork-tests")
 	assert.False(t, useShellGitFastPath(), "git missing from PATH → fast path disabled")
 }
+
+// TestShellGitLsRemote_returnsAllRefs exercises the shell-git ls-remote
+// fast path used by resolveUpstreamVersionRef. Builds a tiny upstream with
+// both a tag and (implicitly) a default branch, then asserts both refs come
+// back keyed by full refname.
+func TestShellGitLsRemote_returnsAllRefs(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	upstream, hash := testharness.MinimalUpstreamWithTag(t, "v1.2.3")
+
+	refs, err := shellGitLsRemote(context.Background(), "file://"+upstream, "")
+	require.NoError(t, err)
+
+	// Tag should be present as refs/tags/v1.2.3 → HEAD hash.
+	assert.Equal(t, hash.String(), refs["refs/tags/v1.2.3"], "tag ref should map to the tagged commit")
+	// Default branch (main; MinimalUpstream initializes it) should be present too.
+	assert.Equal(t, hash.String(), refs["refs/heads/main"], "default branch ref should map to HEAD")
+}
+
+// TestShellGitLsRemote_emptyURL surfaces a clear guard rather than shelling
+// out to `git ls-remote` with no argument.
+func TestShellGitLsRemote_emptyURL(t *testing.T) {
+	_, err := shellGitLsRemote(context.Background(), "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty url")
+}

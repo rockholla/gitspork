@@ -1,6 +1,7 @@
 package integrate
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -139,12 +140,23 @@ func writeFetchedAt(path string, t time.Time) error {
 	return os.WriteFile(path, []byte(strconv.FormatInt(t.Unix(), 10)), 0644)
 }
 
-// populateCache clones url as a bare mirror at dir. Uses go-git's
-// PlainClone with Mirror: true, which fetches all reachable refs (branches,
-// tags, notes) so subsequent working clones can resolve any Version the
-// integrator asks for. When progress is non-nil, go-git streams git-style
-// progress lines (Compressing objects, Receiving objects, …) to it.
+// populateCache clones url as a bare mirror at dir. The mirror carries all
+// reachable refs (branches, tags, notes) so subsequent working clones can
+// resolve any Version the integrator asks for. When progress is non-nil,
+// git-style progress lines (Compressing objects, Receiving objects, …) are
+// streamed to it.
+//
+// Prefers the shell git fast path (`git clone --mirror`) when the git binary
+// is on PATH; falls back to go-git's PlainClone otherwise. tokenFromAuth
+// extracts the HTTPS basic-auth password so shell git can embed it in the
+// URL — SSH auth passes through the environment's ssh-agent naturally.
 func populateCache(dir, url string, auth transport.AuthMethod, progress io.Writer) error {
+	if useShellGitFastPath() {
+		return shellGitClone(context.TODO(), url, dir, shellGitCloneOptions{
+			Mirror: true,
+			Token:  tokenFromAuth(auth),
+		}, progress, nil)
+	}
 	opts := &git.CloneOptions{
 		URL:    url,
 		Mirror: true,
@@ -165,8 +177,22 @@ func populateCache(dir, url string, auth transport.AuthMethod, progress io.Write
 // remote of an existing bare mirror at dir. Called when a cache entry is
 // stale beyond its TTL. Callers must hold the per-URL flock while this
 // runs — git-fetch inside the mirror is not safe against concurrent writers.
-// When progress is non-nil, go-git streams git-style progress lines to it.
-func refreshCache(dir string, auth transport.AuthMethod, progress io.Writer) error {
+// When progress is non-nil, git-style progress lines are streamed to it.
+//
+// url is the network origin URL, passed explicitly rather than read from the
+// mirror's configured remote so the shell git fast path can embed an HTTPS
+// token in the URL without persisting it to disk. The go-git fallback still
+// fetches from the configured "origin" remote; the two paths agree on
+// destination refs because populateCache set origin to url in the first place.
+//
+// Both paths treat "nothing to fetch" as success (go-git via
+// NoErrAlreadyUpToDate; shell git exits 0 naturally).
+func refreshCache(dir, url string, auth transport.AuthMethod, progress io.Writer) error {
+	if useShellGitFastPath() {
+		return shellGitFetch(context.TODO(), dir, url, shellGitFetchOptions{
+			Token: tokenFromAuth(auth),
+		}, progress)
+	}
 	repo, err := git.PlainOpen(dir)
 	if err != nil {
 		return fmt.Errorf("opening upstream cache at %s: %w", dir, err)
@@ -280,7 +306,7 @@ func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthM
 	// Stale — refresh.
 	age := time.Since(fetchedAt).Round(time.Second)
 	logger.Log("refreshing upstream cache for %s (last fetch: %s ago, ttl: %s)", url, age, ttl)
-	if err := refreshCache(dir, auth, progress); err != nil {
+	if err := refreshCache(dir, url, auth, progress); err != nil {
 		return err
 	}
 	if err := writeFetchedAt(tsFile, time.Now()); err != nil {

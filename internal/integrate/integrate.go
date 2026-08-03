@@ -22,7 +22,6 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/gobwas/glob"
 	"github.com/rockholla/gitspork/v2/internal/config"
-	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
@@ -494,23 +493,29 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 
 	req.Logger.Log("checking out upstream %s from cache at %s (this may take a moment on large upstreams)", upstream.URL, cloneOptions.URL)
 
-	// Fast path: when the git binary is available AND we're cloning from a
-	// local file:// cache, shell out to `git clone --local`. --local hardlinks
+	// Fast path: when the git binary is available, shell out to `git clone`
+	// for both cache-served (file://) and network sources. --local hardlinks
 	// the object database instead of copying it, producing a working checkout
 	// dramatically faster than go-git's PlainClone (typically 5-10x on large
-	// repos). Shell git emits clone progress on stderr natively.
+	// repos). For network URLs, shell git handles SSH via ssh-agent natively;
+	// HTTPS auth is passed through by embedding the token in the URL. Shell
+	// git emits clone progress on stderr natively.
 	//
-	// The network-clone path (cache disabled, no file:// URL) stays on
-	// go-git because its transport auth (HTTPS+token, SSH agent) is already
-	// wired there and duplicating it via shell git would broaden the surface.
-	useShellGit := gitbin.Require() == nil && strings.HasPrefix(cloneOptions.URL, "file://")
+	// The four shell-git call sites (populateCache, refreshCache, and both
+	// branches here) all gate on useShellGitFastPath so a machine either runs
+	// shell git everywhere or go-git everywhere — one consistent decision.
+	useShellGit := useShellGitFastPath()
+	isFileURL := strings.HasPrefix(cloneOptions.URL, "file://")
 	var repo *git.Repository
 	if useShellGit {
 		shellOpts := shellGitCloneOptions{
 			SingleBranch:  cloneOptions.SingleBranch,
 			ReferenceName: string(cloneOptions.ReferenceName),
 			Depth:         cloneOptions.Depth,
-			Local:         true,
+			Local:         isFileURL, // --local only makes sense for filesystem sources
+			// upstream.Token is ignored by shellGitClone unless the URL is
+			// https:// (file:// and ssh flows leave the URL untouched).
+			Token: upstream.Token,
 		}
 		if err := shellGitClone(context.TODO(), cloneOptions.URL, cloneDir, shellOpts, req.progress, req.Logger); err != nil {
 			return "", fmt.Errorf("shell git clone failed: %w", err)

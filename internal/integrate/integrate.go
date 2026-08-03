@@ -547,7 +547,7 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 			// Shell git checkout on our own fresh clone. -c advice.detachedHead=false
 			// silences the "you're in detached HEAD state" warning that would
 			// otherwise print for every drift-check re-integrate.
-			checkoutCmd := exec.CommandContext(context.TODO(), "git", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", req.upstreamCommit)
+			checkoutCmd := exec.CommandContext(context.TODO(), "git", "-c", "safe.directory=*", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", req.upstreamCommit)
 			checkoutCmd.Stderr = &logutil.LoggerWriter{L: req.Logger}
 			if err := checkoutCmd.Run(); err != nil {
 				return "", fmt.Errorf("git checkout %s in %s: %w", req.upstreamCommit, cloneDir, err)

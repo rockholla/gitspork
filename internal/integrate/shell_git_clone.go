@@ -89,7 +89,13 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 	if srcURL == "" {
 		return fmt.Errorf("shellGitClone: empty srcURL")
 	}
-	args := []string{"clone"}
+	// -c safe.directory=* disables git's owner-check on the working directory
+	// and any repo it touches. Necessary when running as root inside Docker
+	// with mounted volumes owned by another UID — git 2.35.2+ otherwise refuses
+	// with "detected dubious ownership". Matches the pattern used by the other
+	// shell-git callers in this repo (internal/cli/rm.go, internal/cli/mv.go,
+	// internal/drift/check_drift.go).
+	args := []string{"-c", "safe.directory=*", "clone"}
 	if opts.Local {
 		args = append(args, "--local")
 	}
@@ -152,7 +158,10 @@ func shellGitFetch(ctx context.Context, dir, remoteURL string, opts shellGitFetc
 	// specific quirks in old shell gits.
 	src = strings.TrimPrefix(src, "file://")
 
-	args := []string{"-C", dir, "fetch", "--prune", src, "+refs/*:refs/*"}
+	// -c safe.directory=* — see the note on shellGitClone. Required when running
+	// as root inside Docker against a cache mounted from a non-root-owned host
+	// path.
+	args := []string{"-c", "safe.directory=*", "-C", dir, "fetch", "--prune", src, "+refs/*:refs/*"}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if progress != nil {
 		cmd.Stderr = progress

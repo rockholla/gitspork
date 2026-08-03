@@ -1,6 +1,6 @@
 module github.com/rockholla/gitspork/v2
 
-go 1.26.0
+go 1.26
 
 require (
 	github.com/buger/goterm v1.0.4
@@ -13,6 +13,7 @@ require (
 	github.com/rockholla/go-lib v0.0.0-20241023190122-11eccca156c1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/term v0.43.0
 )
 
 require (
@@ -40,6 +41,5 @@ require (
 	golang.org/x/exp v0.0.0-20250531010427-b6e5de432a8b // indirect
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/term v0.43.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

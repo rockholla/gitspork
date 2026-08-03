@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -141,14 +142,18 @@ func writeFetchedAt(path string, t time.Time) error {
 // populateCache clones url as a bare mirror at dir. Uses go-git's
 // PlainClone with Mirror: true, which fetches all reachable refs (branches,
 // tags, notes) so subsequent working clones can resolve any Version the
-// integrator asks for.
-func populateCache(dir, url string, auth transport.AuthMethod) error {
+// integrator asks for. When progress is non-nil, go-git streams git-style
+// progress lines (Compressing objects, Receiving objects, …) to it.
+func populateCache(dir, url string, auth transport.AuthMethod, progress io.Writer) error {
 	opts := &git.CloneOptions{
 		URL:    url,
 		Mirror: true,
 	}
 	if auth != nil {
 		opts.Auth = auth
+	}
+	if progress != nil {
+		opts.Progress = progress
 	}
 	if _, err := git.PlainClone(dir, opts); err != nil {
 		return fmt.Errorf("cloning mirror for upstream cache at %s: %w", dir, err)
@@ -160,7 +165,8 @@ func populateCache(dir, url string, auth transport.AuthMethod) error {
 // remote of an existing bare mirror at dir. Called when a cache entry is
 // stale beyond its TTL. Callers must hold the per-URL flock while this
 // runs — git-fetch inside the mirror is not safe against concurrent writers.
-func refreshCache(dir string, auth transport.AuthMethod) error {
+// When progress is non-nil, go-git streams git-style progress lines to it.
+func refreshCache(dir string, auth transport.AuthMethod, progress io.Writer) error {
 	repo, err := git.PlainOpen(dir)
 	if err != nil {
 		return fmt.Errorf("opening upstream cache at %s: %w", dir, err)
@@ -176,6 +182,9 @@ func refreshCache(dir string, auth transport.AuthMethod) error {
 	}
 	if auth != nil {
 		opts.Auth = auth
+	}
+	if progress != nil {
+		opts.Progress = progress
 	}
 	if err := repo.Fetch(opts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("fetching into upstream cache at %s: %w", dir, err)
@@ -194,7 +203,7 @@ func refreshCache(dir string, auth transport.AuthMethod) error {
 // a single wipe-and-repopulate retry. On second failure the wrapped error
 // is surfaced. Retries are hard-bounded to prevent infinite loops against
 // a genuinely broken remote.
-func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod, logger sdktypes.Logger) (string, error) {
+func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod, logger sdktypes.Logger, progress io.Writer) (string, error) {
 	if cfg.Disabled {
 		return "", nil
 	}
@@ -228,11 +237,11 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 	defer func() { _ = fl.Unlock() }()
 
 	// First attempt.
-	if err := runCacheOp(dir, tsFile, url, cfg.TTL, auth, logger); err != nil {
+	if err := runCacheOp(dir, tsFile, url, cfg.TTL, auth, logger, progress); err != nil {
 		// Wipe and retry once.
 		_ = os.RemoveAll(dir)
 		_ = os.Remove(tsFile)
-		if err := populateCache(dir, url, auth); err != nil {
+		if err := populateCache(dir, url, auth, progress); err != nil {
 			return "", fmt.Errorf("upstream cache populate failed after wipe-and-retry: %w", err)
 		}
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
@@ -246,13 +255,13 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 // runCacheOp inspects the state of a cache entry and performs the appropriate
 // operation — no-op if fresh, refresh if stale, populate if missing. Emits a
 // distinct log line per branch matching Section 1's Log-line contract.
-func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthMethod, logger sdktypes.Logger) error {
+func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthMethod, logger sdktypes.Logger, progress io.Writer) error {
 	fetchedAt, tsErr := readFetchedAt(tsFile)
 	tsPresent := tsErr == nil
 
 	// Populate path: no timestamp file OR no cache dir yet.
 	if !tsPresent {
-		if err := populateCache(dir, url, auth); err != nil {
+		if err := populateCache(dir, url, auth, progress); err != nil {
 			return err
 		}
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
@@ -270,7 +279,7 @@ func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthM
 
 	// Stale — refresh.
 	age := time.Since(fetchedAt).Round(time.Second)
-	if err := refreshCache(dir, auth); err != nil {
+	if err := refreshCache(dir, auth, progress); err != nil {
 		return err
 	}
 	if err := writeFetchedAt(tsFile, time.Now()); err != nil {

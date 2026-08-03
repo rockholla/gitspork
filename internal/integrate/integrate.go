@@ -1,6 +1,7 @@
 package integrate
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v6/storage/memory"
 	"github.com/gobwas/glob"
 	"github.com/rockholla/gitspork/v2/internal/config"
+	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
@@ -490,21 +492,63 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		cloneOptions.Depth = 1
 	}
 
-	repo, err := git.PlainClone(cloneDir, cloneOptions)
-	if err != nil && cacheDir != "" {
-		// Rare: a concurrent fetch-prune in the cache deleted a ref this
-		// working clone snapshotted. Retry once against the same cache; the
-		// deleting fetch is one-shot so a second attempt has fresh refs.
-		_ = os.RemoveAll(cloneDir)
-		if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
-			return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
+	req.Logger.Log("checking out upstream %s from cache at %s (this may take a moment on large upstreams)", upstream.URL, cloneOptions.URL)
+
+	// Fast path: when the git binary is available AND we're cloning from a
+	// local file:// cache, shell out to `git clone --local`. --local hardlinks
+	// the object database instead of copying it, producing a working checkout
+	// dramatically faster than go-git's PlainClone (typically 5-10x on large
+	// repos). Shell git emits clone progress on stderr natively.
+	//
+	// The network-clone path (cache disabled, no file:// URL) stays on
+	// go-git because its transport auth (HTTPS+token, SSH agent) is already
+	// wired there and duplicating it via shell git would broaden the surface.
+	useShellGit := gitbin.Require() == nil && strings.HasPrefix(cloneOptions.URL, "file://")
+	var repo *git.Repository
+	if useShellGit {
+		shellOpts := shellGitCloneOptions{
+			SingleBranch:  cloneOptions.SingleBranch,
+			ReferenceName: string(cloneOptions.ReferenceName),
+			Depth:         cloneOptions.Depth,
+			Local:         true,
 		}
+		if err := shellGitClone(context.TODO(), cloneOptions.URL, cloneDir, shellOpts, req.progress, req.Logger); err != nil {
+			return "", fmt.Errorf("shell git clone failed: %w", err)
+		}
+		repo, err = git.PlainOpen(cloneDir)
+		if err != nil {
+			return "", fmt.Errorf("opening shell-git clone at %s: %w", cloneDir, err)
+		}
+	} else {
 		repo, err = git.PlainClone(cloneDir, cloneOptions)
-	}
-	if err != nil {
-		return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+		if err != nil && cacheDir != "" {
+			// Rare: a concurrent fetch-prune in the cache deleted a ref this
+			// working clone snapshotted. Retry once against the same cache; the
+			// deleting fetch is one-shot so a second attempt has fresh refs.
+			// Only meaningful on the go-git path — the shell git --local path
+			// snapshots refs atomically via a single git clone invocation.
+			_ = os.RemoveAll(cloneDir)
+			if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
+				return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
+			}
+			repo, err = git.PlainClone(cloneDir, cloneOptions)
+		}
+		if err != nil {
+			return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
+		}
 	}
 	if req.upstreamCommit != "" {
+		if useShellGit {
+			// Shell git checkout on our own fresh clone. -c advice.detachedHead=false
+			// silences the "you're in detached HEAD state" warning that would
+			// otherwise print for every drift-check re-integrate.
+			checkoutCmd := exec.CommandContext(context.TODO(), "git", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", req.upstreamCommit)
+			checkoutCmd.Stderr = &logutil.LoggerWriter{L: req.Logger}
+			if err := checkoutCmd.Run(); err != nil {
+				return "", fmt.Errorf("git checkout %s in %s: %w", req.upstreamCommit, cloneDir, err)
+			}
+			return req.upstreamCommit, nil
+		}
 		worktree, err := repo.Worktree()
 		if err != nil {
 			return "", fmt.Errorf("error getting worktree for commit checkout: %v", err)

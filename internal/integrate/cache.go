@@ -241,13 +241,13 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 		// Wipe and retry once.
 		_ = os.RemoveAll(dir)
 		_ = os.Remove(tsFile)
+		logger.Log("populating upstream cache for %s at %s", url, dir)
 		if err := populateCache(dir, url, auth, progress); err != nil {
 			return "", fmt.Errorf("upstream cache populate failed after wipe-and-retry: %w", err)
 		}
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
 			return "", fmt.Errorf("writing upstream cache timestamp after recovery: %w", err)
 		}
-		logger.Log("populating upstream cache for %s at %s", url, dir)
 	}
 	return dir, nil
 }
@@ -261,13 +261,13 @@ func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthM
 
 	// Populate path: no timestamp file OR no cache dir yet.
 	if !tsPresent {
+		logger.Log("populating upstream cache for %s at %s", url, dir)
 		if err := populateCache(dir, url, auth, progress); err != nil {
 			return err
 		}
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
 			return err
 		}
-		logger.Log("populating upstream cache for %s at %s", url, dir)
 		return nil
 	}
 
@@ -279,12 +279,12 @@ func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthM
 
 	// Stale — refresh.
 	age := time.Since(fetchedAt).Round(time.Second)
+	logger.Log("refreshing upstream cache for %s (last fetch: %s ago, ttl: %s)", url, age, ttl)
 	if err := refreshCache(dir, auth, progress); err != nil {
 		return err
 	}
 	if err := writeFetchedAt(tsFile, time.Now()); err != nil {
 		return err
 	}
-	logger.Log("refreshing upstream cache for %s (last fetch: %s ago, ttl: %s)", url, age, ttl)
 	return nil
 }

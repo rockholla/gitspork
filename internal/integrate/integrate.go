@@ -609,24 +609,40 @@ func canShallowClone(upstreamCommit, prevUpstreamCommitHash string, versionIsCom
 // resolveUpstreamVersionRef probes the remote to disambiguate a bare Version
 // value between a tag and a branch. Tags win over branches when both exist,
 // matching `git checkout`'s precedence for ambiguous refs.
+//
+// Fast path: when the git binary is available (useShellGitFastPath), shells
+// out to `git ls-remote` rather than using go-git's Remote.List. This is
+// symmetric with the clone/fetch fast paths and also sidesteps go-git's
+// Go-TLS stack — some macOS environments surface as `SecPolicyCreateSSL
+// error: 0` there, while shell git's libcurl TLS goes through the system
+// trust store and works.
 func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version string) (plumbing.ReferenceName, error) {
-	rem := git.NewRemote(memory.NewStorage(), &gitconfig.RemoteConfig{
-		Name: "origin",
-		URLs: []string{url},
-	})
-	refs, err := rem.List(&git.ListOptions{Auth: auth})
-	if err != nil {
-		return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
-	}
 	tagRef := plumbing.ReferenceName("refs/tags/" + version)
 	branchRef := plumbing.ReferenceName("refs/heads/" + version)
 	var haveTag, haveBranch bool
-	for _, r := range refs {
-		switch r.Name() {
-		case tagRef:
-			haveTag = true
-		case branchRef:
-			haveBranch = true
+	if useShellGitFastPath() {
+		refs, err := shellGitLsRemote(context.TODO(), url, tokenFromAuth(auth))
+		if err != nil {
+			return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
+		}
+		_, haveTag = refs[string(tagRef)]
+		_, haveBranch = refs[string(branchRef)]
+	} else {
+		rem := git.NewRemote(memory.NewStorage(), &gitconfig.RemoteConfig{
+			Name: "origin",
+			URLs: []string{url},
+		})
+		refs, err := rem.List(&git.ListOptions{Auth: auth})
+		if err != nil {
+			return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
+		}
+		for _, r := range refs {
+			switch r.Name() {
+			case tagRef:
+				haveTag = true
+			case branchRef:
+				haveBranch = true
+			}
 		}
 	}
 	if haveTag {

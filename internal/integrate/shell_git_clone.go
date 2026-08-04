@@ -1,6 +1,8 @@
 package integrate
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -137,6 +139,48 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 		return fmt.Errorf("git clone %s -> %s: %w", srcURL, dest, err)
 	}
 	return nil
+}
+
+// shellGitLsRemote runs `git ls-remote <url>` and returns a map keyed by
+// full refname (e.g. "refs/tags/v1.2.3", "refs/heads/main") to commit SHA.
+// Used by resolveUpstreamVersionRef's fast path.
+//
+// Sidesteps go-git's Go-TLS stack, which fails in some macOS environments
+// (corporate MITM proxies, keychain quirks) with a
+// `SecPolicyCreateSSL error: 0` from crypto/x509's darwin path — shell
+// git's TLS goes through the system trust store via libcurl and works
+// through those same conditions.
+//
+// Auth: token is embedded as x-access-token:<token>@ for https:// URLs
+// (same rewrite shellGitClone/shellGitFetch use). SSH URLs pass through
+// and shell git talks to ssh-agent natively.
+func shellGitLsRemote(ctx context.Context, url, token string) (map[string]string, error) {
+	if url == "" {
+		return nil, fmt.Errorf("shellGitLsRemote: empty url")
+	}
+	src := rewriteHTTPSWithToken(url, token)
+	// -c safe.directory=* — see the note on shellGitClone.
+	cmd := exec.CommandContext(ctx, "git", "-c", "safe.directory=*", "ls-remote", src)
+	out, err := cmd.Output()
+	if err != nil {
+		// Redact the token from the error surface — use the caller-supplied url.
+		return nil, fmt.Errorf("git ls-remote %s: %w", url, err)
+	}
+	refs := map[string]string{}
+	sc := bufio.NewScanner(bytes.NewReader(out))
+	for sc.Scan() {
+		line := sc.Text()
+		// Each ls-remote line is `<sha>\t<refname>`. Split on the first tab.
+		i := strings.IndexByte(line, '\t')
+		if i < 0 {
+			continue
+		}
+		refs[line[i+1:]] = line[:i]
+	}
+	if err := sc.Err(); err != nil {
+		return nil, fmt.Errorf("scan git ls-remote output: %w", err)
+	}
+	return refs, nil
 }
 
 // shellGitFetch runs a mirror-style `git fetch --prune` against a bare mirror

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -41,18 +42,53 @@ type shellGitFetchOptions struct {
 	Token string
 }
 
-// rewriteHTTPSWithToken embeds an HTTPS token into a URL as an x-access-token
-// basic-auth pair. Returns url unchanged for non-HTTPS URLs and for an empty
-// token — so callers can pass the result through unconditionally.
+// shellGitAuthEnvVar is the environment variable name the credential helper
+// installed by prepareShellGitAuth reads at auth time. Named distinctly from
+// GITHUB_TOKEN so a caller-supplied token doesn't clobber (or leak from) any
+// ambient GITHUB_TOKEN the child process may inherit.
+const shellGitAuthEnvVar = "GITSPORK_HTTPS_TOKEN"
+
+// prepareShellGitAuth prepares HTTPS + token auth for a shell git invocation
+// WITHOUT putting the token in argv (previously we embedded it as
+// `x-access-token:<token>@` in the URL, which exposed it to any `ps` listing
+// and required URL-escaping for tokens containing special characters).
 //
-// Extracted so the URL rewrite can be unit-tested without spinning up an HTTPS
-// remote. The token appears in the shell git process's argv briefly; see the
-// package comment in shell_git_clone.go for the threat-model rationale.
-func rewriteHTTPSWithToken(url, token string) string {
+// Returns the git-config `-c` arg pair to insert BEFORE the subcommand (which
+// installs a one-shot shell credential helper reading the token from env)
+// and the environment to use for the child process (a copy of the current
+// env with the token var set). SSH URLs and HTTPS URLs without a token
+// return nil/nil — SSH goes through ssh-agent natively, and HTTPS without a
+// token trusts the caller's ambient git config (~/.netrc, credential helper
+// installed, etc.). file:// URLs need no auth.
+//
+// The credential helper is the shell `!f() {...}; f` form: git spawns it as
+// a subshell, our snippet reads $GITSPORK_HTTPS_TOKEN from the child env
+// (inherited from cmd.Env, which we set here), and prints the username /
+// password lines git's credential-helper protocol expects. Git does not
+// persist credentials from these ephemeral helpers, so nothing gets cached
+// beyond the single subprocess.
+func prepareShellGitAuth(url, token string) (credArgs []string, env []string) {
 	if token == "" || !strings.HasPrefix(url, "https://") {
-		return url
+		return nil, nil
 	}
-	return strings.Replace(url, "https://", "https://x-access-token:"+token+"@", 1)
+	// credential.helper='' clears any inherited helper so ours is the
+	// only one git considers.
+	args := []string{
+		"-c", "credential.helper=",
+		"-c", `credential.helper=!f() { echo "username=x-access-token"; echo "password=$` + shellGitAuthEnvVar + `"; }; f`,
+	}
+	// Filter any pre-existing GITSPORK_HTTPS_TOKEN out of the parent env
+	// so ours is definitive (POSIX doesn't define duplicate-key precedence
+	// in getenv/environ, so being explicit avoids surprises).
+	parent := os.Environ()
+	childEnv := make([]string, 0, len(parent)+1)
+	for _, e := range parent {
+		if !strings.HasPrefix(e, shellGitAuthEnvVar+"=") {
+			childEnv = append(childEnv, e)
+		}
+	}
+	childEnv = append(childEnv, shellGitAuthEnvVar+"="+token)
+	return args, childEnv
 }
 
 // tokenFromAuth extracts the HTTP basic-auth password ("token" in the
@@ -97,7 +133,13 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 	// with "detected dubious ownership". Matches the pattern used by the other
 	// shell-git callers in this repo (internal/cli/rm.go, internal/cli/mv.go,
 	// internal/drift/check_drift.go).
-	args := []string{"-c", "safe.directory=*", "clone"}
+	args := []string{"-c", "safe.directory=*"}
+	// HTTPS + token: install a scoped credential helper reading the token
+	// from env at auth time. Keeps the token out of argv (see
+	// prepareShellGitAuth). SSH URLs and file:// URLs skip auth wiring.
+	credArgs, childEnv := prepareShellGitAuth(srcURL, opts.Token)
+	args = append(args, credArgs...)
+	args = append(args, "clone")
 	if opts.Local {
 		args = append(args, "--local")
 	}
@@ -118,14 +160,16 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 		args = append(args, "--branch", branch)
 	}
 	// Strip "file://" prefix — shell git accepts either form but a bare path
-	// is more portable across shell git versions. For https:// URLs, embed
-	// the token (if any) as basic-auth. ssh URLs pass through untouched —
-	// shell git uses ssh-agent natively.
+	// is more portable across shell git versions. HTTPS and SSH URLs pass
+	// through unmodified — auth is handled via the credential helper set
+	// above (HTTPS+token) or ssh-agent natively (SSH).
 	src := strings.TrimPrefix(srcURL, "file://")
-	src = rewriteHTTPSWithToken(src, opts.Token)
 	args = append(args, src, dest)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
+	if childEnv != nil {
+		cmd.Env = childEnv
+	}
 	// shell git emits clone progress on stderr natively; wire it to the
 	// caller-supplied progress writer when non-nil. Leaving Stderr unset when
 	// progress is nil matches the "silent by default" semantics — shell git
@@ -134,8 +178,6 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 		cmd.Stderr = progress
 	}
 	if _, err := cmd.Output(); err != nil {
-		// Redact the token from any error surface (srcURL, not src) so it
-		// doesn't leak into logs.
 		return fmt.Errorf("git clone %s -> %s: %w", srcURL, dest, err)
 	}
 	return nil
@@ -151,19 +193,24 @@ func shellGitClone(ctx context.Context, srcURL, dest string, opts shellGitCloneO
 // git's TLS goes through the system trust store via libcurl and works
 // through those same conditions.
 //
-// Auth: token is embedded as x-access-token:<token>@ for https:// URLs
-// (same rewrite shellGitClone/shellGitFetch use). SSH URLs pass through
-// and shell git talks to ssh-agent natively.
+// Auth: HTTPS + token uses the shell credential helper installed by
+// prepareShellGitAuth (keeps token out of argv). SSH URLs pass through
+// untouched — shell git talks to ssh-agent natively.
 func shellGitLsRemote(ctx context.Context, url, token string) (map[string]string, error) {
 	if url == "" {
 		return nil, fmt.Errorf("shellGitLsRemote: empty url")
 	}
-	src := rewriteHTTPSWithToken(url, token)
 	// -c safe.directory=* — see the note on shellGitClone.
-	cmd := exec.CommandContext(ctx, "git", "-c", "safe.directory=*", "ls-remote", src)
+	args := []string{"-c", "safe.directory=*"}
+	credArgs, childEnv := prepareShellGitAuth(url, token)
+	args = append(args, credArgs...)
+	args = append(args, "ls-remote", url)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if childEnv != nil {
+		cmd.Env = childEnv
+	}
 	out, err := cmd.Output()
 	if err != nil {
-		// Redact the token from the error surface — use the caller-supplied url.
 		return nil, fmt.Errorf("git ls-remote %s: %w", url, err)
 	}
 	refs := map[string]string{}
@@ -184,11 +231,11 @@ func shellGitLsRemote(ctx context.Context, url, token string) (map[string]string
 }
 
 // shellGitFetch runs a mirror-style `git fetch --prune` against a bare mirror
-// repo at dir. remoteURL is the network URL of the origin — when opts.Token
-// is non-empty and the URL uses https://, the token is embedded as
-// x-access-token:<token>@ basic auth. This bypasses the configured origin
-// remote entirely, keeping URL rewriting stateless (populateCache stores no
-// token in the mirror's git config).
+// repo at dir. remoteURL is the network URL of the origin — HTTPS + token
+// uses the shell credential helper installed by prepareShellGitAuth (keeps
+// token out of argv). This bypasses the configured origin remote entirely,
+// keeping URL rewriting stateless (populateCache stores no token in the
+// mirror's git config).
 //
 // Used by refreshCache as the shell git fast path counterpart to
 // populateCache's `git clone --mirror`.
@@ -196,22 +243,26 @@ func shellGitFetch(ctx context.Context, dir, remoteURL string, opts shellGitFetc
 	if remoteURL == "" {
 		return fmt.Errorf("shellGitFetch: empty remoteURL")
 	}
-	src := rewriteHTTPSWithToken(remoteURL, opts.Token)
 	// git fetch takes a bare filesystem path directly; file:// works too but
 	// stripping it matches shellGitClone's convention and avoids version-
 	// specific quirks in old shell gits.
-	src = strings.TrimPrefix(src, "file://")
+	src := strings.TrimPrefix(remoteURL, "file://")
 
 	// -c safe.directory=* — see the note on shellGitClone. Required when running
 	// as root inside Docker against a cache mounted from a non-root-owned host
 	// path.
-	args := []string{"-c", "safe.directory=*", "-C", dir, "fetch", "--prune", src, "+refs/*:refs/*"}
+	args := []string{"-c", "safe.directory=*"}
+	credArgs, childEnv := prepareShellGitAuth(src, opts.Token)
+	args = append(args, credArgs...)
+	args = append(args, "-C", dir, "fetch", "--prune", src, "+refs/*:refs/*")
 	cmd := exec.CommandContext(ctx, "git", args...)
+	if childEnv != nil {
+		cmd.Env = childEnv
+	}
 	if progress != nil {
 		cmd.Stderr = progress
 	}
 	if _, err := cmd.Output(); err != nil {
-		// Redact the token from the error surface — use remoteURL, not src.
 		return fmt.Errorf("git fetch %s in %s: %w", remoteURL, dir, err)
 	}
 	return nil

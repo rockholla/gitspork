@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	gogit "github.com/go-git/go-git/v6"
@@ -174,52 +175,74 @@ func TestShellGitClone_MirrorLocal(t *testing.T) {
 	assert.NoError(t, err, "mirror must carry the upstream's HEAD commit")
 }
 
-// TestRewriteHTTPSWithToken locks the URL-rewriting contract used by both
-// shellGitClone and shellGitFetch for HTTPS authentication. Table-driven so
-// each edge case is easy to inspect independently.
-func TestRewriteHTTPSWithToken(t *testing.T) {
-	tests := []struct {
-		name  string
-		url   string
-		token string
-		want  string
-	}{
-		{
-			name:  "https URL + token → embedded",
-			url:   "https://example.com/org/repo",
-			token: "foo",
-			want:  "https://x-access-token:foo@example.com/org/repo",
-		},
-		{
-			name:  "https URL + empty token → untouched",
-			url:   "https://example.com/org/repo",
-			token: "",
-			want:  "https://example.com/org/repo",
-		},
-		{
-			name:  "ssh URL + token → untouched (ssh-agent handles auth)",
-			url:   "git@github.com:org/repo.git",
-			token: "foo",
-			want:  "git@github.com:org/repo.git",
-		},
-		{
-			name:  "file URL + token → untouched (no auth needed)",
-			url:   "file:///some/path",
-			token: "foo",
-			want:  "file:///some/path",
-		},
-		{
-			name:  "http (non-tls) URL + token → untouched (only https path embeds)",
-			url:   "http://example.com/org/repo",
-			token: "foo",
-			want:  "http://example.com/org/repo",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, rewriteHTTPSWithToken(tc.url, tc.token))
-		})
-	}
+// TestPrepareShellGitAuth locks the credential-helper wiring used by
+// shellGitClone / shellGitFetch / shellGitLsRemote for HTTPS token auth.
+// The token must NOT appear in credArgs (that's the whole point — argv is
+// world-readable via `ps`); it goes into the child env under
+// shellGitAuthEnvVar. Non-HTTPS / empty-token cases return nil/nil so
+// callers pass URLs through untouched.
+func TestPrepareShellGitAuth(t *testing.T) {
+	t.Run("https URL + token → cred helper args + env with token", func(t *testing.T) {
+		credArgs, env := prepareShellGitAuth("https://example.com/org/repo", "the-token")
+		require.NotNil(t, credArgs)
+		require.NotNil(t, env)
+
+		// Must not leak the token via argv.
+		for _, a := range credArgs {
+			assert.NotContains(t, a, "the-token", "token must not appear in argv (Copilot PR#1113 threat model)")
+		}
+		// Must install the credential.helper that reads the scoped env var.
+		joined := strings.Join(credArgs, " ")
+		assert.Contains(t, joined, "credential.helper=")
+		assert.Contains(t, joined, "$"+shellGitAuthEnvVar)
+		// Env carries the token under the scoped name.
+		want := shellGitAuthEnvVar + "=the-token"
+		found := false
+		for _, e := range env {
+			if e == want {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected %q in child env; got %v", want, env)
+	})
+
+	t.Run("https URL + empty token → nil/nil (trust ambient git config)", func(t *testing.T) {
+		credArgs, env := prepareShellGitAuth("https://example.com/org/repo", "")
+		assert.Nil(t, credArgs)
+		assert.Nil(t, env)
+	})
+
+	t.Run("ssh URL + token → nil/nil (ssh-agent handles auth)", func(t *testing.T) {
+		credArgs, env := prepareShellGitAuth("git@github.com:org/repo.git", "foo")
+		assert.Nil(t, credArgs)
+		assert.Nil(t, env)
+	})
+
+	t.Run("file URL + token → nil/nil (no auth needed)", func(t *testing.T) {
+		credArgs, env := prepareShellGitAuth("file:///some/path", "foo")
+		assert.Nil(t, credArgs)
+		assert.Nil(t, env)
+	})
+
+	t.Run("http (non-tls) URL + token → nil/nil (only https gets the helper)", func(t *testing.T) {
+		credArgs, env := prepareShellGitAuth("http://example.com/org/repo", "foo")
+		assert.Nil(t, credArgs)
+		assert.Nil(t, env)
+	})
+
+	t.Run("pre-existing token env var is filtered so our value is definitive", func(t *testing.T) {
+		t.Setenv(shellGitAuthEnvVar, "stale-value")
+		_, env := prepareShellGitAuth("https://example.com/org/repo", "fresh-value")
+		var seen int
+		for _, e := range env {
+			if strings.HasPrefix(e, shellGitAuthEnvVar+"=") {
+				seen++
+				assert.Equal(t, shellGitAuthEnvVar+"=fresh-value", e, "child env must carry only the fresh value")
+			}
+		}
+		assert.Equal(t, 1, seen, "child env must contain exactly one entry for %s", shellGitAuthEnvVar)
+	})
 }
 
 // TestTokenFromAuth locks the auth → token extraction used by populateCache

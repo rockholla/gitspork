@@ -109,9 +109,25 @@ func computeUpstreamDelta(repo *gogit.Repository, prevHash, newHash string, cfg 
 				}
 				newDest, ok := resolveManagedDest(toPath, newMatchers)
 				if !ok {
-					// toPath is no longer covered by any new config entry; fall back to the
-					// raw upstream path so the downstream file moves rather than being orphaned.
-					newDest = toPath
+					// toPath isn't in upstream_owned/shared_ownership in the new config.
+					// Also check downstream_owned: a file moved into downstream-seeded
+					// territory should rename to the resolved downstream path (its
+					// owner changed but it still belongs in the downstream).
+					if dsDest, dsOk := resolveDownstreamOwnedDest(toPath, cfg.DownstreamOwned); dsOk {
+						newDest = dsDest
+					} else {
+						// The rename target isn't tracked by ANY ownership pattern in
+						// the new config — the file's ownership has left the upstream's
+						// management surface entirely. Treat as a deletion in the
+						// downstream rather than dragging it to a raw upstream path
+						// that isn't managed by anyone (previous behavior). That raw-
+						// path fallback would pull foundation-internal locations —
+						// source code, embedded template assets — into downstream repos
+						// where they don't belong, with no way for later integrates to
+						// clean them up.
+						delta.Deletions = append(delta.Deletions, oldDest)
+						break
+					}
 				}
 				if oldDest != newDest {
 					delta.Renames = append(delta.Renames, upstreamRename{OldPath: oldDest, NewPath: newDest})
@@ -167,6 +183,33 @@ func resolveManagedDest(srcPath string, matchers []managedMatcher) (string, bool
 		if m.glob.Match(srcPath) {
 			if m.entry != nil {
 				return m.entry.ResolveDest(srcPath), true
+			}
+			return srcPath, true
+		}
+	}
+	return "", false
+}
+
+// resolveDownstreamOwnedDest reports whether srcPath matches any downstream_owned
+// entry in the given config and returns the resolved downstream destination
+// (identity for plain patterns, From/To-mapped for rename entries).
+//
+// Kept separate from resolveManagedDest / buildManagedMatchers because the rest
+// of delta computation intentionally excludes downstream_owned — a
+// downstream_owned file deleted from upstream must NOT be deleted from
+// downstream (downstream owns it after first-integrate). This helper is only
+// used by the rename-fallback in computeUpstreamDelta, where a rename target
+// landing inside downstream_owned needs to route to the right downstream path
+// instead of triggering the "un-owned → deletion" path.
+func resolveDownstreamOwnedDest(srcPath string, entries []config.OwnedEntry) (string, bool) {
+	for _, e := range entries {
+		g, err := glob.Compile(e.SourcePattern())
+		if err != nil {
+			continue
+		}
+		if g.Match(srcPath) {
+			if e.IsRename() {
+				return e.ResolveDest(srcPath), true
 			}
 			return srcPath, true
 		}

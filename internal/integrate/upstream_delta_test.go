@@ -62,6 +62,52 @@ func Test_computeUpstreamDelta(t *testing.T) {
 		assert.Equal(t, "config/new.yml", delta.Renames[0].NewPath)
 	})
 
+	t.Run("rename target un-owned in new config: source appears in Deletions, no Rename", func(t *testing.T) {
+		// Repro of the class of bug where git's rename-detection heuristic
+		// (content-similarity) links an upstream_owned file being deleted to a
+		// brand-new file at a path that has no ownership in the new config —
+		// e.g. moving a shell-rendered template into a Go CLI's //go:embed
+		// source tree. Previously the fallback dragged that file into the
+		// downstream at the raw upstream path (foundation-internal territory).
+		// The fix: treat as a deletion of the managed source.
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithRenamedFile(t, dir, "scripts/foo/templates/x.yaml", "clis/foo/templates/x.yaml")
+		cfg := &config.GitSporkConfig{
+			UpstreamOwned: []config.OwnedEntry{{Pattern: "scripts/**"}},
+		}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
+		require.NoError(t, err)
+		assert.Contains(t, delta.Deletions, "scripts/foo/templates/x.yaml")
+		assert.Empty(t, delta.Renames)
+	})
+
+	t.Run("rename target in downstream_owned of new config: appears in Renames at downstream_owned dest", func(t *testing.T) {
+		// A file moved from upstream_owned into downstream-seeded territory
+		// still belongs in the downstream, just under new ownership. The
+		// rename should route to the downstream_owned's resolved dest rather
+		// than triggering the "un-owned → deletion" path.
+		dir, err := os.MkdirTemp("", "gitspork-delta-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		repo, prevHash, newHash := makeUpstreamWithRenamedFile(t, dir, "scripts/x.sh", "domain-scripts/x.sh")
+		cfg := &config.GitSporkConfig{
+			UpstreamOwned:   []config.OwnedEntry{{Pattern: "scripts/**"}},
+			DownstreamOwned: []config.OwnedEntry{{Pattern: "domain-scripts/**"}},
+		}
+
+		delta, err := computeUpstreamDelta(repo, prevHash, newHash, cfg, "")
+		require.NoError(t, err)
+		require.Len(t, delta.Renames, 1)
+		assert.Equal(t, "scripts/x.sh", delta.Renames[0].OldPath)
+		assert.Equal(t, "domain-scripts/x.sh", delta.Renames[0].NewPath)
+		assert.Empty(t, delta.Deletions)
+	})
+
 	t.Run("upstream_owned rename entry: deleted source maps to destination in Deletions", func(t *testing.T) {
 		dir, err := os.MkdirTemp("", "gitspork-delta-test")
 		require.NoError(t, err)

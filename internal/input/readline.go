@@ -57,7 +57,7 @@ func runLineEditor(prompt string, completer completerFunc) (string, error) {
 		b, err := reader.ReadByte()
 		if err != nil {
 			if err == io.EOF {
-				fmt.Fprintln(os.Stdout)
+				fmt.Fprint(os.Stdout, "\r\n")
 				return string(buf.runes), nil
 			}
 			return "", err
@@ -68,10 +68,10 @@ func runLineEditor(prompt string, completer completerFunc) (string, error) {
 		switch {
 		case b == 0x03: // Ctrl+C
 			_ = tty.Restore()
-			fmt.Fprintln(os.Stdout)
+			fmt.Fprint(os.Stdout, "\r\n")
 			os.Exit(0)
 		case b == '\r' || b == '\n':
-			fmt.Fprintln(os.Stdout)
+			fmt.Fprint(os.Stdout, "\r\n")
 			return strings.TrimSpace(string(buf.runes)), nil
 		case b == 0x7f || b == 0x08: // backspace / DEL
 			buf.backspace()
@@ -129,9 +129,9 @@ func handleTab(prompt string, buf *lineBuffer, completer completerFunc, lastKeyW
 		if lastKeyWasTab {
 			// List candidates on their own line, then reprint the
 			// prompt and current buffer on the next line.
-			fmt.Fprintln(os.Stdout)
+			fmt.Fprint(os.Stdout, "\r\n")
 			for _, m := range matches {
-				fmt.Fprintln(os.Stdout, m)
+				fmt.Fprint(os.Stdout, m, "\r\n")
 			}
 			redraw(prompt, buf)
 		}

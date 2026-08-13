@@ -266,12 +266,13 @@ func assertDriftCheckBranchAbsent(t *testing.T, downstreamDir string) {
 		"transient drift-check branch %q must be cleaned up when CheckDrift returns", driftCheckBranch)
 }
 
-func TestCheckDrift_restoresWorktreeOnMidLoopFailure(t *testing.T) {
-	// When re-integration of one upstream mutates worktree files and a *later*
-	// upstream fails to integrate, CheckDrift returns an error mid-loop and the
-	// deferred restore fires while the worktree still has uncommitted mutations.
-	// The restore must succeed and put the worktree back to the caller's original
-	// committed content — not leave the upstream-canonical mutations in place.
+func TestCheckDrift_leavesCallerUntouchedOnMidLoopFailure(t *testing.T) {
+	// When re-integration of one upstream succeeds and a *later* upstream fails
+	// to integrate, CheckDrift returns an error mid-loop. The caller's worktree
+	// must contain the caller's original committed content — not the
+	// upstream-canonical content that the earlier upstream wrote into the
+	// scratch clone. Since CheckDrift runs against a scratch clone, this holds
+	// by construction: the caller's directory is never written to at all.
 	upstreamA, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 
@@ -307,13 +308,13 @@ func TestCheckDrift_restoresWorktreeOnMidLoopFailure(t *testing.T) {
 	got, readErr := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned/file.txt"))
 	require.NoError(t, readErr)
 	assert.Equal(t, driftedContent, string(got),
-		"restore must overwrite mid-loop worktree mutations left by the earlier upstream, even though those changes are unstaged")
+		"caller worktree must retain committed content across a mid-loop CheckDrift failure (scratch clone isolates all mutations)")
 }
 
-func TestCheckDrift_restoresWorktreeContentAfterDrift(t *testing.T) {
-	// After CheckDrift returns, the downstream worktree files must match the
-	// caller's original HEAD content — CheckDrift must not leave the drifted
-	// upstream-canonical content in place of the user's committed content.
+func TestCheckDrift_leavesCallerContentUntouchedAfterDrift(t *testing.T) {
+	// After CheckDrift returns, the downstream worktree files match the
+	// caller's original committed content because CheckDrift runs against a
+	// scratch clone — the caller's directory is never written to.
 	upstreamDir, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
@@ -331,7 +332,7 @@ func TestCheckDrift_restoresWorktreeContentAfterDrift(t *testing.T) {
 	got, readErr := os.ReadFile(driftPath)
 	require.NoError(t, readErr)
 	assert.Equal(t, driftedContent, string(got),
-		"worktree should be restored to the caller's original committed content, not left with the upstream-canonical content used during drift detection")
+		"caller worktree must match caller's committed content after CheckDrift (scratch clone isolates the upstream-canonical content used during drift detection)")
 }
 
 func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {

@@ -91,69 +91,70 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 		}
 	}
 
-	repo, err := gogit.PlainOpen(opts.DownstreamRepoPath)
-	if err != nil {
-		return report, fmt.Errorf("error opening downstream repo: %v", err)
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return report, fmt.Errorf("error accessing downstream worktree: %v", err)
+	// Self-integration guard runs against the caller, not the scratch clone.
+	// The scratch's origin remote (set by `git clone --local`) points at the
+	// caller's local path — never at the caller's real origin URL — so the
+	// URL-based guard inside integrateOneInternal cannot detect origin-match
+	// self-integration on its own. Catch it up front here.
+	for _, entry := range entries {
+		if err := integrate.EnsureNotSelfIntegration(opts.DownstreamRepoPath, entry.spec.URL, ""); err != nil {
+			return report, err
+		}
 	}
 
 	if err := checkCleanWorkingTree(opts.DownstreamRepoPath); err != nil {
 		return report, err
 	}
 
-	headRef, err := repo.Head()
+	opts.Logger.Log("provisioning scratch clone of %s for drift-check", opts.DownstreamRepoPath)
+	scratchPath, cleanup, err := provisionScratchClone(opts.DownstreamRepoPath)
 	if err != nil {
-		return report, fmt.Errorf("error resolving HEAD: %v", err)
+		return report, fmt.Errorf("error provisioning scratch clone for drift-check: %w", err)
+	}
+	defer cleanup()
+	if err := ensureStateFilePresent(opts.DownstreamRepoPath, scratchPath); err != nil {
+		return report, fmt.Errorf("error preparing scratch clone: %w", err)
+	}
+	opts.Logger.Log("running drift-check against scratch clone at %s", scratchPath)
+
+	repo, err := gogit.PlainOpen(scratchPath)
+	if err != nil {
+		return report, fmt.Errorf("error opening scratch clone: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return report, fmt.Errorf("error accessing scratch clone worktree: %v", err)
 	}
 
-	// Remember how to restore HEAD once the drift check finishes. CI runners
-	// (e.g. Buildkite) typically check out a specific commit, leaving a detached
-	// HEAD with no branch to return to; in that case restore by hash, otherwise
-	// restore the original branch. Force: true so the restore acts as a hard
-	// reset — the re-integration loop mutates worktree files, and if an error
-	// interrupts the flow before diffWorktreeAgainstHEAD stages those changes,
-	// a non-force MergeReset would fail with ErrUnstagedChanges and leave the
-	// user's worktree stuck in the upstream-canonical form.
-	restore := &gogit.CheckoutOptions{Hash: headRef.Hash(), Force: true}
-	if headRef.Name().IsBranch() {
-		restore = &gogit.CheckoutOptions{Branch: headRef.Name(), Force: true}
+	headRef, err := repo.Head()
+	if err != nil {
+		return report, fmt.Errorf("error resolving scratch HEAD: %v", err)
 	}
 
 	driftBranchRef := plumbing.NewBranchReferenceName(driftCheckBranch)
 	if err := repo.Storer.SetReference(plumbing.NewHashReference(driftBranchRef, headRef.Hash())); err != nil {
-		return report, fmt.Errorf("error creating/resetting drift-check branch: %v", err)
+		return report, fmt.Errorf("error creating drift-check branch in scratch: %v", err)
 	}
-	// Register cleanup immediately: a subsequent Checkout (or any later step) may
-	// fail, and we must still delete the drift-check branch we just created and
-	// restore the caller's original HEAD. go-git's Repository.DeleteBranch only
-	// removes the branch config section (which we never created), so we drop the
-	// reference directly via the storer.
-	defer func() {
-		_ = wt.Checkout(restore)
-		_ = repo.Storer.RemoveReference(driftBranchRef)
-	}()
 	if err := wt.Checkout(&gogit.CheckoutOptions{Branch: driftBranchRef}); err != nil {
-		return report, fmt.Errorf("error checking out drift-check branch: %v", err)
+		return report, fmt.Errorf("error checking out drift-check branch in scratch: %v", err)
 	}
 
-	// Re-integrate each upstream; track which files each one last touched.
-	// fileOwner maps relative file path -> upstream URL that last wrote it.
+	// Re-integrate each upstream against the scratch clone; track which files
+	// each one last touched. fileOwner maps relative file path -> upstream URL
+	// that last wrote it.
 	fileOwner := map[string]string{}
 
 	for _, entry := range entries {
 		opts.Logger.Log("re-integrating upstream %s at commit %s", entry.spec.URL, entry.commitHash)
 
-		beforeFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
+		beforeFiles, err := listWorktreeFiles(scratchPath)
 		if err != nil {
 			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
 		if err := integrate.IntegrateForDriftCheck(&integrate.DriftCheckRequest{
 			Logger:             opts.Logger,
-			DownstreamRepoPath: opts.DownstreamRepoPath,
+			DownstreamRepoPath: scratchPath,
 			UpstreamURL:        entry.spec.URL,
 			UpstreamSubpath:    entry.spec.Subpath,
 			UpstreamToken:      entry.spec.Token,
@@ -165,12 +166,11 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			return report, fmt.Errorf("error running integration for drift check: %w", err)
 		}
 
-		afterFiles, err := listWorktreeFiles(opts.DownstreamRepoPath)
+		afterFiles, err := listWorktreeFiles(scratchPath)
 		if err != nil {
 			return report, fmt.Errorf("error listing worktree files after integrate: %v", err)
 		}
 
-		// Any file that appeared or changed is attributed to this upstream.
 		for f, hash := range afterFiles {
 			if beforeFiles[f] != hash {
 				fileOwner[f] = entry.spec.URL
@@ -185,7 +185,7 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 
 	patch, err := diffWorktreeAgainstHEAD(repo, wt)
 	if err != nil {
-		return report, fmt.Errorf("error diffing downstream against HEAD: %v", err)
+		return report, fmt.Errorf("error diffing scratch against HEAD: %v", err)
 	}
 	if patch == nil {
 		return report, nil

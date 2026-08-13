@@ -2,18 +2,20 @@ package drift
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/integrate"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
-	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -229,49 +231,13 @@ func testWriteAndCommitInDownstream(t *testing.T, downstreamDir, relPath, conten
 	testharness.CommitAllWithMessage(t, repo, "drift edit: "+relPath)
 }
 
-func TestCheckDrift_cleansUpDriftCheckBranch(t *testing.T) {
-	// Whatever the outcome of CheckDrift, the transient _gitspork-check-drift
-	// branch must not linger in the downstream repo — otherwise subsequent
-	// invocations start from an unclean state and users see stray refs.
-	upstreamDir, _ := testharness.MinimalUpstream(t)
-	downstreamDir := testharness.EmptyDownstream(t)
-	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
-
-	t.Run("no drift path", func(t *testing.T) {
-		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
-			Logger:             logutil.New(),
-			DownstreamRepoPath: downstreamDir,
-		})
-		require.NoError(t, err)
-		assertDriftCheckBranchAbsent(t, downstreamDir)
-	})
-
-	t.Run("drift detected path", func(t *testing.T) {
-		testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
-		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
-			Logger:             logutil.New(),
-			DownstreamRepoPath: downstreamDir,
-		})
-		require.ErrorIs(t, err, sdktypes.ErrDriftDetected)
-		assertDriftCheckBranchAbsent(t, downstreamDir)
-	})
-}
-
-func assertDriftCheckBranchAbsent(t *testing.T, downstreamDir string) {
-	t.Helper()
-	repo, err := gogit.PlainOpen(downstreamDir)
-	require.NoError(t, err)
-	_, err = repo.Reference(plumbing.NewBranchReferenceName(driftCheckBranch), false)
-	assert.ErrorIs(t, err, plumbing.ErrReferenceNotFound,
-		"transient drift-check branch %q must be cleaned up when CheckDrift returns", driftCheckBranch)
-}
-
-func TestCheckDrift_restoresWorktreeOnMidLoopFailure(t *testing.T) {
-	// When re-integration of one upstream mutates worktree files and a *later*
-	// upstream fails to integrate, CheckDrift returns an error mid-loop and the
-	// deferred restore fires while the worktree still has uncommitted mutations.
-	// The restore must succeed and put the worktree back to the caller's original
-	// committed content — not leave the upstream-canonical mutations in place.
+func TestCheckDrift_leavesCallerUntouchedOnMidLoopFailure(t *testing.T) {
+	// When re-integration of one upstream succeeds and a *later* upstream fails
+	// to integrate, CheckDrift returns an error mid-loop. The caller's worktree
+	// must contain the caller's original committed content — not the
+	// upstream-canonical content that the earlier upstream wrote into the
+	// scratch clone. Since CheckDrift runs against a scratch clone, this holds
+	// by construction: the caller's directory is never written to at all.
 	upstreamA, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 
@@ -307,13 +273,13 @@ func TestCheckDrift_restoresWorktreeOnMidLoopFailure(t *testing.T) {
 	got, readErr := os.ReadFile(filepath.Join(downstreamDir, "upstream-owned/file.txt"))
 	require.NoError(t, readErr)
 	assert.Equal(t, driftedContent, string(got),
-		"restore must overwrite mid-loop worktree mutations left by the earlier upstream, even though those changes are unstaged")
+		"caller worktree must retain committed content across a mid-loop CheckDrift failure (scratch clone isolates all mutations)")
 }
 
-func TestCheckDrift_restoresWorktreeContentAfterDrift(t *testing.T) {
-	// After CheckDrift returns, the downstream worktree files must match the
-	// caller's original HEAD content — CheckDrift must not leave the drifted
-	// upstream-canonical content in place of the user's committed content.
+func TestCheckDrift_leavesCallerContentUntouchedAfterDrift(t *testing.T) {
+	// After CheckDrift returns, the downstream worktree files match the
+	// caller's original committed content because CheckDrift runs against a
+	// scratch clone — the caller's directory is never written to.
 	upstreamDir, _ := testharness.MinimalUpstream(t)
 	downstreamDir := testharness.EmptyDownstream(t)
 	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
@@ -331,7 +297,7 @@ func TestCheckDrift_restoresWorktreeContentAfterDrift(t *testing.T) {
 	got, readErr := os.ReadFile(driftPath)
 	require.NoError(t, readErr)
 	assert.Equal(t, driftedContent, string(got),
-		"worktree should be restored to the caller's original committed content, not left with the upstream-canonical content used during drift detection")
+		"caller worktree must match caller's committed content after CheckDrift (scratch clone isolates the upstream-canonical content used during drift detection)")
 }
 
 func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
@@ -351,4 +317,138 @@ func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 		"expected the unified diff to reference the path, got:\n%s", diff)
 	assert.Contains(t, diff, "-upstream content", "expected removed-line marker for old content")
 	assert.Contains(t, diff, "+drifted", "expected added-line marker for new content")
+}
+
+func TestCheckDrift_leavesCallerWorkingTreeByteIdentical(t *testing.T) {
+	// Invariant: CheckDrift must not delete or alter any file that existed in
+	// the caller's working tree before the call, regardless of whether drift is
+	// detected. This test snapshots every non-.git file before and after
+	// CheckDrift and asserts byte-equality. (It does not catch transient
+	// creates — files that CheckDrift creates and deletes within the call —
+	// which is out of scope for the reported bug class of silent deletion.)
+
+	t.Run("no drift path", func(t *testing.T) {
+		upstreamDir, _ := testharness.MinimalUpstream(t)
+		downstreamDir := testharness.EmptyDownstream(t)
+		testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+		before := snapshotWorktree(t, downstreamDir)
+
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.NoError(t, err)
+
+		after := snapshotWorktree(t, downstreamDir)
+		assert.Equal(t, before, after, "CheckDrift must leave the caller worktree byte-identical")
+	})
+
+	t.Run("drift detected path", func(t *testing.T) {
+		upstreamDir, _ := testharness.MinimalUpstream(t)
+		downstreamDir := testharness.EmptyDownstream(t)
+		testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+		testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
+
+		before := snapshotWorktree(t, downstreamDir)
+
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.ErrorIs(t, err, sdktypes.ErrDriftDetected)
+
+		after := snapshotWorktree(t, downstreamDir)
+		assert.Equal(t, before, after, "CheckDrift must leave the caller worktree byte-identical even when drift is detected")
+	})
+}
+
+func TestCheckDrift_preservesGloballyIgnoredFiles(t *testing.T) {
+	// The reported bug: files ignored by the user's global gitignore
+	// (core.excludesFile) were silently deleted from the caller's worktree
+	// during CheckDrift. Root cause was go-git's gitignore handling not
+	// matching shell git's. The scratch-clone flow makes the whole class of
+	// caller-worktree mutations impossible, so this regression is locked in
+	// by construction.
+
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	// Point core.excludesFile at a hermetic gitignore that covers .envrc and
+	// .direnv/. Anything shell git would treat as ignored via this file must
+	// not be touched by CheckDrift.
+	globalIgnore := filepath.Join(t.TempDir(), "global-gitignore")
+	require.NoError(t, os.WriteFile(globalIgnore, []byte(".envrc\n.direnv/\n"), 0644))
+
+	require.NoError(t, exec.Command(
+		"git", "-c", "safe.directory=*", "-C", downstreamDir,
+		"config", "--local", "core.excludesFile", globalIgnore,
+	).Run())
+
+	// Populate the caller's worktree with globally-ignored files. checkCleanWorkingTree
+	// must still see the tree as clean because these files are ignored.
+	envrcPath := filepath.Join(downstreamDir, ".envrc")
+	direnvPath := filepath.Join(downstreamDir, ".direnv", "cache.dat")
+	require.NoError(t, os.WriteFile(envrcPath, []byte("export FOO=bar\n"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Dir(direnvPath), 0755))
+	require.NoError(t, os.WriteFile(direnvPath, []byte("opaque-cache-blob"), 0644))
+
+	_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "CheckDrift should succeed against a clean tree with only globally-ignored untracked files")
+
+	envrcGot, envrcErr := os.ReadFile(envrcPath)
+	require.NoError(t, envrcErr, "globally-ignored .envrc must still exist after CheckDrift")
+	assert.Equal(t, "export FOO=bar\n", string(envrcGot))
+
+	direnvGot, direnvErr := os.ReadFile(direnvPath)
+	require.NoError(t, direnvErr, "globally-ignored .direnv/cache.dat must still exist after CheckDrift")
+	assert.Equal(t, "opaque-cache-blob", string(direnvGot))
+}
+
+func TestCheckDrift_selfIntegrationBlockedByOriginURL(t *testing.T) {
+	// Unit-level regression for the bug where the self-integration URL guard
+	// was bypassed because the guard reads the target repo's origin remote —
+	// after the scratch-clone refactor, the scratch's origin points at the
+	// caller's local path (not the caller's actual origin URL), so the guard
+	// never matched. Fix: CheckDrift runs EnsureNotSelfIntegration against
+	// the caller before provisioning the scratch.
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	// After baseline integrate: attach origin pointing at the upstream. Now
+	// the caller "identifies as the same repo" per the URL guard.
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file://" + upstreamDir},
+	})
+	require.NoError(t, err)
+	// The CreateRemote edit doesn't touch the worktree, so no re-commit needed.
+
+	_, err = CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sdktypes.ErrSelfIntegration,
+		"CheckDrift must catch by-origin self-integration against the caller repo, before provisioning scratch clone")
+}
+
+// snapshotWorktree wraps listWorktreeFiles (the production walker used by
+// CheckDrift for file attribution) so the invariant test measures the caller's
+// worktree the same way production code does. If listWorktreeFiles ever
+// changes (symlink handling, hash algorithm, path normalization), the
+// invariant test stays consistent by construction rather than drifting
+// silently.
+func snapshotWorktree(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	m, err := listWorktreeFiles(dir)
+	require.NoError(t, err)
+	return m
 }

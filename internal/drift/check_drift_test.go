@@ -2,6 +2,7 @@ package drift
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -396,6 +397,52 @@ func TestCheckDrift_leavesCallerWorkingTreeByteIdentical(t *testing.T) {
 		after := snapshotWorktree(t, downstreamDir)
 		assert.Equal(t, before, after, "CheckDrift must leave the caller worktree byte-identical even when drift is detected")
 	})
+}
+
+func TestCheckDrift_preservesGloballyIgnoredFiles(t *testing.T) {
+	// The reported bug: files ignored by the user's global gitignore
+	// (core.excludesFile) were silently deleted from the caller's worktree
+	// during CheckDrift. Root cause was go-git's gitignore handling not
+	// matching shell git's. The scratch-clone flow makes the whole class of
+	// caller-worktree mutations impossible, so this regression is locked in
+	// by construction.
+
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	// Point core.excludesFile at a hermetic gitignore that covers .envrc and
+	// .direnv/. Anything shell git would treat as ignored via this file must
+	// not be touched by CheckDrift.
+	globalIgnore := filepath.Join(t.TempDir(), "global-gitignore")
+	require.NoError(t, os.WriteFile(globalIgnore, []byte(".envrc\n.direnv/\n"), 0644))
+
+	require.NoError(t, exec.Command(
+		"git", "-c", "safe.directory=*", "-C", downstreamDir,
+		"config", "--local", "core.excludesFile", globalIgnore,
+	).Run())
+
+	// Populate the caller's worktree with globally-ignored files. checkCleanWorkingTree
+	// must still see the tree as clean because these files are ignored.
+	envrcPath := filepath.Join(downstreamDir, ".envrc")
+	direnvPath := filepath.Join(downstreamDir, ".direnv", "cache.dat")
+	require.NoError(t, os.WriteFile(envrcPath, []byte("export FOO=bar\n"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Dir(direnvPath), 0755))
+	require.NoError(t, os.WriteFile(direnvPath, []byte("opaque-cache-blob"), 0644))
+
+	_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "CheckDrift should succeed against a clean tree with only globally-ignored untracked files")
+
+	envrcGot, envrcErr := os.ReadFile(envrcPath)
+	require.NoError(t, envrcErr, "globally-ignored .envrc must still exist after CheckDrift")
+	assert.Equal(t, "export FOO=bar\n", string(envrcGot))
+
+	direnvGot, direnvErr := os.ReadFile(direnvPath)
+	require.NoError(t, direnvErr, "globally-ignored .direnv/cache.dat must still exist after CheckDrift")
+	assert.Equal(t, "opaque-cache-blob", string(direnvGot))
 }
 
 // snapshotWorktree wraps listWorktreeFiles (the production walker used by

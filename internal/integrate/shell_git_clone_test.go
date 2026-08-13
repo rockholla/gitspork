@@ -251,9 +251,10 @@ func TestPrepareShellGitAuth(t *testing.T) {
 // bearer token in the token field; SSH and zero-value authInfo leave it empty
 // so the URL passes through untouched.
 func TestAuthInfoToken(t *testing.T) {
-	t.Run("zero-value authInfo → empty token", func(t *testing.T) {
+	t.Run("zero-value authInfo → empty token and nil clientOptions", func(t *testing.T) {
 		a := authInfo{}
-		assert.Equal(t, "", a.token)
+		assert.Equal(t, "", a.token, "zero-value authInfo must have empty token")
+		assert.Nil(t, a.clientOptions, "zero-value authInfo must have nil clientOptions (no options)")
 	})
 
 	t.Run("HTTPS BasicAuth authInfo → password as token", func(t *testing.T) {
@@ -270,7 +271,15 @@ func TestAuthInfoToken(t *testing.T) {
 		assert.Len(t, a.clientOptions, 1, "HTTPS authInfo must carry the go-git client option for HTTPS auth")
 	})
 
-	t.Run("SSH authInfo → empty token (shell git uses ssh-agent natively)", func(t *testing.T) {
+	t.Run("SSH PublicKeysCallback authInfo → empty token (hermetic)", func(t *testing.T) {
+		a := authInfo{
+			clientOptions: []client.Option{client.WithSSHAuth(&ssh.PublicKeysCallback{User: "git"})},
+		}
+		assert.Equal(t, "", a.token, "SSH authInfo must have empty token (shell git delegates to ssh-agent)")
+		assert.Len(t, a.clientOptions, 1, "SSH authInfo must carry the go-git client option for SSH auth")
+	})
+
+	t.Run("SSH agent authInfo → empty token (requires ssh-agent)", func(t *testing.T) {
 		agentAuth, err := ssh.NewSSHAgentAuth("git")
 		if err != nil {
 			t.Skip("ssh-agent not available in this environment: " + err.Error())

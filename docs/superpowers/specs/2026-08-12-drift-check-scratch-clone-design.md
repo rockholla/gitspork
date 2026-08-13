@@ -245,8 +245,11 @@ Cleanup is silent — matches the existing tempdir-cleanup convention.
   in state.
 - Populate the caller's working tree with files that shell git ignores but
   go-git wouldn't confidently ignore: `.envrc`, `.env`, `node_modules/foo`,
-  plus a file matched by a global gitignore pattern (hermetic via
-  `GIT_CONFIG_GLOBAL` pointing at a tempfile).
+  plus a file matched by a global gitignore pattern. Implementation note
+  (post-spec): the landed test uses `git config --local core.excludesFile`
+  pointing at a `t.TempDir()`-managed gitignore, which is equally hermetic
+  and closer to the reported bug scenario. `GIT_CONFIG_GLOBAL` at the
+  process level would also work.
 - Run `CheckDrift`.
 - Assert: every one of those untracked files is still present in the caller's
   dir afterward with byte-identical contents.

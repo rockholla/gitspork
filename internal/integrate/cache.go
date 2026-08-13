@@ -14,7 +14,6 @@ import (
 
 	git "github.com/go-git/go-git/v6"
 	gitconfig "github.com/go-git/go-git/v6/config"
-	"github.com/go-git/go-git/v6/plumbing/transport"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
 
@@ -147,22 +146,19 @@ func writeFetchedAt(path string, t time.Time) error {
 // streamed to it.
 //
 // Prefers the shell git fast path (`git clone --mirror`) when the git binary
-// is on PATH; falls back to go-git's PlainClone otherwise. tokenFromAuth
-// extracts the HTTPS basic-auth password so shell git can embed it in the
-// URL — SSH auth passes through the environment's ssh-agent naturally.
-func populateCache(dir, url string, auth transport.AuthMethod, progress io.Writer) error {
+// is on PATH; falls back to go-git's PlainClone otherwise. auth.token carries
+// the HTTPS password for shell git — SSH auth passes through the ssh-agent.
+func populateCache(dir, url string, auth authInfo, progress io.Writer) error {
 	if useShellGitFastPath() {
 		return shellGitClone(context.TODO(), url, dir, shellGitCloneOptions{
 			Mirror: true,
-			Token:  tokenFromAuth(auth),
+			Token:  auth.token,
 		}, progress, nil)
 	}
 	opts := &git.CloneOptions{
-		URL:    url,
-		Mirror: true,
-	}
-	if auth != nil {
-		opts.Auth = auth
+		URL:           url,
+		Mirror:        true,
+		ClientOptions: auth.clientOptions,
 	}
 	if progress != nil {
 		opts.Progress = progress
@@ -187,10 +183,10 @@ func populateCache(dir, url string, auth transport.AuthMethod, progress io.Write
 //
 // Both paths treat "nothing to fetch" as success (go-git via
 // NoErrAlreadyUpToDate; shell git exits 0 naturally).
-func refreshCache(dir, url string, auth transport.AuthMethod, progress io.Writer) error {
+func refreshCache(dir, url string, auth authInfo, progress io.Writer) error {
 	if useShellGitFastPath() {
 		return shellGitFetch(context.TODO(), dir, url, shellGitFetchOptions{
-			Token: tokenFromAuth(auth),
+			Token: auth.token,
 		}, progress)
 	}
 	repo, err := git.PlainOpen(dir)
@@ -198,16 +194,14 @@ func refreshCache(dir, url string, auth transport.AuthMethod, progress io.Writer
 		return fmt.Errorf("opening upstream cache at %s: %w", dir, err)
 	}
 	opts := &git.FetchOptions{
-		RemoteName: "origin",
-		Prune:      true,
+		RemoteName:    "origin",
+		Prune:         true,
+		ClientOptions: auth.clientOptions,
 		RefSpecs: []gitconfig.RefSpec{
 			// Mirror-style refspec: mirror all refs on the remote into the local
 			// refs namespace, matching what `git clone --mirror` sets up.
 			"+refs/*:refs/*",
 		},
-	}
-	if auth != nil {
-		opts.Auth = auth
 	}
 	if progress != nil {
 		opts.Progress = progress
@@ -229,7 +223,7 @@ func refreshCache(dir, url string, auth transport.AuthMethod, progress io.Writer
 // a single wipe-and-repopulate retry. On second failure the wrapped error
 // is surfaced. Retries are hard-bounded to prevent infinite loops against
 // a genuinely broken remote.
-func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod, logger sdktypes.Logger, progress io.Writer) (string, error) {
+func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdktypes.Logger, progress io.Writer) (string, error) {
 	if cfg.Disabled {
 		return "", nil
 	}
@@ -281,7 +275,7 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth transport.AuthMethod,
 // runCacheOp inspects the state of a cache entry and performs the appropriate
 // operation — no-op if fresh, refresh if stale, populate if missing. Emits a
 // distinct log line per branch matching Section 1's Log-line contract.
-func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth transport.AuthMethod, logger sdktypes.Logger, progress io.Writer) error {
+func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth authInfo, logger sdktypes.Logger, progress io.Writer) error {
 	fetchedAt, tsErr := readFetchedAt(tsFile)
 	tsPresent := tsErr == nil
 

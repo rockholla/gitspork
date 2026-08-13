@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-git/go-git/v6/plumbing/transport"
-	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/rockholla/gitspork/v2/internal/gitbin"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 )
@@ -89,17 +87,6 @@ func prepareShellGitAuth(url, token string) (credArgs []string, env []string) {
 	}
 	childEnv = append(childEnv, shellGitAuthEnvVar+"="+token)
 	return args, childEnv
-}
-
-// tokenFromAuth extracts the HTTP basic-auth password ("token" in the
-// git+HTTPS convention) from a transport.AuthMethod. Returns empty for a
-// nil auth or any non-BasicAuth (e.g. SSH agent auth, which needs no URL
-// rewriting because shell git talks to ssh-agent natively).
-func tokenFromAuth(auth transport.AuthMethod) string {
-	if ba, ok := auth.(*githttp.BasicAuth); ok {
-		return ba.Password
-	}
-	return ""
 }
 
 // useShellGitFastPath reports whether the shell git fast path can be used

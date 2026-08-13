@@ -29,13 +29,17 @@ func provisionScratchClone(callerRepoPath string) (string, func(), error) {
 		return "", func() {}, fmt.Errorf("error resolving caller HEAD hash: %v", err)
 	}
 
-	// --local hardlinks the object store (cheap on time and disk). --no-checkout
-	// skips the initial checkout so we can pin explicitly to the caller's HEAD
-	// hash below — necessary when the caller is on a detached HEAD (e.g. CI).
+	// --local copies objects into scratch's own store (via --no-hardlinks) so
+	// we work across filesystems — under Docker the caller is often a
+	// bind-mounted host dir and scratch is on a different FS, where the
+	// default hardlink behavior fails with "Cross-device link". The copy has
+	// a small perf cost but is predictable and safe. --no-checkout skips the
+	// initial checkout so we can pin explicitly to the caller's HEAD hash
+	// below — necessary when the caller is on a detached HEAD (e.g. CI).
 	// --local also does not propagate linked worktrees (.git/worktrees/) or
 	// LFS smudge — both are irrelevant for the drift-check flow, which
 	// operates purely on tracked files at the caller's HEAD.
-	if _, err := shellGitOutput("", "clone", "--local", "--no-checkout", callerRepoPath, scratchPath); err != nil {
+	if _, err := shellGitOutput("", "clone", "--local", "--no-hardlinks", "--no-checkout", callerRepoPath, scratchPath); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("error cloning caller repo to scratch: %v", err)
 	}

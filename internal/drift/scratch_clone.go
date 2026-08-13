@@ -52,8 +52,11 @@ func provisionScratchClone(callerRepoPath string) (string, func(), error) {
 // preferred over what git cloned.
 func ensureStateFilePresent(callerPath, scratchPath string) error {
 	const rel = ".gitspork/downstream-state.json"
-	if _, err := os.Stat(filepath.Join(scratchPath, rel)); err == nil {
+	scratchStatPath := filepath.Join(scratchPath, rel)
+	if _, err := os.Stat(scratchStatPath); err == nil {
 		return nil // scratch already has it — the normal path
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("error checking scratch state file %s: %v", scratchStatPath, err)
 	}
 	src := filepath.Join(callerPath, rel)
 	data, err := os.ReadFile(src)
@@ -65,10 +68,10 @@ func ensureStateFilePresent(callerPath, scratchPath string) error {
 	}
 	dst := filepath.Join(scratchPath, rel)
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("error creating scratch state dir: %v", err)
+		return fmt.Errorf("error creating scratch state dir %s: %v", filepath.Dir(dst), err)
 	}
 	if err := os.WriteFile(dst, data, 0644); err != nil {
-		return fmt.Errorf("error writing scratch state file: %v", err)
+		return fmt.Errorf("error writing scratch state file %s: %v", dst, err)
 	}
 	return nil
 }

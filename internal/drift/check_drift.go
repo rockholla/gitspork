@@ -91,6 +91,17 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 		}
 	}
 
+	// Self-integration guard runs against the caller, not the scratch clone.
+	// The scratch's origin remote (set by `git clone --local`) points at the
+	// caller's local path — never at the caller's real origin URL — so the
+	// URL-based guard inside integrateOneInternal cannot detect origin-match
+	// self-integration on its own. Catch it up front here.
+	for _, entry := range entries {
+		if err := integrate.EnsureNotSelfIntegration(opts.DownstreamRepoPath, entry.spec.URL, ""); err != nil {
+			return report, err
+		}
+	}
+
 	if err := checkCleanWorkingTree(opts.DownstreamRepoPath); err != nil {
 		return report, err
 	}

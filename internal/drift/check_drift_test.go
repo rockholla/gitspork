@@ -8,13 +8,14 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/rockholla/gitspork/v2/internal/config"
 	"github.com/rockholla/gitspork/v2/internal/integrate"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
-	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
+	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -406,6 +407,37 @@ func TestCheckDrift_preservesGloballyIgnoredFiles(t *testing.T) {
 	direnvGot, direnvErr := os.ReadFile(direnvPath)
 	require.NoError(t, direnvErr, "globally-ignored .direnv/cache.dat must still exist after CheckDrift")
 	assert.Equal(t, "opaque-cache-blob", string(direnvGot))
+}
+
+func TestCheckDrift_selfIntegrationBlockedByOriginURL(t *testing.T) {
+	// Unit-level regression for the bug where the self-integration URL guard
+	// was bypassed because the guard reads the target repo's origin remote —
+	// after the scratch-clone refactor, the scratch's origin points at the
+	// caller's local path (not the caller's actual origin URL), so the guard
+	// never matched. Fix: CheckDrift runs EnsureNotSelfIntegration against
+	// the caller before provisioning the scratch.
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	// After baseline integrate: attach origin pointing at the upstream. Now
+	// the caller "identifies as the same repo" per the URL guard.
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	_, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"file://" + upstreamDir},
+	})
+	require.NoError(t, err)
+	// The CreateRemote edit doesn't touch the worktree, so no re-commit needed.
+
+	_, err = CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, sdktypes.ErrSelfIntegration,
+		"CheckDrift must catch by-origin self-integration against the caller repo, before provisioning scratch clone")
 }
 
 // snapshotWorktree wraps listWorktreeFiles (the production walker used by

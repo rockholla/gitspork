@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -41,6 +42,35 @@ func provisionScratchClone(callerRepoPath string) (string, func(), error) {
 	}
 
 	return scratchPath, cleanup, nil
+}
+
+// ensureStateFilePresent copies .gitspork/downstream-state.json from callerPath
+// into scratchPath when it exists in caller but not scratch. Handles the edge
+// case where the caller has integrated but not committed the state file (and
+// possibly ignored it), so `git clone --local` did not bring it over. When the
+// file already exists in scratch, this is a no-op; the caller version is never
+// preferred over what git cloned.
+func ensureStateFilePresent(callerPath, scratchPath string) error {
+	const rel = ".gitspork/downstream-state.json"
+	if _, err := os.Stat(filepath.Join(scratchPath, rel)); err == nil {
+		return nil // scratch already has it — the normal path
+	}
+	src := filepath.Join(callerPath, rel)
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // caller doesn't have it either — LoadDownstreamState will surface the right error
+		}
+		return fmt.Errorf("error reading caller state file %s: %v", src, err)
+	}
+	dst := filepath.Join(scratchPath, rel)
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("error creating scratch state dir: %v", err)
+	}
+	if err := os.WriteFile(dst, data, 0644); err != nil {
+		return fmt.Errorf("error writing scratch state file: %v", err)
+	}
+	return nil
 }
 
 // shellGitOutput runs `git <args...>` (with -c safe.directory=* prepended) and

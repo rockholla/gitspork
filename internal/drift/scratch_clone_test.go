@@ -81,3 +81,50 @@ func Test_provisionScratchClone_failsOnNonRepo(t *testing.T) {
 	assert.Contains(t, err.Error(), "resolving caller HEAD hash",
 		"error should identify the rev-parse step that failed")
 }
+
+func Test_ensureStateFilePresent_copiesWhenMissingInScratch(t *testing.T) {
+	src := t.TempDir()
+	scratch := t.TempDir()
+
+	// Simulate the edge case: state file exists in caller but scratch was
+	// provisioned without it (git clone of a repo where the file is ignored
+	// and never committed).
+	require.NoError(t, os.MkdirAll(filepath.Join(src, ".gitspork"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, ".gitspork/downstream-state.json"), []byte(`{"upstreams":[]}`), 0644))
+
+	require.NoError(t, ensureStateFilePresent(src, scratch))
+
+	got, err := os.ReadFile(filepath.Join(scratch, ".gitspork/downstream-state.json"))
+	require.NoError(t, err)
+	assert.Equal(t, `{"upstreams":[]}`, string(got))
+}
+
+func Test_ensureStateFilePresent_noopWhenAlreadyInScratch(t *testing.T) {
+	src := t.TempDir()
+	scratch := t.TempDir()
+
+	// State present in both (normal case: git clone brought it over).
+	require.NoError(t, os.MkdirAll(filepath.Join(src, ".gitspork"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, ".gitspork/downstream-state.json"), []byte(`{"upstreams":["src"]}`), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Join(scratch, ".gitspork"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(scratch, ".gitspork/downstream-state.json"), []byte(`{"upstreams":["scratch"]}`), 0644))
+
+	require.NoError(t, ensureStateFilePresent(src, scratch))
+
+	// The scratch's existing file wins — this helper never overwrites.
+	got, err := os.ReadFile(filepath.Join(scratch, ".gitspork/downstream-state.json"))
+	require.NoError(t, err)
+	assert.Equal(t, `{"upstreams":["scratch"]}`, string(got))
+}
+
+func Test_ensureStateFilePresent_noopWhenAbsentInBoth(t *testing.T) {
+	src := t.TempDir()
+	scratch := t.TempDir()
+
+	// Nothing to copy: no state file anywhere. The downstream state loader
+	// will produce its own not-found error later; this helper stays quiet.
+	require.NoError(t, ensureStateFilePresent(src, scratch))
+
+	_, err := os.Stat(filepath.Join(scratch, ".gitspork/downstream-state.json"))
+	assert.True(t, os.IsNotExist(err))
+}

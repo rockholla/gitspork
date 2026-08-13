@@ -11,6 +11,7 @@ import (
 
 	gogit "github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	githttp "github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
@@ -245,24 +246,40 @@ func TestPrepareShellGitAuth(t *testing.T) {
 	})
 }
 
-// TestTokenFromAuth locks the auth → token extraction used by populateCache
-// and refreshCache to keep their signatures stable. Non-BasicAuth methods
-// (nil, SSH agent) must return empty so the URL passes through untouched.
-func TestTokenFromAuth(t *testing.T) {
-	t.Run("nil auth → empty", func(t *testing.T) {
-		assert.Equal(t, "", tokenFromAuth(nil))
+// TestAuthInfoToken locks the auth → token extraction used by populateCache,
+// refreshCache, and resolveUpstreamVersionRef. HTTPS authInfo carries the
+// bearer token in the token field; SSH and zero-value authInfo leave it empty
+// so the URL passes through untouched.
+func TestAuthInfoToken(t *testing.T) {
+	t.Run("zero-value authInfo → empty token", func(t *testing.T) {
+		a := authInfo{}
+		assert.Equal(t, "", a.token)
 	})
 
-	t.Run("BasicAuth → password", func(t *testing.T) {
-		a := &githttp.BasicAuth{Username: "gitspork", Password: "the-token"}
-		assert.Equal(t, "the-token", tokenFromAuth(a))
+	t.Run("HTTPS BasicAuth authInfo → password as token", func(t *testing.T) {
+		a := authInfo{
+			token: "the-token",
+			clientOptions: []client.Option{
+				client.WithHTTPAuth(&githttp.BasicAuth{
+					Username: "gitspork",
+					Password: "the-token",
+				}),
+			},
+		}
+		assert.Equal(t, "the-token", a.token, "HTTPS authInfo must carry the password as auth.token for shell-git use")
+		assert.Len(t, a.clientOptions, 1, "HTTPS authInfo must carry the go-git client option for HTTPS auth")
 	})
 
-	t.Run("SSH agent auth → empty (shell git uses ssh-agent natively)", func(t *testing.T) {
-		// NewSSHAgentAuth would try to connect to a live agent — construct
-		// the type directly to keep this test hermetic.
-		agentAuth := &ssh.PublicKeysCallback{User: "git"}
-		assert.Equal(t, "", tokenFromAuth(agentAuth))
+	t.Run("SSH authInfo → empty token (shell git uses ssh-agent natively)", func(t *testing.T) {
+		agentAuth, err := ssh.NewSSHAgentAuth("git")
+		if err != nil {
+			t.Skip("ssh-agent not available in this environment: " + err.Error())
+		}
+		a := authInfo{
+			clientOptions: []client.Option{client.WithSSHAuth(agentAuth)},
+		}
+		assert.Equal(t, "", a.token, "SSH authInfo must have empty token (shell git delegates to ssh-agent)")
+		assert.Len(t, a.clientOptions, 1, "SSH authInfo must carry the go-git client option for SSH auth")
 	})
 }
 

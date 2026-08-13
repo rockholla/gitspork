@@ -16,7 +16,7 @@ import (
 	"github.com/go-git/go-git/v6"
 	gitconfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/transport"
+	"github.com/go-git/go-git/v6/plumbing/client"
 	"github.com/go-git/go-git/v6/plumbing/transport/http"
 	"github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v6/storage/memory"
@@ -43,6 +43,15 @@ var (
 	// commitHashRe matches short (7-char) through full (40-char) git commit hashes.
 	commitHashRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 )
+
+// authInfo bundles the two auth representations needed across the code:
+// token is the HTTPS bearer token used by the shell git fast path;
+// clientOptions is the go-git transport client configuration used by
+// the go-git fallback path (CloneOptions.ClientOptions, etc.).
+type authInfo struct {
+	token         string
+	clientOptions []client.Option
+}
 
 // internalRequest carries wiring needed by integrateOneInternal that is not
 // part of the public IntegrateOptions surface. It exists to keep the SDK's
@@ -414,13 +423,17 @@ func resolveUpstreamURL(url string, token string) string {
 func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream sdktypes.UpstreamSpec) (string, error) {
 	upstreamURL := resolveUpstreamURL(upstream.URL, upstream.Token)
 	var err error
-	var authMethod transport.AuthMethod
+	var auth authInfo
 	isHTTPsUpstreamURL, _ := regexp.MatchString("^https://.*$", upstreamURL)
 	isSSHUpstreamURL, _ := regexp.MatchString("^git@", upstreamURL)
 	if isHTTPsUpstreamURL && upstream.Token != "" {
-		authMethod = &http.BasicAuth{
+		basicAuth := &http.BasicAuth{
 			Username: config.GitSpork,
 			Password: upstream.Token,
+		}
+		auth = authInfo{
+			token:         upstream.Token,
+			clientOptions: []client.Option{client.WithHTTPAuth(basicAuth)},
 		}
 	} else if isSSHUpstreamURL {
 		agentAuth, err := ssh.NewSSHAgentAuth(config.GitSSHUsername)
@@ -430,7 +443,7 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		if err := applySSHKnownHosts(agentAuth); err != nil {
 			return "", err
 		}
-		authMethod = agentAuth
+		auth = authInfo{clientOptions: []client.Option{client.WithSSHAuth(agentAuth)}}
 	}
 	// Resolve cache configuration (merging CLI/env/defaults). If enabled and
 	// healthy, we clone from the machine-scoped bare mirror rather than the
@@ -441,7 +454,7 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		return "", err
 	}
 	var cacheDir string
-	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, authMethod, req.Logger, req.progress)
+	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, auth, req.Logger, req.progress)
 	if err != nil {
 		return "", err
 	}
@@ -453,9 +466,8 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 	if cacheDir != "" {
 		// Working clone reads from the local bare mirror. No network, no auth.
 		cloneOptions.URL = "file://" + cacheDir
-		cloneOptions.Auth = nil
-	} else if authMethod != nil {
-		cloneOptions.Auth = authMethod
+	} else {
+		cloneOptions.ClientOptions = auth.clientOptions
 	}
 
 	// Interpret upstream.Version:
@@ -474,7 +486,7 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		cloneOptions.ReferenceName = plumbing.ReferenceName("refs/" + upstream.Version)
 		cloneOptions.SingleBranch = true
 	default:
-		resolvedRef, err := resolveUpstreamVersionRef(upstreamURL, authMethod, upstream.Version)
+		resolvedRef, err := resolveUpstreamVersionRef(upstreamURL, auth, upstream.Version)
 		if err != nil {
 			return "", err
 		}
@@ -616,12 +628,12 @@ func canShallowClone(upstreamCommit, prevUpstreamCommitHash string, versionIsCom
 // Go-TLS stack — some macOS environments surface as `SecPolicyCreateSSL
 // error: 0` there, while shell git's libcurl TLS goes through the system
 // trust store and works.
-func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version string) (plumbing.ReferenceName, error) {
+func resolveUpstreamVersionRef(url string, auth authInfo, version string) (plumbing.ReferenceName, error) {
 	tagRef := plumbing.ReferenceName("refs/tags/" + version)
 	branchRef := plumbing.ReferenceName("refs/heads/" + version)
 	var haveTag, haveBranch bool
 	if useShellGitFastPath() {
-		refs, err := shellGitLsRemote(context.TODO(), url, tokenFromAuth(auth))
+		refs, err := shellGitLsRemote(context.TODO(), url, auth.token)
 		if err != nil {
 			return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
 		}
@@ -632,7 +644,7 @@ func resolveUpstreamVersionRef(url string, auth transport.AuthMethod, version st
 			Name: "origin",
 			URLs: []string{url},
 		})
-		refs, err := rem.List(&git.ListOptions{Auth: auth})
+		refs, err := rem.List(&git.ListOptions{ClientOptions: auth.clientOptions})
 		if err != nil {
 			return "", fmt.Errorf("could not list remote refs to resolve upstream version %q: %v", version, err)
 		}

@@ -1,6 +1,8 @@
 package drift
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -351,4 +353,75 @@ func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 		"expected the unified diff to reference the path, got:\n%s", diff)
 	assert.Contains(t, diff, "-upstream content", "expected removed-line marker for old content")
 	assert.Contains(t, diff, "+drifted", "expected added-line marker for new content")
+}
+
+func TestCheckDrift_leavesCallerWorkingTreeByteIdentical(t *testing.T) {
+	// Invariant: CheckDrift must not modify any file in the caller's working
+	// tree, regardless of whether drift is detected. This test snapshots every
+	// non-.git file before and after CheckDrift and asserts byte-equality.
+
+	t.Run("no drift path", func(t *testing.T) {
+		upstreamDir, _ := testharness.MinimalUpstream(t)
+		downstreamDir := testharness.EmptyDownstream(t)
+		testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+		before := snapshotWorktree(t, downstreamDir)
+
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.NoError(t, err)
+
+		after := snapshotWorktree(t, downstreamDir)
+		assert.Equal(t, before, after, "CheckDrift must leave the caller worktree byte-identical")
+	})
+
+	t.Run("drift detected path", func(t *testing.T) {
+		upstreamDir, _ := testharness.MinimalUpstream(t)
+		downstreamDir := testharness.EmptyDownstream(t)
+		testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+		testWriteAndCommitInDownstream(t, downstreamDir, "upstream-owned/file.txt", "drifted\n")
+
+		before := snapshotWorktree(t, downstreamDir)
+
+		_, err := CheckDrift(&sdktypes.CheckDriftOptions{
+			Logger:             logutil.New(),
+			DownstreamRepoPath: downstreamDir,
+		})
+		require.ErrorIs(t, err, sdktypes.ErrDriftDetected)
+
+		after := snapshotWorktree(t, downstreamDir)
+		assert.Equal(t, before, after, "CheckDrift must leave the caller worktree byte-identical even when drift is detected")
+	})
+}
+
+// snapshotWorktree returns a map of repo-relative path -> sha256 hex for every
+// non-.git file under dir. Used by the caller-untouched invariant test.
+func snapshotWorktree(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		out[rel] = fmt.Sprintf("%x", sha256.Sum256(b))
+		return nil
+	})
+	require.NoError(t, err)
+	return out
 }

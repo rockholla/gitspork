@@ -1,8 +1,6 @@
 package drift
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -356,9 +354,12 @@ func TestCheckDrift_report_files_include_unified_diff(t *testing.T) {
 }
 
 func TestCheckDrift_leavesCallerWorkingTreeByteIdentical(t *testing.T) {
-	// Invariant: CheckDrift must not modify any file in the caller's working
-	// tree, regardless of whether drift is detected. This test snapshots every
-	// non-.git file before and after CheckDrift and asserts byte-equality.
+	// Invariant: CheckDrift must not delete or alter any file that existed in
+	// the caller's working tree before the call, regardless of whether drift is
+	// detected. This test snapshots every non-.git file before and after
+	// CheckDrift and asserts byte-equality. (It does not catch transient
+	// creates — files that CheckDrift creates and deletes within the call —
+	// which is out of scope for the reported bug class of silent deletion.)
 
 	t.Run("no drift path", func(t *testing.T) {
 		upstreamDir, _ := testharness.MinimalUpstream(t)
@@ -396,32 +397,15 @@ func TestCheckDrift_leavesCallerWorkingTreeByteIdentical(t *testing.T) {
 	})
 }
 
-// snapshotWorktree returns a map of repo-relative path -> sha256 hex for every
-// non-.git file under dir. Used by the caller-untouched invariant test.
+// snapshotWorktree wraps listWorktreeFiles (the production walker used by
+// CheckDrift for file attribution) so the invariant test measures the caller's
+// worktree the same way production code does. If listWorktreeFiles ever
+// changes (symlink handling, hash algorithm, path normalization), the
+// invariant test stays consistent by construction rather than drifting
+// silently.
 func snapshotWorktree(t *testing.T, dir string) map[string]string {
 	t.Helper()
-	out := map[string]string{}
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if info.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		out[rel] = fmt.Sprintf("%x", sha256.Sum256(b))
-		return nil
-	})
+	m, err := listWorktreeFiles(dir)
 	require.NoError(t, err)
-	return out
+	return m
 }

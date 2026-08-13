@@ -42,3 +42,19 @@ jobs:
         run: |
           sarif="$(ls sarif-results/*.sarif | head -n1)"
           ./scripts/ci/security-gate.sh "$sarif"
+
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true

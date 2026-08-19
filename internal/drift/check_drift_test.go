@@ -153,6 +153,53 @@ func Test_diffWorktreeAgainstHEAD(t *testing.T) {
 	})
 }
 
+func Test_listWorktreeFiles(t *testing.T) {
+	t.Run("symlink pointing at a directory does not crash the walker", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-test-listwt")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hello"), 0644))
+		require.NoError(t, os.Mkdir(filepath.Join(dir, "realdir"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "realdir", "inner.txt"), []byte("inner"), 0644))
+		require.NoError(t, os.Symlink("realdir", filepath.Join(dir, "link-to-dir")))
+
+		got, err := listWorktreeFiles(dir)
+		require.NoError(t, err, "walker must not choke on a symlink pointing at a directory")
+		assert.Contains(t, got, "file.txt")
+		assert.Contains(t, got, filepath.Join("realdir", "inner.txt"))
+		assert.Contains(t, got, "link-to-dir",
+			"symlink itself should be recorded as an entry, not silently skipped")
+	})
+
+	t.Run("symlink to a regular file hashes the link target, not the target's contents", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-test-listwt")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "real.txt"), []byte("real content"), 0644))
+		require.NoError(t, os.Symlink("real.txt", filepath.Join(dir, "link.txt")))
+
+		got, err := listWorktreeFiles(dir)
+		require.NoError(t, err)
+		assert.NotEqual(t, got["real.txt"], got["link.txt"],
+			"symlink hash should be derived from the link target string (git mode-120000 semantics), "+
+				"not from the file the link resolves to")
+	})
+
+	t.Run("broken symlink does not crash the walker", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-test-listwt")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		require.NoError(t, os.Symlink("does-not-exist", filepath.Join(dir, "broken")))
+
+		got, err := listWorktreeFiles(dir)
+		require.NoError(t, err, "walker must tolerate broken symlinks — git allows them and we mustn't crash")
+		assert.Contains(t, got, "broken")
+	})
+}
+
 // makeBaselineRepo initialises a git repo with one committed file and returns the Worktree.
 func makeBaselineRepo(t *testing.T, dir string) *gogit.Worktree {
 	t.Helper()

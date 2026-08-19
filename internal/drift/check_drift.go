@@ -310,12 +310,23 @@ func listWorktreeFiles(dir string) (map[string]string, error) {
 		if err != nil {
 			return err
 		}
+		// Symlinks: hash the target string (mirrors git's mode-120000 blob
+		// semantics). filepath.Walk lstats without following, so a symlink to
+		// a directory would otherwise fall through to os.ReadFile below and
+		// error with EISDIR; a broken symlink would error with ENOENT.
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			result[rel] = fmt.Sprintf("%x", sha256.Sum256([]byte(target)))
+			return nil
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		h := fmt.Sprintf("%x", sha256.Sum256(b))
-		result[rel] = h
+		result[rel] = fmt.Sprintf("%x", sha256.Sum256(b))
 		return nil
 	})
 	return result, err

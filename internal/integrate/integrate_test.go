@@ -485,6 +485,94 @@ func makeUpstreamRepo(t *testing.T, dir string) {
 	require.NoError(t, err)
 }
 
+func Test_syncFile(t *testing.T) {
+	t.Run("regular file copies contents and preserves perms", func(t *testing.T) {
+		srcDir := t.TempDir()
+		dstDir := t.TempDir()
+		src := filepath.Join(srcDir, "script.sh")
+		dst := filepath.Join(dstDir, "script.sh")
+		require.NoError(t, os.WriteFile(src, []byte("#!/bin/sh\necho hi\n"), 0755))
+
+		require.NoError(t, syncFile(src, dst))
+
+		got, err := os.ReadFile(dst)
+		require.NoError(t, err)
+		assert.Equal(t, "#!/bin/sh\necho hi\n", string(got))
+		info, err := os.Lstat(dst)
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "exec bit on regular files must be preserved")
+	})
+
+	t.Run("symlink pointing at a directory replicates as a symlink instead of dereferencing", func(t *testing.T) {
+		srcDir := t.TempDir()
+		dstDir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(srcDir, "realdir"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(srcDir, "realdir", "inner.txt"), []byte("inner"), 0644))
+		src := filepath.Join(srcDir, "link-to-dir")
+		dst := filepath.Join(dstDir, "link-to-dir")
+		require.NoError(t, os.Symlink("realdir", src))
+
+		require.NoError(t, syncFile(src, dst),
+			"syncFile must not crash on a symlink-to-directory source — upstream repos legitimately contain checked-in symlinks")
+
+		info, err := os.Lstat(dst)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink, "destination must itself be a symlink, mirroring git's mode-120000 semantics")
+		target, err := os.Readlink(dst)
+		require.NoError(t, err)
+		assert.Equal(t, "realdir", target, "symlink target string must be preserved verbatim")
+	})
+
+	t.Run("symlink pointing at a regular file replicates as a symlink, not a copy of the target contents", func(t *testing.T) {
+		srcDir := t.TempDir()
+		dstDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(srcDir, "real.txt"), []byte("real content"), 0644))
+		src := filepath.Join(srcDir, "link.txt")
+		dst := filepath.Join(dstDir, "link.txt")
+		require.NoError(t, os.Symlink("real.txt", src))
+
+		require.NoError(t, syncFile(src, dst))
+
+		info, err := os.Lstat(dst)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink, "destination must itself be a symlink")
+		target, err := os.Readlink(dst)
+		require.NoError(t, err)
+		assert.Equal(t, "real.txt", target)
+	})
+
+	t.Run("broken symlink source replicates the link without needing the target to exist", func(t *testing.T) {
+		srcDir := t.TempDir()
+		dstDir := t.TempDir()
+		src := filepath.Join(srcDir, "broken")
+		dst := filepath.Join(dstDir, "broken")
+		require.NoError(t, os.Symlink("does-not-exist", src))
+
+		require.NoError(t, syncFile(src, dst),
+			"broken symlinks are valid git-tracked content and must not crash the copy step")
+
+		info, err := os.Lstat(dst)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink)
+	})
+
+	t.Run("symlink replication overwrites an existing destination file", func(t *testing.T) {
+		srcDir := t.TempDir()
+		dstDir := t.TempDir()
+		src := filepath.Join(srcDir, "entry")
+		dst := filepath.Join(dstDir, "entry")
+		require.NoError(t, os.Symlink("target", src))
+		require.NoError(t, os.WriteFile(dst, []byte("stale regular file"), 0644),
+			"a prior integrate may have written a regular file here — replication must replace it, not error out")
+
+		require.NoError(t, syncFile(src, dst))
+
+		info, err := os.Lstat(dst)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink, "destination should be a symlink now, not the pre-existing regular file")
+	})
+}
+
 func Test_integrateOneInternal_blocksSelfIntegrationByURL(t *testing.T) {
 	downstream := t.TempDir()
 	repo, err := gogit.PlainInit(downstream, false)

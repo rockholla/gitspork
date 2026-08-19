@@ -506,6 +506,70 @@ func Test_applyUpstreamDelta(t *testing.T) {
 		_, err = os.Stat(filepath.Join(dir, "config/new.yml"))
 		assert.True(t, os.IsNotExist(err))
 	})
+
+	// The following three sub-tests exercise broken-symlink cases. A downstream
+	// user may legitimately replace an upstream-managed file with a symlink for
+	// local convenience; if that symlink's target later disappears, os.Stat
+	// (which follows) reports the path as non-existent even though the link
+	// itself is still on disk. applyUpstreamDelta must use lstat semantics so
+	// its deletion/rename decisions match what git and drift-check see.
+
+	t.Run("deletion of a broken symlink removes the link itself", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		target := filepath.Join(dir, "docs/guide.md")
+		require.NoError(t, os.MkdirAll(filepath.Dir(target), 0755))
+		require.NoError(t, os.Symlink("does-not-exist", target))
+
+		delta := &upstreamDelta{Deletions: []string{"docs/guide.md"}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
+
+		_, err = os.Lstat(target)
+		assert.True(t, os.IsNotExist(err),
+			"broken symlink at the deletion path must be cleaned up, not silently skipped as if the entry didn't exist")
+	})
+
+	t.Run("rename source that is a broken symlink still moves to the new path", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		oldPath := filepath.Join(dir, "config/old.yml")
+		newPath := filepath.Join(dir, "config/new.yml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0755))
+		require.NoError(t, os.Symlink("does-not-exist", oldPath))
+
+		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
+
+		_, err = os.Lstat(oldPath)
+		assert.True(t, os.IsNotExist(err), "broken symlink source must be moved, not skipped as absent")
+		info, err := os.Lstat(newPath)
+		require.NoError(t, err, "new path must have the (still-broken) symlink after the move")
+		assert.NotZero(t, info.Mode()&os.ModeSymlink)
+	})
+
+	t.Run("rename target that is a broken symlink is respected and the move is skipped", func(t *testing.T) {
+		dir, err := os.MkdirTemp("", "gitspork-apply-test")
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		oldPath := filepath.Join(dir, "config/old.yml")
+		newPath := filepath.Join(dir, "config/new.yml")
+		require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0755))
+		require.NoError(t, os.WriteFile(oldPath, []byte("old"), 0644))
+		require.NoError(t, os.Symlink("does-not-exist", newPath))
+
+		delta := &upstreamDelta{Renames: []upstreamRename{{OldPath: "config/old.yml", NewPath: "config/new.yml"}}}
+		require.NoError(t, applyUpstreamDelta(delta, dir, logutil.New()))
+
+		info, err := os.Lstat(newPath)
+		require.NoError(t, err)
+		assert.NotZero(t, info.Mode()&os.ModeSymlink,
+			"pre-existing broken symlink at the rename target must not be silently clobbered")
+	})
 }
 
 // makeUpstreamWithTemplatedConfigChangeInSubpath is a variant that places

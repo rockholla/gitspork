@@ -300,9 +300,13 @@ func readConfigFromCommit(commit *object.Commit, subpath string) (*config.GitSpo
 }
 
 func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger sdktypes.Logger) error {
+	// Lstat (not Stat) throughout: we're asking "is there an entry at this
+	// path?", which must include symlinks — following Stat would incorrectly
+	// skip broken symlinks a downstream user may have placed where an
+	// upstream-managed file used to be.
 	for _, del := range delta.Deletions {
 		target := filepath.Join(downstreamPath, del)
-		if _, err := os.Stat(target); os.IsNotExist(err) {
+		if _, err := os.Lstat(target); os.IsNotExist(err) {
 			logger.Log("⚠️  delta: %s already absent in downstream, skipping removal", del)
 			continue
 		}
@@ -315,11 +319,11 @@ func applyUpstreamDelta(delta *upstreamDelta, downstreamPath string, logger sdkt
 	for _, ren := range delta.Renames {
 		oldTarget := filepath.Join(downstreamPath, ren.OldPath)
 		newTarget := filepath.Join(downstreamPath, ren.NewPath)
-		if _, err := os.Stat(newTarget); err == nil {
+		if _, err := os.Lstat(newTarget); err == nil {
 			logger.Log("⚠️  delta: rename target %s already exists in downstream, skipping move", ren.NewPath)
 			continue
 		}
-		if _, err := os.Stat(oldTarget); os.IsNotExist(err) {
+		if _, err := os.Lstat(oldTarget); os.IsNotExist(err) {
 			logger.Log("⚠️  delta: rename source %s absent in downstream, skipping move", ren.OldPath)
 			continue
 		}

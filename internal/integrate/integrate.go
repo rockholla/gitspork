@@ -710,41 +710,53 @@ func getGitSporkConfig(atPath string) (*config.GitSporkConfig, error) {
 }
 
 func syncFile(src, dst string) error {
-	// Open the source file
+	// Lstat (not Stat) so we can detect symlinks before touching them —
+	// os.Open on a symlink-to-directory would otherwise crash with EISDIR,
+	// and os.Open on a broken symlink would crash with ENOENT.
+	sourceFileStat, err := os.Lstat(src)
+	if err != nil {
+		return fmt.Errorf("failed to stat source file at %s: %v", src, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return fmt.Errorf("error ensuring destination directory path exists %s: %v", filepath.Dir(dst), err)
+	}
+
+	// Symlinks: replicate the link itself (mirrors git's mode-120000 blob
+	// semantics — a symlink's tracked content is its target string).
+	if sourceFileStat.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(src)
+		if err != nil {
+			return fmt.Errorf("failed to read symlink target at %s: %v", src, err)
+		}
+		if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to clear destination %s before symlink replication: %v", dst, err)
+		}
+		if err := os.Symlink(target, dst); err != nil {
+			return fmt.Errorf("failed to create symlink at %s: %v", dst, err)
+		}
+		return nil
+	}
+
 	sourceFile, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("failed to open source file at %s: %v", src, err)
 	}
 	defer sourceFile.Close()
-	sourceFileStat, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("failed to stat source file at %s: %v", src, err)
-	}
 
-	// Ensure the destination directory
-	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-		return fmt.Errorf("error ensuring destination directory path exists %s: %v", filepath.Dir(dst), err)
-	}
-
-	// Create the destination file
 	destinationFile, err := os.Create(dst)
 	if err != nil {
 		return fmt.Errorf("failed to create destination file %s: %v", dst, err)
 	}
 	defer destinationFile.Close()
 
-	// Copy the content
-	_, err = io.Copy(destinationFile, sourceFile)
-	if err != nil {
+	if _, err = io.Copy(destinationFile, sourceFile); err != nil {
 		return fmt.Errorf("failed to copy file from %s to %s: %v", src, dst, err)
 	}
 
-	// Flush file metadata to disk
-	err = destinationFile.Sync()
-	if err != nil {
+	if err = destinationFile.Sync(); err != nil {
 		return fmt.Errorf("failed to sync destination file %s: %v", dst, err)
 	}
-	// ensure source and dest file perms match
 	if err := os.Chmod(dst, sourceFileStat.Mode().Perm()); err != nil {
 		return fmt.Errorf("failed ensuring destination file %s perms set: %v", dst, err)
 	}

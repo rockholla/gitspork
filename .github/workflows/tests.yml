@@ -9,7 +9,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: 'go.mod'
     - name: Unit Tests
@@ -20,7 +20,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: 'go.mod'
     - name: Functional Tests
@@ -31,7 +31,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: 'go.mod'
     - name: Set up Docker Buildx
@@ -44,7 +44,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: 'go.mod'
     - name: Examples Tests
@@ -55,7 +55,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
     - name: Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: 'go.mod'
     - name: SDK Tests

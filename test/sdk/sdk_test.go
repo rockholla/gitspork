@@ -4,12 +4,14 @@ package sdk_test
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -752,4 +754,61 @@ func hasLog(c *captureLogger, substr string) bool {
 		}
 	}
 	return false
+}
+
+// integrate-local: UpstreamFSes — in-memory upstream is integrated into the downstream
+func TestIntegrateLocal_upstreamFSes_writesUpstreamOwned(t *testing.T) {
+	fsys := fstest.MapFS{
+		".gitspork.yml":           {Data: []byte("upstream_owned:\n- upstream-owned/**\n")},
+		"upstream-owned/file.txt": {Data: []byte("embedded content\n")},
+	}
+	downstream := emptyDownstream(t)
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{fsys},
+		DownstreamPath: downstream,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 1)
+	assert.Empty(t, result.Upstreams[0].CommitHash,
+		"FS-backed upstreams have no commit-hash concept")
+
+	content, err := os.ReadFile(filepath.Join(downstream, "upstream-owned", "file.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "embedded content\n", string(content))
+}
+
+// integrate-local: UpstreamPaths and UpstreamFSes can be mixed in one call
+func TestIntegrateLocal_upstreamFSes_mixedWithPaths(t *testing.T) {
+	pathUpstream, _ := minimalUpstream(t)
+	fsys := fstest.MapFS{
+		".gitspork.yml":            {Data: []byte("upstream_owned:\n- fs-owned/**\n")},
+		"fs-owned/embedded.txt":    {Data: []byte("from fs\n")},
+	}
+	downstream := emptyDownstream(t)
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamPaths:  []string{pathUpstream},
+		UpstreamFSes:   []fs.FS{fsys},
+		DownstreamPath: downstream,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 2,
+		"one entry per upstream: path first, then FS")
+	require.NoError(t, fileExists(downstream, "upstream-owned", "file.txt"),
+		"path-backed upstream-owned file must land in downstream")
+	require.NoError(t, fileExists(downstream, "fs-owned", "embedded.txt"),
+		"FS-backed upstream-owned file must land in downstream")
+}
+
+// integrate-local: no UpstreamPaths and no UpstreamFSes → error mentions both fields
+func TestIntegrateLocal_earlyError_noUpstream_mentionsBothFields(t *testing.T) {
+	downstream := emptyDownstream(t)
+
+	_, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		DownstreamPath: downstream,
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "UpstreamFSes",
+		"error for missing upstream must mention UpstreamFSes so callers know the field exists")
 }

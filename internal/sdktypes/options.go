@@ -2,6 +2,7 @@ package sdktypes
 
 import (
 	"io"
+	"io/fs"
 	"time"
 )
 
@@ -35,9 +36,17 @@ type IntegrateOptions struct {
 }
 
 // IntegrateLocalOptions configures a call to IntegrateLocal. Populate
-// UpstreamPaths (one or more entries) for multi-path integration.
+// UpstreamPaths, UpstreamFSes, or both (processed in order: paths first,
+// then FSes).
 type IntegrateLocalOptions struct {
-	UpstreamPaths  []string
+	UpstreamPaths []string
+	// UpstreamFSes holds in-memory filesystems to integrate as local upstreams.
+	// Each FS must expose .gitspork.yml (or .gitspork.yaml) at its root.
+	// Callers embedding files with dot-prefixed names via embed.FS must use the
+	// "all:" directive: //go:embed all:_upstream.
+	// IntegrateLocal materializes each FS to a temp directory internally; no
+	// temporary files are visible to the caller.
+	UpstreamFSes   []fs.FS
 	DownstreamPath string
 	ForceRePrompt  bool
 	Logger         Logger

@@ -783,3 +783,242 @@ func TestIntegratorTemplated_repeatRunProducesByteIdenticalCache(t *testing.T) {
 
 	assert.Equal(t, firstBytes, secondBytes, "repeated integrate with unchanged inputs must produce byte-identical cache (no git churn)")
 }
+
+// TestIntegratorTemplated_fromDestinationStructured_yamlHappyPath: when the
+// destination YAML file already exists and the configured path resolves to a
+// scalar, the structured read wins and prompt is never called.
+func TestIntegratorTemplated_fromDestinationStructured_yamlHappyPath(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("service: my-service\n"), 0644))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	assert.Equal(t, 0, stub.calls, "prompt must not fire when structured read succeeds")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "my-service", "rendered output must use the value read from the destination file")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath: same as
+// YAML happy path but with a JSON destination file.
+func TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.json"),
+		[]byte(`{"service":"{{ index .Inputs "service_name" }}"}`), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.json"),
+		[]byte(`{"service":"json-service"}`), 0644))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.json",
+		Destination: "config.json",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	assert.Equal(t, 0, stub.calls, "prompt must not fire when JSON structured read succeeds")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_forceRePromptSkipsRead:
+// forceRePrompt=true must bypass the structured read and fire the prompt even
+// when the destination file exists with the value at the path.
+func TestIntegratorTemplated_fromDestinationStructured_forceRePromptSkipsRead(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("service: old-service\n"), 0644))
+
+	stub := stubRequestInput(t, "new-service")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger()))
+	assert.Equal(t, 1, stub.calls, "forceRePrompt must skip the structured read and fire the prompt exactly once")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "new-service", "render must use the re-prompted value, not the old destination value")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_missingFilePromptFallback:
+// when the destination file doesn't yet exist (first run), the structured read
+// returns not-found and the prompt fires as the fallback.
+func TestIntegratorTemplated_fromDestinationStructured_missingFilePromptFallback(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	// No destination file — simulates a first-run downstream.
+
+	stub := stubRequestInput(t, "prompted-service")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	assert.Equal(t, 1, stub.calls, "prompt must fire when destination file is absent")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "prompted-service")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_pathNotFoundPromptFallback:
+// when the destination file exists but the configured path is absent from it,
+// the structured read returns not-found and the prompt fires.
+func TestIntegratorTemplated_fromDestinationStructured_pathNotFoundPromptFallback(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("other_key: unrelated\n"), 0644))
+
+	stub := stubRequestInput(t, "prompted-service")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	assert.Equal(t, 1, stub.calls, "prompt must fire when path is absent from destination file")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_fileMissing:
+// when no prompt fallback is configured and the destination file is absent,
+// the error must name the configured path and mention the lack of a fallback.
+func TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_fileMissing(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name: "service_name",
+			// No Prompt — no fallback configured.
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service", "error must name the configured path")
+	assert.Contains(t, err.Error(), "no prompt fallback", "error must tell the user why it can't proceed")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_pathMissing:
+// same as above but the destination file exists — it's the path that's absent.
+func TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_pathMissing(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("other: value\n"), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name: "service_name",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "service")
+	assert.Contains(t, err.Error(), "no prompt fallback")
+}
+
+// TestIntegratorTemplated_fromDestinationStructured_valueAvailableToPreviousInput:
+// a value resolved via from_destination_structured must land in capturedInputValues
+// so that a subsequent template can reference it via previous_input.
+func TestIntegratorTemplated_fromDestinationStructured_valueAvailableToPreviousInput(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "a.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "b.yaml"),
+		[]byte("also: {{ index .Inputs \"borrowed\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("service: shared-service\n"), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{
+		{
+			Template:    "a.yaml",
+			Destination: "config.yaml",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name:   "service_name",
+				Prompt: "Service name?",
+				FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+					Path: "service",
+				},
+			}},
+		},
+		{
+			Template:    "b.yaml",
+			Destination: "b.yaml",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name: "borrowed",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{
+					Template: "a.yaml",
+					Name:     "service_name",
+				},
+			}},
+		},
+	}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+
+	bOut, err := os.ReadFile(filepath.Join(downstreamDir, "b.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(bOut), "shared-service",
+		"from_destination_structured value must be accessible to previous_input in a later template")
+}

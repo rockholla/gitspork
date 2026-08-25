@@ -70,17 +70,24 @@ type GitSporkConfigTemplated struct {
 	Merged      *GitSporkConfigTemplatedMerged `yaml:"merged,omitempty" comment:"optional instruction for merging with pre-existing file in the destination, if present, post-render"`
 }
 
-// GitSporkConfigTemplatedInput
+// GitSporkConfigTemplatedInput is instruction for dynamically input data to templates to render from upstream -> downstream
 type GitSporkConfigTemplatedInput struct {
-	Name          string                                `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
-	Prompt        string                                `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
-	JSONDataPath  string                                `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
-	PreviousInput *GitSporkConfigTemplatedInputPrevious `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
+	Name                      string                                             `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
+	Prompt                    string                                             `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
+	JSONDataPath              string                                             `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
+	PreviousInput             *GitSporkConfigTemplatedInputPrevious              `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
+	FromDestinationStructured *GitSporkConfigTemplatedInputDestinationStructured `yaml:"from_destination_structured,omitempty" comment:"(optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)"`
 }
 
+// GitSporkConfigTemplatedInputPrevious allows for GitSporkConfigTemplatedInput to use a value that's already been captured in a previous template instruction as the input value
 type GitSporkConfigTemplatedInputPrevious struct {
 	Template string `yaml:"template" comment:"Name of a previous template defined in the gitspork config from which to pull the value"`
 	Name     string `yaml:"name" comment:"Name of the input from that template from which to pull the value"`
+}
+
+// GitSporkConfigTemplatedInputDestinationStructured allows for re-using an already-rendered destination template's value, assuming the destination type is structured data, as the value to use as input
+type GitSporkConfigTemplatedInputDestinationStructured struct {
+	Path string `yaml:"path" comment:"JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting"`
 }
 
 // GitSporkConfigTemplatedMerged
@@ -166,6 +173,13 @@ func GetGitSporkConfigSchema() (string, string, error) {
 						PreviousInput: &GitSporkConfigTemplatedInputPrevious{
 							Template: "meta.txt.go.tmpl",
 							Name:     "input_one",
+						},
+					},
+					{
+						Name:   "input_four",
+						Prompt: "What is the value of input_four?",
+						FromDestinationStructured: &GitSporkConfigTemplatedInputDestinationStructured{
+							Path: "some.nested.key",
 						},
 					},
 				},

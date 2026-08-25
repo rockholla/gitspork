@@ -75,6 +75,23 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {
+			// from_destination_structured is an optional first-pass: read a scalar from
+			// the already-rendered destination file. If resolved, the value wins immediately
+			// and the remaining sources are skipped. If not resolved (file/path absent, null
+			// value, or forceRePrompt), execution falls through to the sources below.
+			if input.FromDestinationStructured != nil && !forceRePrompt {
+				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
+				value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
+				if err != nil {
+					return fmt.Errorf("error resolving from_destination_structured path %q in %s: %v",
+						input.FromDestinationStructured.Path, fullDestPath, err)
+				}
+				if found {
+					templateData.Inputs[input.Name] = value
+					capturedInputValues[templatedInstruction.Template][input.Name] = value
+					continue
+				}
+			}
 			if input.JSONDataPath != "" {
 				jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
 				jsonData, err := os.ReadFile(jsonDataPath)

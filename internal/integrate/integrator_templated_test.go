@@ -838,6 +838,9 @@ func TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath(t *testing.
 	}}
 	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
 	assert.Equal(t, 0, stub.calls, "prompt must not fire when JSON structured read succeeds")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "json-service", "rendered output must use the value read from the JSON destination file")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_forceRePromptSkipsRead:
@@ -924,6 +927,9 @@ func TestIntegratorTemplated_fromDestinationStructured_pathNotFoundPromptFallbac
 	}}
 	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
 	assert.Equal(t, 1, stub.calls, "prompt must fire when path is absent from destination file")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "prompted-service", "rendered output must use the prompted value when path is absent")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_fileMissing:

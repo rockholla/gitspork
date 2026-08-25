@@ -75,6 +75,23 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {
+			// from_destination_structured is an optional first-pass: read a scalar from
+			// the already-rendered destination file. If resolved, the value wins immediately
+			// and the remaining sources are skipped. If not resolved (file/path absent, null
+			// value, or forceRePrompt), execution falls through to the sources below.
+			if input.FromDestinationStructured != nil && !forceRePrompt {
+				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
+				value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
+				if err != nil {
+					return fmt.Errorf("error resolving from_destination_structured path %q in %s: %v",
+						input.FromDestinationStructured.Path, fullDestPath, err)
+				}
+				if found {
+					templateData.Inputs[input.Name] = value
+					capturedInputValues[templatedInstruction.Template][input.Name] = value
+					continue
+				}
+			}
 			if input.JSONDataPath != "" {
 				jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
 				jsonData, err := os.ReadFile(jsonDataPath)
@@ -89,30 +106,6 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				// populated data into the previous_input chain for subsequent
 				// templated instructions in this run.
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-			} else if input.FromDestinationStructured != nil {
-				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
-				resolved := false
-				if !forceRePrompt {
-					value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
-					if err != nil {
-						return fmt.Errorf("error resolving from_destination_structured path %q in %s: %v",
-							input.FromDestinationStructured.Path, fullDestPath, err)
-					}
-					if found {
-						templateData.Inputs[input.Name] = value
-						capturedInputValues[templatedInstruction.Template][input.Name] = value
-						resolved = true
-					}
-				}
-				if !resolved {
-					if input.Prompt == "" {
-						return fmt.Errorf("from_destination_structured path %q not resolved in %s and no prompt fallback configured for input %q in template %s",
-							input.FromDestinationStructured.Path, fullDestPath, input.Name, templatedInstruction.Template)
-					}
-					if err := applyPromptInput(input, templatedInstruction.Template, &templateData, capturedInputValues, forceRePrompt); err != nil {
-						return err
-					}
-				}
 			} else if input.Prompt != "" {
 				if err := applyPromptInput(input, templatedInstruction.Template, &templateData, capturedInputValues, forceRePrompt); err != nil {
 					return err
@@ -132,6 +125,12 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				if previousInputErr != nil {
 					return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
 				}
+			} else if input.FromDestinationStructured != nil {
+				// Reached only when from_destination_structured didn't resolve (or was
+				// skipped by forceRePrompt) and no other source is configured.
+				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
+				return fmt.Errorf("from_destination_structured path %q did not resolve for input %q in template %s (destination: %s) and no other input source is configured",
+					input.FromDestinationStructured.Path, input.Name, templatedInstruction.Template, fullDestPath)
 			} else {
 				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', 'previous_input', or 'from_destination_structured' to be defined", input.Name)
 			}

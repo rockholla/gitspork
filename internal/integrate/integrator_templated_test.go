@@ -963,7 +963,7 @@ func TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_fileMiss
 	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "service", "error must name the configured path")
-	assert.Contains(t, err.Error(), "no prompt fallback", "error must tell the user why it can't proceed")
+	assert.Contains(t, err.Error(), "no other input source is configured", "error must tell the user no fallback source exists")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_pathMissing:
@@ -989,7 +989,7 @@ func TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_pathMiss
 	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "service")
-	assert.Contains(t, err.Error(), "no prompt fallback")
+	assert.Contains(t, err.Error(), "no other input source is configured")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_forceRePromptNoFallback:
@@ -1016,8 +1016,8 @@ func TestIntegratorTemplated_fromDestinationStructured_forceRePromptNoFallback(t
 	}}
 	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no prompt fallback",
-		"forceRePrompt=true with no prompt fallback must error, not silently use the structured read")
+	assert.Contains(t, err.Error(), "no other input source is configured",
+		"forceRePrompt=true with no other source configured must error")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_valueAvailableToPreviousInput:

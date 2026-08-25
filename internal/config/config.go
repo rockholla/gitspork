@@ -76,7 +76,7 @@ type GitSporkConfigTemplatedInput struct {
 	Prompt                    string                                             `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
 	JSONDataPath              string                                             `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
 	PreviousInput             *GitSporkConfigTemplatedInputPrevious              `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
-	FromDestinationStructured *GitSporkConfigTemplatedInputDestinationStructured `yaml:"from_destination_structured,omitempty" comment:"(optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); falls through to 'prompt' when file or path is unavailable"`
+	FromDestinationStructured *GitSporkConfigTemplatedInputDestinationStructured `yaml:"from_destination_structured,omitempty" comment:"(optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)"`
 }
 
 // GitSporkConfigTemplatedInputPrevious allows for GitSporkConfigTemplatedInput to use a value that's already been captured in a previous template instruction as the input value

@@ -199,6 +199,39 @@ func main() {
 }
 ```
 
+To integrate from an in-memory filesystem — useful when upstream template files are compiled into a binary via `embed.FS` — use `UpstreamFSes` on `IntegrateLocalOptions`. The FS must expose `.gitspork.yml` at its root; callers embedding dot-prefixed files must use the `all:` directive:
+
+```go
+package main
+
+import (
+    "embed"
+    "io/fs"
+    "log"
+
+    gitspork "github.com/rockholla/gitspork/v2"
+)
+
+//go:embed all:_upstream
+var upstreamFS embed.FS
+
+func main() {
+    fsys, err := fs.Sub(upstreamFS, "_upstream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    _, err = gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+        UpstreamFSes:   []fs.FS{fsys},
+        DownstreamPath: "/path/to/downstream",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+`UpstreamPaths` and `UpstreamFSes` may be combined in a single call; paths are processed first, then FSes.
+
 The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.
 
 ## Exit codes

@@ -41,4 +41,20 @@
 //	    }
 //	    log.Printf("%s: integrated %d upstream(s)", downstream, len(result.Upstreams))
 //	}
+//
+// Example — embedded upstream (binary-compiled template):
+//
+// Tools that compile gitspork template files into binaries can pass an
+// [embed.FS] directly via UpstreamFSes, avoiding any on-disk upstream path.
+// The FS must expose .gitspork.yml at its root; use the "all:" embed directive
+// to include dot-prefixed files:
+//
+//	//go:embed all:_upstream
+//	var upstreamFS embed.FS
+//
+//	fsys, _ := fs.Sub(upstreamFS, "_upstream")
+//	_, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+//	    UpstreamFSes:   []fs.FS{fsys},
+//	    DownstreamPath: "/path/to/downstream",
+//	})
 package gitspork

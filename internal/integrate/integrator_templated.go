@@ -219,22 +219,3 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 	}
 	return nil
 }
-
-// applyPromptInput fires the prompt for the given input, updating templateData
-// and capturedInputValues. It is the shared prompt-path used by both the
-// standalone prompt branch and the from_destination_structured fallback.
-func applyPromptInput(input config.GitSporkConfigTemplatedInput, templateName string, templateData *IntegratorTemplatedData, capturedInputValues map[string]map[string]string, forceRePrompt bool) error {
-	if templateData.Inputs[input.Name] == "" || forceRePrompt {
-		requestInputOpts := &inputpkg.RequestInputOptions{
-			Type:   inputpkg.SingleValue,
-			Prompt: input.Prompt,
-		}
-		requestInputResult, err := requestInputFn(requestInputOpts)
-		if err != nil {
-			return fmt.Errorf("error setting up prompt input: %v", err)
-		}
-		templateData.Inputs[input.Name] = requestInputResult.StringValue
-		capturedInputValues[templateName][input.Name] = requestInputResult.StringValue
-	}
-	return nil
-}

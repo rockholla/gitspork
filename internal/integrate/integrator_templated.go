@@ -107,8 +107,17 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				// templated instructions in this run.
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" {
-				if err := applyPromptInput(input, templatedInstruction.Template, &templateData, capturedInputValues, forceRePrompt); err != nil {
-					return err
+				if templateData.Inputs[input.Name] == "" || forceRePrompt {
+					requestInputOpts := &inputpkg.RequestInputOptions{
+						Type:   inputpkg.SingleValue,
+						Prompt: input.Prompt,
+					}
+					requestInputResult, err := requestInputFn(requestInputOpts)
+					if err != nil {
+						return fmt.Errorf("error setting up prompt input: %v", err)
+					}
+					templateData.Inputs[input.Name] = requestInputResult.StringValue
+					capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
 				}
 			} else if input.PreviousInput != nil {
 				var previousInputErr error
@@ -132,7 +141,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				return fmt.Errorf("from_destination_structured path %q did not resolve for input %q in template %s (destination: %s) and no other input source is configured",
 					input.FromDestinationStructured.Path, input.Name, templatedInstruction.Template, fullDestPath)
 			} else {
-				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', 'previous_input', or 'from_destination_structured' to be defined", input.Name)
+				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', 'previous_input' to be defined", input.Name)
 			}
 		}
 

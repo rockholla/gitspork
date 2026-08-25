@@ -812,6 +812,10 @@ func TestIntegratorTemplated_fromDestinationStructured_yamlHappyPath(t *testing.
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(got), "my-service", "rendered output must use the value read from the destination file")
+	cache, err := loadTemplatedInputs(downstreamDir)
+	require.NoError(t, err)
+	assert.Equal(t, "my-service", cache["config.yaml"]["service_name"],
+		"value resolved via from_destination_structured must be written to the on-disk cache")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath: same as
@@ -841,6 +845,10 @@ func TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath(t *testing.
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(got), "json-service", "rendered output must use the value read from the JSON destination file")
+	cache, err := loadTemplatedInputs(downstreamDir)
+	require.NoError(t, err)
+	assert.Equal(t, "json-service", cache["config.json"]["service_name"],
+		"value resolved via from_destination_structured must be written to the on-disk cache")
 }
 
 // TestIntegratorTemplated_fromDestinationStructured_forceRePromptSkipsRead:

@@ -134,14 +134,8 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				if previousInputErr != nil {
 					return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
 				}
-			} else if input.FromDestinationStructured != nil {
-				// Reached only when from_destination_structured didn't resolve (or was
-				// skipped by forceRePrompt) and no other source is configured.
-				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
-				return fmt.Errorf("from_destination_structured path %q did not resolve for input %q in template %s (destination: %s) and no other input source is configured",
-					input.FromDestinationStructured.Path, input.Name, templatedInstruction.Template, fullDestPath)
 			} else {
-				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', 'previous_input' to be defined", input.Name)
+				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
 			}
 		}
 

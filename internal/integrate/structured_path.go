@@ -49,7 +49,7 @@ func resolveStructuredPath(filePath, dotPath string) (string, bool, error) {
 		current = child
 	}
 
-	if current.kind != nodeScalar {
+	if current.kind != nodeScalar || current.scalar == nil {
 		return "", false, nil
 	}
 	return fmt.Sprint(current.scalar), true, nil

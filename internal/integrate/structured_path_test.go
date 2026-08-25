@@ -112,3 +112,23 @@ func TestResolveStructuredPath_unsupportedExtension(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported file extension")
 }
+
+func TestResolveStructuredPath_nullValue_yaml(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("name: null\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "name")
+	require.NoError(t, err)
+	assert.False(t, found, "an explicit null YAML value must be treated as not-found, not returned as \"<nil>\"")
+	assert.Equal(t, "", v)
+}
+
+func TestResolveStructuredPath_nullValue_json(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"),
+		[]byte(`{"name":null}`), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.json"), "name")
+	require.NoError(t, err)
+	assert.False(t, found, "an explicit null JSON value must be treated as not-found, not returned as \"<nil>\"")
+	assert.Equal(t, "", v)
+}

@@ -984,6 +984,34 @@ func TestIntegratorTemplated_fromDestinationStructured_noPromptFallback_pathMiss
 	assert.Contains(t, err.Error(), "no prompt fallback")
 }
 
+// TestIntegratorTemplated_fromDestinationStructured_forceRePromptNoFallback:
+// when forceRePrompt=true and no prompt fallback is configured, the structured
+// read is skipped and the no-fallback error fires (not a silent no-op).
+func TestIntegratorTemplated_fromDestinationStructured_forceRePromptNoFallback(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("service: old-service\n"), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name: "service_name",
+			// No Prompt — no fallback configured.
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no prompt fallback",
+		"forceRePrompt=true with no prompt fallback must error, not silently use the structured read")
+}
+
 // TestIntegratorTemplated_fromDestinationStructured_valueAvailableToPreviousInput:
 // a value resolved via from_destination_structured must land in capturedInputValues
 // so that a subsequent template can reference it via previous_input.

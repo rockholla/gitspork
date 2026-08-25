@@ -109,31 +109,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 						return fmt.Errorf("from_destination_structured path %q not resolved in %s and no prompt fallback configured for input %q in template %s",
 							input.FromDestinationStructured.Path, fullDestPath, input.Name, templatedInstruction.Template)
 					}
-					if templateData.Inputs[input.Name] == "" || forceRePrompt {
-						requestInputOpts := &inputpkg.RequestInputOptions{
-							Type:   inputpkg.SingleValue,
-							Prompt: input.Prompt,
-						}
-						requestInputResult, err := requestInputFn(requestInputOpts)
-						if err != nil {
-							return fmt.Errorf("error setting up prompt input: %v", err)
-						}
-						templateData.Inputs[input.Name] = requestInputResult.StringValue
-						capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
+					if err := applyPromptInput(input, templatedInstruction.Template, &templateData, capturedInputValues, forceRePrompt); err != nil {
+						return err
 					}
 				}
 			} else if input.Prompt != "" {
-				if templateData.Inputs[input.Name] == "" || forceRePrompt {
-					requestInputOpts := &inputpkg.RequestInputOptions{
-						Type:   inputpkg.SingleValue,
-						Prompt: input.Prompt,
-					}
-					requestInputResult, err := requestInputFn(requestInputOpts)
-					if err != nil {
-						return fmt.Errorf("error setting up prompt input: %v", err)
-					}
-					templateData.Inputs[input.Name] = requestInputResult.StringValue
-					capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
+				if err := applyPromptInput(input, templatedInstruction.Template, &templateData, capturedInputValues, forceRePrompt); err != nil {
+					return err
 				}
 			} else if input.PreviousInput != nil {
 				var previousInputErr error
@@ -232,6 +214,25 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 	}
 	if err := ensureGitsporkAttributes(downstreamPath); err != nil {
 		return fmt.Errorf("error ensuring .gitattributes entry for templated cache: %v", err)
+	}
+	return nil
+}
+
+// applyPromptInput fires the prompt for the given input, updating templateData
+// and capturedInputValues. It is the shared prompt-path used by both the
+// standalone prompt branch and the from_destination_structured fallback.
+func applyPromptInput(input config.GitSporkConfigTemplatedInput, templateName string, templateData *IntegratorTemplatedData, capturedInputValues map[string]map[string]string, forceRePrompt bool) error {
+	if templateData.Inputs[input.Name] == "" || forceRePrompt {
+		requestInputOpts := &inputpkg.RequestInputOptions{
+			Type:   inputpkg.SingleValue,
+			Prompt: input.Prompt,
+		}
+		requestInputResult, err := requestInputFn(requestInputOpts)
+		if err != nil {
+			return fmt.Errorf("error setting up prompt input: %v", err)
+		}
+		templateData.Inputs[input.Name] = requestInputResult.StringValue
+		capturedInputValues[templateName][input.Name] = requestInputResult.StringValue
 	}
 	return nil
 }

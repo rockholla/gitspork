@@ -53,13 +53,6 @@ templated: # list of instruction for templated source files in the upstream that
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"
-
-Migration YAML schema:
----------------------------------------------
-pre_integrate:
-  exec: "./.gitspork/migrations/0001/pre-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
-post_integrate:
-  exec: "./.gitspork/migrations/0001/post-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
 ```
 
 Additionally, the schema for migrations yaml files will also be provided in the output of that command:

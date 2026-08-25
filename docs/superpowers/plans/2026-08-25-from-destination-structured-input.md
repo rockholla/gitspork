@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `from_destination_structured` input source to `GitSporkConfigTemplated` that reads a scalar value from a dot-delimited path within the current template's already-rendered destination file (YAML or JSON), falling back to `prompt` when the file or path is unavailable.
+**Goal:** Add a `from_destination_structured` input source to `GitSporkConfigTemplated` that reads a scalar value from a dot-delimited path within the current template's already-rendered destination file (YAML or JSON), falling through to the remaining configured sources (`json_data_path`, `prompt`, `previous_input`) when the file or path is unavailable.
 
-**Architecture:** A new `resolveStructuredPath(filePath, dotPath string) (string, bool, error)` helper in `internal/integrate/structured_path.go` handles format detection, parsing (reusing existing `parseJSON`/`parseYAML`), and `node`-tree traversal. The `integrator_templated.go` input loop gains a new `else if input.FromDestinationStructured != nil` branch — placed *before* the existing `prompt` branch so that when both fields are set, the structured read wins and `prompt` serves as its fallback. A typo in the config YAML tag is also fixed.
+**Architecture:** A new `resolveStructuredPath(filePath, dotPath string) (string, bool, error)` helper in `internal/integrate/structured_path.go` handles format detection, parsing (reusing existing `parseJSON`/`parseYAML`), and `node`-tree traversal. The `integrator_templated.go` input loop gains a pre-check block at the top: if `from_destination_structured` is defined and resolves, the value is used and the loop `continue`s, skipping the `json_data_path`/`prompt`/`previous_input` chain. If it doesn't resolve, the chain runs unchanged. A typo in the config YAML tag is also fixed.
 
 **Tech Stack:** Go stdlib (`os`, `filepath`, `strings`, `fmt`), existing `node`/`parseJSON`/`parseYAML` infrastructure in `internal/integrate`, `github.com/stretchr/testify`.
 
@@ -596,25 +596,26 @@ git commit -m "test(integrate): failing integration tests for from_destination_s
 **Files:**
 - Modify: `internal/integrate/integrator_templated.go`
 
-- [ ] **Step 1: Add the new branch to the input-gathering loop**
+- [ ] **Step 1: Add the pre-check block to the input-gathering loop**
 
-The current else-if chain in the `for _, input := range templatedInstruction.Inputs` loop (around line 77) looks like:
+Before the existing `if input.JSONDataPath != ""` chain, insert a pre-check block. When `from_destination_structured` is defined and resolves, set the value and `continue` to the next input, skipping the chain. If it doesn't resolve (file/path absent, null, or `forceRePrompt=true`), fall through to the chain unchanged:
 
 ```go
-if input.JSONDataPath != "" {
-    // ...json_data_path handling...
-} else if input.Prompt != "" {
-    // ...prompt handling...
-} else if input.PreviousInput != nil {
-    // ...previous_input handling...
-} else {
-    return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
+// from_destination_structured pre-check: runs before the source chain.
+// On hit, value wins and we skip to the next input. On miss, the chain below runs.
+if input.FromDestinationStructured != nil && !forceRePrompt {
+    fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
+    value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
+    if err != nil {
+        return fmt.Errorf("error resolving from_destination_structured path %q in %s: %v",
+            input.FromDestinationStructured.Path, fullDestPath, err)
+    }
+    if found {
+        templateData.Inputs[input.Name] = value
+        capturedInputValues[templatedInstruction.Template][input.Name] = value
+        continue
+    }
 }
-```
-
-Insert the new branch **between** `json_data_path` and `prompt` so that when both `from_destination_structured` and `prompt` are configured on the same input, `from_destination_structured` is tried first and `prompt` is the internal fallback. Also update the final error message to name the new option. The updated chain:
-
-```go
 if input.JSONDataPath != "" {
     jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
     jsonData, err := os.ReadFile(jsonDataPath)
@@ -625,39 +626,6 @@ if input.JSONDataPath != "" {
         return fmt.Errorf("error parsing json_data_path file %s into inputs: %v", jsonDataPath, err)
     }
     maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-} else if input.FromDestinationStructured != nil {
-    fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
-    resolved := false
-    if !forceRePrompt {
-        value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
-        if err != nil {
-            return fmt.Errorf("error resolving from_destination_structured path %q in %s: %v",
-                input.FromDestinationStructured.Path, fullDestPath, err)
-        }
-        if found {
-            templateData.Inputs[input.Name] = value
-            capturedInputValues[templatedInstruction.Template][input.Name] = value
-            resolved = true
-        }
-    }
-    if !resolved {
-        if input.Prompt == "" {
-            return fmt.Errorf("from_destination_structured path %q not resolved in %s and no prompt fallback configured for input %q in template %s",
-                input.FromDestinationStructured.Path, fullDestPath, input.Name, templatedInstruction.Template)
-        }
-        if templateData.Inputs[input.Name] == "" || forceRePrompt {
-            requestInputOpts := &inputpkg.RequestInputOptions{
-                Type:   inputpkg.SingleValue,
-                Prompt: input.Prompt,
-            }
-            requestInputResult, err := requestInputFn(requestInputOpts)
-            if err != nil {
-                return fmt.Errorf("error setting up prompt input: %v", err)
-            }
-            templateData.Inputs[input.Name] = requestInputResult.StringValue
-            capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
-        }
-    }
 } else if input.Prompt != "" {
     if templateData.Inputs[input.Name] == "" || forceRePrompt {
         requestInputOpts := &inputpkg.RequestInputOptions{
@@ -687,7 +655,7 @@ if input.JSONDataPath != "" {
         return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
     }
 } else {
-    return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', 'previous_input', or 'from_destination_structured' to be defined", input.Name)
+    return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
 }
 ```
 
@@ -697,7 +665,7 @@ if input.JSONDataPath != "" {
 go test ./internal/integrate/ -run TestIntegratorTemplated_fromDestinationStructured -v
 ```
 
-Expected: all 8 `TestIntegratorTemplated_fromDestinationStructured_*` tests pass.
+Expected: all 6 `TestIntegratorTemplated_fromDestinationStructured_*` tests pass.
 
 - [ ] **Step 3: Run the full unit suite**
 

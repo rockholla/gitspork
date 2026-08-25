@@ -51,6 +51,12 @@ templated: # list of instruction for templated source files in the upstream that
       path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
+- template: "meta-seed.txt.go.tmpl" # source path of the Go template file to use in the upstream
+  destination: "meta-seed.txt" # destination path and file name in the dowstream where the template will be rendered
+  downstream_owned: true # (optional) when true, the rendered destination is seeded once on the first integrate and never overwritten afterward — downstream owns the file from that point on
+  inputs: # list of inputs to provide to the template, and how to determine them
+  - name: "input_one" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "What is the value of input_one?" # (optional, one-of required) prompt to present to the user in order to gather the input value
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"
 ```

@@ -64,10 +64,11 @@ type GitSporkConfigMigrationInstructions struct {
 
 // GitSporkConfigTemplated is a single templated/render template instruction from upstream -> downstream
 type GitSporkConfigTemplated struct {
-	Template    string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
-	Destination string                         `yaml:"destination" comment:"destination path and file name in the dowstream where the template will be rendered"`
-	Inputs      []GitSporkConfigTemplatedInput `yaml:"inputs" comment:"list of inputs to provide to the template, and how to determine them"`
-	Merged      *GitSporkConfigTemplatedMerged `yaml:"merged,omitempty" comment:"optional instruction for merging with pre-existing file in the destination, if present, post-render"`
+	Template        string                         `yaml:"template" comment:"source path of the Go template file to use in the upstream"`
+	Destination     string                         `yaml:"destination" comment:"destination path and file name in the dowstream where the template will be rendered"`
+	DownstreamOwned bool                           `yaml:"downstream_owned,omitempty" comment:"(optional) when true, the rendered destination is seeded once on the first integrate and never overwritten afterward — downstream owns the file from that point on"`
+	Inputs          []GitSporkConfigTemplatedInput `yaml:"inputs" comment:"list of inputs to provide to the template, and how to determine them"`
+	Merged          *GitSporkConfigTemplatedMerged `yaml:"merged,omitempty" comment:"optional instruction for merging with pre-existing file in the destination, if present, post-render"`
 }
 
 // GitSporkConfigTemplatedInput is instruction for dynamically input data to templates to render from upstream -> downstream
@@ -181,6 +182,17 @@ func GetGitSporkConfigSchema() (string, string, error) {
 						FromDestinationStructured: &GitSporkConfigTemplatedInputDestinationStructured{
 							Path: "some.nested.key",
 						},
+					},
+				},
+			},
+			{
+				Template:        "meta-seed.txt.go.tmpl",
+				Destination:     "meta-seed.txt",
+				DownstreamOwned: true,
+				Inputs: []GitSporkConfigTemplatedInput{
+					{
+						Name:   "input_one",
+						Prompt: "What is the value of input_one?",
 					},
 				},
 			},

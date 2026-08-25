@@ -45,6 +45,10 @@ templated: # list of instruction for templated source files in the upstream that
     previous_input: # (optional, one-of-required) reference to an input already known from this template or another template defined before this one
       template: "meta.txt.go.tmpl" # Name of a previous template defined in the gitspork config from which to pull the value
       name: "input_one" # Name of the input from that template from which to pull the value
+  - name: "input_four" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "What is the value of input_four?" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)
+      path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
@@ -187,6 +191,39 @@ func main() {
     }
 }
 ```
+
+To integrate from an in-memory filesystem — useful when upstream template files are compiled into a binary via `embed.FS` — use `UpstreamFSes` on `IntegrateLocalOptions`. The FS must expose `.gitspork.yml` at its root; callers embedding dot-prefixed files must use the `all:` directive:
+
+```go
+package main
+
+import (
+    "embed"
+    "io/fs"
+    "log"
+
+    gitspork "github.com/rockholla/gitspork/v2"
+)
+
+//go:embed all:_upstream
+var upstreamFS embed.FS
+
+func main() {
+    fsys, err := fs.Sub(upstreamFS, "_upstream")
+    if err != nil {
+        log.Fatal(err)
+    }
+    _, err = gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+        UpstreamFSes:   []fs.FS{fsys},
+        DownstreamPath: "/path/to/downstream",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+`UpstreamPaths` and `UpstreamFSes` may be combined in a single call; paths are processed first, then FSes.
 
 The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.
 

@@ -812,3 +812,59 @@ func TestIntegrateLocal_earlyError_noUpstream_mentionsBothFields(t *testing.T) {
 	assert.Contains(t, err.Error(), "UpstreamFSes",
 		"error for missing upstream must mention UpstreamFSes so callers know the field exists")
 }
+
+// integrate-local: downstream_owned: true — first integrate seeds the file
+func TestIntegrateLocal_templated_downstreamOwned_seedsOnFirst(t *testing.T) {
+	downstream := emptyDownstream(t)
+	require.NoError(t, os.WriteFile(filepath.Join(downstream, "data.json"), []byte(`{"greeting":"hello"}`), 0644))
+
+	fsys := fstest.MapFS{
+		".gitspork.yml": {Data: []byte("templated:\n- template: greeting.txt.go.tmpl\n  destination: greeting.txt\n  downstream_owned: true\n  inputs:\n  - name: greeting\n    json_data_path: data.json\n")},
+		"greeting.txt.go.tmpl": {Data: []byte(`{{ index .Inputs "greeting" }}`)},
+	}
+
+	_, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{fsys},
+		DownstreamPath: downstream,
+	})
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(downstream, "greeting.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content), "downstream_owned file must be seeded on first integrate")
+}
+
+// integrate-local: downstream_owned: true — subsequent integrates skip the file even when upstream template changes
+func TestIntegrateLocal_templated_downstreamOwned_skipsOnSubsequent(t *testing.T) {
+	downstream := emptyDownstream(t)
+	require.NoError(t, os.WriteFile(filepath.Join(downstream, "data.json"), []byte(`{"greeting":"hello"}`), 0644))
+
+	upstream := fstest.MapFS{
+		".gitspork.yml": {Data: []byte("templated:\n- template: greeting.txt.go.tmpl\n  destination: greeting.txt\n  downstream_owned: true\n  inputs:\n  - name: greeting\n    json_data_path: data.json\n")},
+		"greeting.txt.go.tmpl": {Data: []byte(`{{ index .Inputs "greeting" }}`)},
+	}
+
+	// First integrate: seeds the file.
+	_, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{upstream},
+		DownstreamPath: downstream,
+	})
+	require.NoError(t, err)
+
+	// Downstream edits the file.
+	require.NoError(t, os.WriteFile(filepath.Join(downstream, "greeting.txt"), []byte("downstream-edited"), 0644))
+
+	// Upstream changes the template.
+	upstream["greeting.txt.go.tmpl"] = &fstest.MapFile{Data: []byte(`{{ index .Inputs "greeting" }} world`)}
+
+	// Second integrate: must skip — downstream owns the file.
+	_, err = gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{upstream},
+		DownstreamPath: downstream,
+	})
+	require.NoError(t, err)
+
+	content, err := os.ReadFile(filepath.Join(downstream, "greeting.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "downstream-edited", string(content), "downstream_owned file must not be overwritten on subsequent integrates")
+}

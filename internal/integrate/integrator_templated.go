@@ -64,6 +64,16 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 	for _, templatedInstruction := range templatedInstructions {
 		logger.Log("📄 executing templated instruction for rendering upstream template %s to downstream location %s", templatedInstruction.Template, templatedInstruction.Destination)
 
+		// downstream_owned: true — seed once. If the destination already exists,
+		// the downstream owns it and we skip rendering entirely.
+		if templatedInstruction.DownstreamOwned {
+			fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
+			if _, err := os.Stat(fullDestPath); err == nil {
+				logger.Log("⏭️  skipping %s (downstream_owned: true, destination already exists)", templatedInstruction.Destination)
+				continue
+			}
+		}
+
 		capturedInputValues[templatedInstruction.Template] = map[string]string{}
 		templateData := IntegratorTemplatedData{
 			Inputs: map[string]string{},

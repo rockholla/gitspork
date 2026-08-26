@@ -661,10 +661,10 @@ func countGitsporkPrefixed(entries []os.DirEntry) int {
 }
 
 // TestIntegratorTemplated_inputMissingAllSources locks the input-validation
-// contract at integrator_templated.go:114 — a templated input MUST supply
-// at least one of prompt / json_data_path / previous_input. A misconfigured
-// config that supplies none should surface a clear error naming the input
-// so the user can act on it.
+// contract — a templated input MUST supply at least one of expect_seeded /
+// prompt / json_data_path / previous_input. A misconfigured config that
+// supplies none should surface a clear error naming the input so the user
+// can act on it.
 func TestIntegratorTemplated_inputMissingAllSources(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
@@ -1060,4 +1060,214 @@ func TestIntegratorTemplated_seedInputs_fromDestinationStructuredStillWins(t *te
 	require.NoError(t, err)
 	assert.Contains(t, string(got), "destination-value",
 		"from_destination_structured must win over seed value")
+}
+
+// TestIntegratorTemplated_expectSeeded_resolvesFromSeedInputs verifies that an
+// input configured with expect_seeded: true is satisfied by seedInputs without
+// prompting the user.
+func TestIntegratorTemplated_expectSeeded_resolvesFromSeedInputs(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", ExpectSeeded: true}},
+	}}
+	seeds := map[string]string{"name": "seeded-value"}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+	assert.Equal(t, 0, stub.calls, "prompt must not fire when input is expect_seeded")
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, seeded-value!", string(rendered))
+}
+
+// TestIntegratorTemplated_expectSeeded_errorWhenKeyMissing verifies that an
+// input configured with expect_seeded: true returns a named error when the
+// expected key is absent from seedInputs.
+func TestIntegratorTemplated_expectSeeded_errorWhenKeyMissing(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", ExpectSeeded: true}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), map[string]string{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name", "error must name the missing seeded input")
+	assert.Contains(t, err.Error(), "seeded inputs", "error must indicate the seed context")
+}
+
+// TestIntegratorTemplated_expectSeeded_errorWhenSeedInputsNil verifies that
+// expect_seeded: true with a nil seedInputs map returns a clear error rather
+// than silently producing an empty value.
+func TestIntegratorTemplated_expectSeeded_errorWhenSeedInputsNil(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", ExpectSeeded: true}},
+	}}
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name", "error must name the missing seeded input")
+}
+
+// TestIntegratorTemplated_promptDefault_shownInPromptText verifies that when
+// prompt_default is configured, the default value is appended to the prompt
+// text shown to the user.
+func TestIntegratorTemplated_promptDefault_shownInPromptText(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stub := stubRequestInput(t, "")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "name",
+			Prompt: "Enter name",
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+				Value: "world",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+
+	require.Equal(t, 1, stub.calls)
+	assert.Contains(t, stub.prompts[0], "Enter name")
+	assert.Contains(t, stub.prompts[0], "world", "prompt text must include the default value")
+}
+
+// TestIntegratorTemplated_promptDefault_appliedWhenUserEntersEmpty verifies that
+// when the user provides no input (empty string), the prompt_default value is
+// used as the resolved value.
+func TestIntegratorTemplated_promptDefault_appliedWhenUserEntersEmpty(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stubRequestInput(t, "")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "name",
+			Prompt: "Enter name",
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+				Value: "world",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, world!", string(rendered), "default must be used when user enters empty string")
+}
+
+// TestIntegratorTemplated_promptDefault_notAppliedWhenUserEntersValue verifies
+// that when the user provides a non-empty input, prompt_default is ignored and
+// the user's value is used.
+func TestIntegratorTemplated_promptDefault_notAppliedWhenUserEntersValue(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stubRequestInput(t, "user-value")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "name",
+			Prompt: "Enter name",
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+				Value: "world",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, user-value!", string(rendered), "user's non-empty input must win over prompt_default")
+}
+
+// TestIntegratorTemplated_promptDefault_fromSeeded_usesSeededValue verifies that
+// when from_seeded is set and the key is present in seedInputs, the seeded value
+// is used as the prompt default (shown in text, applied on empty entry).
+func TestIntegratorTemplated_promptDefault_fromSeeded_usesSeededValue(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stub := stubRequestInput(t, "")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "name",
+			Prompt: "Enter name",
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+				FromSeeded: "seeded_name",
+				Value:      "static-fallback",
+			},
+		}},
+	}}
+	seeds := map[string]string{"seeded_name": "seeded-default"}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+	require.Equal(t, 1, stub.calls, "prompt must fire — input is not expect_seeded, just has a seeded default")
+	assert.Contains(t, stub.prompts[0], "seeded-default", "prompt text must show the seeded default value")
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, seeded-default!", string(rendered), "seeded default must be applied when user enters nothing")
+}
+
+// TestIntegratorTemplated_promptDefault_fromSeeded_fallsBackToValue verifies that
+// when from_seeded is set but the key is absent from seedInputs, the static
+// Value field is used as the fallback default.
+func TestIntegratorTemplated_promptDefault_fromSeeded_fallsBackToValue(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stub := stubRequestInput(t, "")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "name",
+			Prompt: "Enter name",
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+				FromSeeded: "missing_key",
+				Value:      "static-fallback",
+			},
+		}},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), map[string]string{}))
+
+	require.Equal(t, 1, stub.calls)
+	assert.Contains(t, stub.prompts[0], "static-fallback", "prompt must show the static fallback when seeded key is absent")
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, static-fallback!", string(rendered), "static fallback must be applied when seeded key is absent")
 }

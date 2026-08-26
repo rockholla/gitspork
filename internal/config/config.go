@@ -29,6 +29,7 @@ var (
 // GitSporkConfig represents the config an upstream repo defines in .gitspork.yml
 type GitSporkConfig struct {
 	UpstreamOwned   []OwnedEntry                  `yaml:"upstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream"`
+	UpstreamOnly    []string                      `yaml:"upstream_only,omitempty" comment:"file patterns (https://github.com/gobwas/glob) for upstream paths that must never be synced to downstream; takes precedence over upstream_owned, downstream_owned, and shared_ownership — matched files are skipped with a warning"`
 	DownstreamOwned []OwnedEntry                  `yaml:"downstream_owned" comment:"file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path"`
 	SharedOwnership GitSporkConfigSharedOwnership `yaml:"shared_ownership" comment:"file patterns (https://github.com/gobwas/glob) that will be owned by both the upstream and downstream repos in some managed way"`
 	Templated       []GitSporkConfigTemplated     `yaml:"templated" comment:"list of instruction for templated source files in the upstream that should be rendered in some way to a location in the downstream"`
@@ -150,6 +151,7 @@ func GetGitSporkConfigSchema() (string, string, error) {
 			{Pattern: "upstream-owned.txt"},
 			{From: "upstream-owned-renamed-from.txt", To: "downstream-renamed-to.txt"},
 		},
+		UpstreamOnly: []string{"upstream-only-example/**"},
 		DownstreamOwned: []OwnedEntry{
 			{Pattern: "downstream-owned.md"},
 			{From: "downstream-owned-seed-from.md", To: "downstream-owned-seed-to.md"},

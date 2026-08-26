@@ -8,7 +8,9 @@ import (
 )
 
 // IntegratorSharedOwnershipStructuredPreferDownstream will process a list of structured data files to be co-owned by upstream and downstream, merged with preference/precdence in favor of downstream
-type IntegratorSharedOwnershipStructuredPreferDownstream struct{}
+type IntegratorSharedOwnershipStructuredPreferDownstream struct {
+	UpstreamOnly []string
+}
 
 var _ Integrator[string] = (*IntegratorSharedOwnershipStructuredPreferDownstream)(nil)
 
@@ -17,6 +19,10 @@ func (i *IntegratorSharedOwnershipStructuredPreferDownstream) Integrate(configur
 	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
 		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)
+	}
+	integrateFiles, err = filterUpstreamOnly(integrateFiles, i.UpstreamOnly, logger)
+	if err != nil {
+		return err
 	}
 	for _, integrateFile := range integrateFiles {
 		logger.Log("📝 gathering structured data for %s", integrateFile)

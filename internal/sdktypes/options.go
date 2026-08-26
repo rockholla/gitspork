@@ -70,6 +70,11 @@ type IntegrateLocalOptions struct {
 	// those inputs. Seeded values win over the on-disk input cache;
 	// from_destination_structured still wins when the path resolves in the
 	// existing rendered file. Nil or empty map means no seeding.
+	//
+	// Inputs declared with expect_seeded: true in .gitspork.yml require the
+	// named key to be present here; integration errors if the key is missing.
+	// prompt_default.from_seeded keys are best-effort: they enrich the prompt
+	// default when present but do not error when absent.
 	SeedInputs map[string]string
 }
 

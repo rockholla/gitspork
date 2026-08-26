@@ -47,14 +47,14 @@ templated: # list of instruction for templated source files in the upstream that
       name: "input_one" # Name of the input from that template from which to pull the value
   - name: "input_four" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_four?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)
+    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt, previous_input)
       path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting
   - name: "input_five" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_five?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
-      from_seeded: "mySeededDataKey" # if seed data provided, and the seed map contains this key, the prompt default will come from that value
+      from_seeded: "mySeededDataKey" # if seed data provided and the seed map contains this key, the prompt default comes from that value; falls back to 'value' if the key is absent or empty
   - name: "input_six" # name of the input as defined in the template like 'index .Inputs "[name]"'
-    expect_seeded: true # (optional one-of-required) whether or not we expect this input to have come from seed data
+    expect_seeded: true # (optional one-of-required) whether or not we expect this input to have come from seed data; only supported in integrate-local (and the SDK's IntegrateLocal), not remote integrate
   - name: "input_seven" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_seven?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input

@@ -107,7 +107,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					continue
 				}
 			}
-			if input.JSONDataPath != "" {
+			if input.ExpectSeeded {
+				val, ok := seedInputs[input.Name]
+				if !ok {
+					return fmt.Errorf("did not find %s in seeded inputs, but config says to expect it. Note that seeding data is only supported on local integrations, not remote ones.", input.Name)
+				}
+				capturedInputValues[templatedInstruction.Template][input.Name] = val
+			} else if input.JSONDataPath != "" {
 				jsonDataPath := filepath.Join(downstreamPath, input.JSONDataPath)
 				jsonData, err := os.ReadFile(jsonDataPath)
 				if err != nil {
@@ -123,16 +129,37 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" {
 				if templateData.Inputs[input.Name] == "" || forceRePrompt {
+					prompt := input.Prompt
+					promptDefaultVal := ""
+					if input.PromptDefault != nil {
+						if input.PromptDefault.FromSeeded != "" {
+							seededVal, ok := seedInputs[input.PromptDefault.FromSeeded]
+							if ok && seededVal != "" {
+								promptDefaultVal = seededVal
+							} else {
+								promptDefaultVal = input.PromptDefault.Value
+							}
+						} else {
+							promptDefaultVal = input.PromptDefault.Value
+						}
+						if promptDefaultVal != "" {
+							prompt = fmt.Sprintf("%s (default = %s)", input.Prompt, promptDefaultVal)
+						}
+					}
 					requestInputOpts := &inputpkg.RequestInputOptions{
 						Type:   inputpkg.SingleValue,
-						Prompt: input.Prompt,
+						Prompt: prompt,
 					}
 					requestInputResult, err := requestInputFn(requestInputOpts)
 					if err != nil {
 						return fmt.Errorf("error setting up prompt input: %v", err)
 					}
-					templateData.Inputs[input.Name] = requestInputResult.StringValue
-					capturedInputValues[templatedInstruction.Template][input.Name] = requestInputResult.StringValue
+					val := requestInputResult.StringValue
+					if val == "" && promptDefaultVal != "" {
+						val = promptDefaultVal
+					}
+					templateData.Inputs[input.Name] = val
+					capturedInputValues[templatedInstruction.Template][input.Name] = val
 				}
 			} else if input.PreviousInput != nil {
 				var previousInputErr error
@@ -150,7 +177,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
 				}
 			} else {
-				return fmt.Errorf("templated definition %s requires at least one of 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
+				return fmt.Errorf("templated definition %s requires at least one of 'expect_seeded', 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
 			}
 		}
 

@@ -76,14 +76,83 @@ func TestResolveStructuredPath_nonScalarAtPath_mapping(t *testing.T) {
 	assert.Equal(t, "", v)
 }
 
-func TestResolveStructuredPath_nonScalarAtPath_sequence(t *testing.T) {
+func TestResolveStructuredPath_sequenceAtPath_serializedAsJSON(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
 		[]byte("tags:\n  - a\n  - b\n"), 0644))
 	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "tags")
 	require.NoError(t, err)
-	assert.False(t, found, "a sequence node at the path must be treated as not-found, not an error")
+	assert.True(t, found, "a sequence node at the path must be serialized as a JSON array string")
+	assert.Equal(t, `["a","b"]`, v)
+}
+
+func TestResolveStructuredPath_sequenceAtPath_singleElement(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("refs:\n  - account_default\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "refs")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, `["account_default"]`, v)
+}
+
+func TestResolveStructuredPath_sequenceAtPath_jsonFile(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.json"),
+		[]byte(`{"items":["x","y","z"]}`), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.json"), "items")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, `["x","y","z"]`, v)
+}
+
+func TestResolveStructuredPath_bracketIndex_midPath(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("users:\n  - name: alice\n  - name: bob\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "users[1].name")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "bob", v)
+}
+
+func TestResolveStructuredPath_bracketIndex_terminalScalar(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("tags:\n  - alpha\n  - beta\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "tags[0]")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "alpha", v)
+}
+
+func TestResolveStructuredPath_bracketIndex_outOfRange(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("tags:\n  - alpha\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "tags[5]")
+	require.NoError(t, err)
+	assert.False(t, found)
 	assert.Equal(t, "", v)
+}
+
+func TestResolveStructuredPath_bracketIndex_onNonSequence(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("name: alice\n"), 0644))
+	v, found, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "name[0]")
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Equal(t, "", v)
+}
+
+func TestResolveStructuredPath_bracketIndex_malformedSegment(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"),
+		[]byte("tags:\n  - a\n"), 0644))
+	_, _, err := resolveStructuredPath(filepath.Join(dir, "config.yaml"), "tags[notanumber]")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid path segment")
 }
 
 func TestResolveStructuredPath_malformedYAML(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 const (
 	gitAttributesFileName = ".gitattributes"
 	gitsporkAttrMarker    = "# gitspork-managed: cache files under .gitspork/ are auto-generated"
-	gitsporkAttrPattern   = ".gitspork/**/*.json"
+	gitsporkAttrPattern   = ".gitspork/**/*"
 	gitsporkAttrFlags     = "linguist-generated=true -diff merge=binary"
 )
 
@@ -66,7 +66,7 @@ func filterGitsporkAttributeLines(content string) string {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == gitsporkAttrPattern {
+		if len(fields) > 0 && strings.HasPrefix(fields[0], ".gitspork/**/") {
 			continue
 		}
 		kept = append(kept, line)

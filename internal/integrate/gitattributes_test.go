@@ -112,6 +112,26 @@ func TestEnsureGitsporkAttributes_collapsesDuplicateGitsporkLines(t *testing.T) 
 	assert.Equal(t, 1, occurrences, "must collapse to exactly one gitspork pattern line")
 }
 
+func TestEnsureGitsporkAttributes_upgradesLegacyJsonPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gitattributes")
+	// Simulate the pattern written by a prior gitspork version.
+	original := "# gitspork-managed: cache files under .gitspork/ are auto-generated\n" +
+		".gitspork/**/*.json linguist-generated=true -diff merge=binary\n" +
+		"*.md linguist-language=Markdown\n"
+	require.NoError(t, os.WriteFile(path, []byte(original), 0644))
+
+	require.NoError(t, ensureGitsporkAttributes(dir))
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(t, string(got), ".gitspork/**/*.json", "stale JSON-scoped pattern must be removed")
+	assert.Contains(t, string(got), ".gitspork/**/*", "broad pattern must be present")
+	assert.Contains(t, string(got), "*.md linguist-language=Markdown", "user's rules must survive")
+	assert.Contains(t, string(got), gitsporkAttrMarker, "marker comment must be present")
+	assert.Contains(t, string(got), gitsporkAttrFlags, "current attributes must be present")
+}
+
 // splitLines splits by newline and drops the trailing empty entry produced by a trailing newline.
 func splitLines(s string) []string {
 	if s == "" {

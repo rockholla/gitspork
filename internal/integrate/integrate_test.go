@@ -220,6 +220,21 @@ func Test_LoadDownstreamState_migration(t *testing.T) {
 	assert.Equal(t, "", state.LastUpstreamRepoSubpath)
 }
 
+func Test_integrate_writesGitattributesWithNoTemplatedInstructions(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	// Minimal config — no templated instructions. Prior to this change,
+	// .gitattributes was only written when IntegratorTemplated ran.
+	cfg := &config.GitSporkConfig{}
+
+	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, sdktypes.NoopLogger()))
+
+	attrs, err := os.ReadFile(filepath.Join(downstreamDir, ".gitattributes"))
+	require.NoError(t, err)
+	assert.Contains(t, string(attrs), gitsporkAttrPattern)
+	assert.Contains(t, string(attrs), gitsporkAttrMarker)
+}
+
 func TestIntegrateForDriftCheck_honors_UpstreamCommit(t *testing.T) {
 	// Create a local upstream repo with two commits; verify that
 	// IntegrateForDriftCheck checks out the older commit (v1) when

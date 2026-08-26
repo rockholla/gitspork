@@ -23,7 +23,7 @@ func setupTemplatedFixture(t *testing.T, upstreamTemplateContent, downstreamJSON
 	return upstreamDir, downstreamDir
 }
 
-func TestIntegratorTemplated_writesConsolidatedCacheAndGitattributes(t *testing.T) {
+func TestIntegratorTemplated_writesConsolidatedCache(t *testing.T) {
 	upstreamDir, downstreamDir := setupTemplatedFixture(t,
 		`Hello, {{ index .Inputs "name" }}!`,
 		`{"name":"world"}`,
@@ -45,12 +45,6 @@ func TestIntegratorTemplated_writesConsolidatedCacheAndGitattributes(t *testing.
 	t.Run("no per-destination legacy file is written", func(t *testing.T) {
 		_, err := os.Stat(filepath.Join(downstreamDir, ".gitspork", "rendered.txt.json"))
 		assert.True(t, os.IsNotExist(err))
-	})
-	t.Run(".gitattributes marks cache as generated", func(t *testing.T) {
-		attrs, err := os.ReadFile(filepath.Join(downstreamDir, ".gitattributes"))
-		require.NoError(t, err)
-		assert.Contains(t, string(attrs), gitsporkAttrPattern)
-		assert.Contains(t, string(attrs), gitsporkAttrMarker)
 	})
 	t.Run("template rendered as expected", func(t *testing.T) {
 		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))

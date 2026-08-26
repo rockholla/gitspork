@@ -290,6 +290,10 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger sdktypes.Logger) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
+	if err := ensureGitsporkAttributes(downstreamPath); err != nil {
+		return fmt.Errorf("error ensuring .gitattributes for .gitspork/ content: %v", err)
+	}
+
 	preIntegrateMigrations := []*config.GitSporkConfigMigrationInstructions{}
 	postIntegrateMigrations := []*config.GitSporkConfigMigrationInstructions{}
 	queueMigrationIfNotCompleted := func(instructions *config.GitSporkConfigMigrationInstructions, queue []*config.GitSporkConfigMigrationInstructions) ([]*config.GitSporkConfigMigrationInstructions, error) {

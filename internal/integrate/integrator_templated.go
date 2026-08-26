@@ -40,9 +40,8 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 	if err != nil {
 		return fmt.Errorf("error loading templated inputs cache: %v", err)
 	}
-	// Nothing to do at all — no templated instructions and no lingering cache. Skip
-	// creating an empty cache file and .gitattributes on downstreams that don't use
-	// templated integration.
+	// Nothing to do at all — no templated instructions and no lingering cache.
+	// Skip creating an empty cache file on downstreams that don't use templated integration.
 	if len(templatedInstructions) == 0 && len(existingCache) == 0 {
 		return nil
 	}
@@ -223,9 +222,6 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 
 	if err := saveTemplatedInputs(downstreamPath, nextCache); err != nil {
 		return fmt.Errorf("error writing templated inputs cache: %v", err)
-	}
-	if err := ensureGitsporkAttributes(downstreamPath); err != nil {
-		return fmt.Errorf("error ensuring .gitattributes entry for templated cache: %v", err)
 	}
 	return nil
 }

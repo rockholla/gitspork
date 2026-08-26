@@ -9,7 +9,7 @@ import (
 
 const (
 	gitAttributesFileName = ".gitattributes"
-	gitsporkAttrMarker    = "# gitspork-managed: cache files under .gitspork/ are auto-generated"
+	gitsporkAttrMarker    = "# gitspork-managed: files under .gitspork/ are auto-generated"
 	gitsporkAttrPattern   = ".gitspork/**/*"
 	gitsporkAttrFlags     = "linguist-generated=true -diff merge=binary"
 )

@@ -54,7 +54,7 @@ func TestEnsureGitsporkAttributes_replacesStaleGitsporkLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gitattributes")
 	// simulate a previous gitspork version having written a different attribute set
-	original := "# gitspork-managed: cache files under .gitspork/ are auto-generated\n" +
+	original := "# gitspork-managed: files under .gitspork/ are auto-generated\n" +
 		".gitspork/**/*.json some=old flags\n" +
 		"*.md linguist-language=Markdown\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0644))
@@ -116,7 +116,7 @@ func TestEnsureGitsporkAttributes_upgradesLegacyJsonPattern(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gitattributes")
 	// Simulate the pattern written by a prior gitspork version.
-	original := "# gitspork-managed: cache files under .gitspork/ are auto-generated\n" +
+	original := "# gitspork-managed: files under .gitspork/ are auto-generated\n" +
 		".gitspork/**/*.json linguist-generated=true -diff merge=binary\n" +
 		"*.md linguist-language=Markdown\n"
 	require.NoError(t, os.WriteFile(path, []byte(original), 0644))

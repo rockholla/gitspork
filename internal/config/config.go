@@ -76,15 +76,15 @@ type GitSporkConfigTemplatedInput struct {
 	Name                      string                                             `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt                    string                                             `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
 	PromptDefault             *GitSporkConfigTemplatedPromptDefault              `yaml:"prompt_default,omitempty" comment:"(optional) allows to specify instruction on a default value for a prompt should the user not provide input"`
-	ExpectSeeded              bool                                               `yaml:"expect_seeded,omitempty" comment:"(optional one-of-required) whether or not we expect this input to have come from seed data"`
+	ExpectSeeded              bool                                               `yaml:"expect_seeded,omitempty" comment:"(optional one-of-required) whether or not we expect this input to have come from seed data; only supported in integrate-local (and the SDK's IntegrateLocal), not remote integrate"`
 	JSONDataPath              string                                             `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
 	PreviousInput             *GitSporkConfigTemplatedInputPrevious              `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
-	FromDestinationStructured *GitSporkConfigTemplatedInputDestinationStructured `yaml:"from_destination_structured,omitempty" comment:"(optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)"`
+	FromDestinationStructured *GitSporkConfigTemplatedInputDestinationStructured `yaml:"from_destination_structured,omitempty" comment:"(optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt, previous_input)"`
 }
 
 // GitSporkConfigTemplatedPromptDefault is instruction on how to fill in a default value for a prompt should the user not provide input
 type GitSporkConfigTemplatedPromptDefault struct {
-	FromSeeded string `yaml:"from_seeded,omitempty" comment:"if seed data provided, and the seed map contains this key, the prompt default will come from that value"`
+	FromSeeded string `yaml:"from_seeded,omitempty" comment:"if seed data provided and the seed map contains this key, the prompt default comes from that value; falls back to 'value' if the key is absent or empty"`
 	Value      string `yaml:"value,omitempty" comment:"static value to use as the default value should the user not provide input to the prompt"`
 }
 

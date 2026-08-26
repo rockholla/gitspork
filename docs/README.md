@@ -21,6 +21,8 @@ upstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by 
 - "upstream-owned.txt"
 - from: "upstream-owned-renamed-from.txt" # (rename) upstream source glob/path
   to: "downstream-renamed-to.txt" # (rename) downstream destination glob/path
+upstream_only: # file patterns (https://github.com/gobwas/glob) for upstream paths that must never be synced to downstream; takes precedence over upstream_owned, downstream_owned, and shared_ownership — matched files are skipped with a warning
+- "upstream-only-example/**"
 downstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the downstream once initially integrated; an entry may instead be a {from, to} map to seed a file at a different downstream path
 - "downstream-owned.md"
 - from: "downstream-owned-seed-from.md" # (rename) upstream source glob/path

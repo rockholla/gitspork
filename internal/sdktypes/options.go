@@ -63,6 +63,14 @@ type IntegrateLocalOptions struct {
 	// CacheTTL. Also settable via GITSPORK_NO_CACHE env var. Ignored for
 	// IntegrateLocalOptions because IntegrateLocal doesn't clone remotes.
 	NoCache bool
+
+	// SeedInputs provides pre-computed values for templated inputs, keyed by
+	// input name. A seeded value pre-populates the named input across all
+	// templated instructions in the run, preventing interactive prompts for
+	// those inputs. Seeded values win over the on-disk input cache;
+	// from_destination_structured still wins when the path resolves in the
+	// existing rendered file. Nil or empty map means no seeding.
+	SeedInputs map[string]string
 }
 
 // CheckDriftOptions configures a call to CheckDrift. Leave Upstreams empty

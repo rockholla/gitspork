@@ -84,8 +84,8 @@ type GitSporkConfigTemplatedInput struct {
 
 // GitSporkConfigTemplatedPromptDefault is instruction on how to fill in a default value for a prompt should the user not provide input
 type GitSporkConfigTemplatedPromptDefault struct {
-	FromSeeded string `yaml:"from_seeded" comment:"if seed data provided, and the seed map contains this key, the prompt default will come from that value"`
-	Value      string `yaml:"value" comment:"static value to use as the default value should the user not provide input to the prompt"`
+	FromSeeded string `yaml:"from_seeded,omitempty" comment:"if seed data provided, and the seed map contains this key, the prompt default will come from that value"`
+	Value      string `yaml:"value,omitempty" comment:"static value to use as the default value should the user not provide input to the prompt"`
 }
 
 // GitSporkConfigTemplatedInputPrevious allows for GitSporkConfigTemplatedInput to use a value that's already been captured in a previous template instruction as the input value

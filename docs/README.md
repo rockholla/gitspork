@@ -49,6 +49,16 @@ templated: # list of instruction for templated source files in the upstream that
     prompt: "What is the value of input_four?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (json_data_path, prompt, previous_input)
       path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting
+  - name: "input_five" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "What is the value of input_five?" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
+      from_seeded: "mySeededDataKey" # if seed data provided, and the seed map contains this key, the prompt default will come from that value
+  - name: "input_six" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    expect_seeded: true # (optional one-of-required) whether or not we expect this input to have come from seed data
+  - name: "input_seven" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "What is the value of input_seven?" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
+      value: "static-default-value" # static value to use as the default value should the user not provide input to the prompt
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 - template: "meta-seed.txt.go.tmpl" # source path of the Go template file to use in the upstream

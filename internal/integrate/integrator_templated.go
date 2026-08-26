@@ -32,7 +32,7 @@ type IntegratorTemplatedData struct {
 }
 
 // Integrate will process the gitspork files list to ensure integration b/w upstream -> downstream
-func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger) error {
+func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger, seedInputs map[string]string) error {
 	if err := migrateLegacyTemplatedCache(downstreamPath); err != nil {
 		return fmt.Errorf("error migrating legacy templated cache: %v", err)
 	}
@@ -81,6 +81,12 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 			// seed template inputs from consolidated cache so users aren't re-prompted
 			maps.Copy(templateData.Inputs, cached)
 			maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
+		}
+		// SeedInputs win over stale cache entries; from_destination_structured still wins
+		// over seeds (handled per-input below with continue).
+		if len(seedInputs) > 0 {
+			maps.Copy(templateData.Inputs, seedInputs)
+			maps.Copy(capturedInputValues[templatedInstruction.Template], seedInputs)
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {

@@ -87,7 +87,7 @@ type Integrator[T any] interface {
 // templates additionally needs the forceRePrompt flag to drive input
 // collection, so its Integrate signature cannot match the generic contract.
 type TemplatedIntegrator interface {
-	Integrate(instructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger) error
+	Integrate(instructions []config.GitSporkConfigTemplated, upstreamPath string, downstreamPath string, forceRePrompt bool, logger sdktypes.Logger, seedInputs map[string]string) error
 }
 
 // NormalizeUpstreamURL returns a canonical key for an upstream URL+subpath pair
@@ -261,7 +261,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		}
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.forDriftCheck, req.Logger); err != nil {
+	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.forDriftCheck, req.Logger, nil); err != nil {
 		return sdktypes.IntegratedUpstream{}, err
 	}
 
@@ -287,7 +287,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 	}, nil
 }
 
-func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger sdktypes.Logger) error {
+func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	if err := ensureGitsporkAttributes(downstreamPath); err != nil {
@@ -365,7 +365,7 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured templated resources from upstream to downstream"))
-	if err := (&IntegratorTemplated{}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger); err != nil {
+	if err := (&IntegratorTemplated{}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger, seedInputs); err != nil {
 		return fmt.Errorf("error integrating templated: %v", err)
 	}
 

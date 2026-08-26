@@ -35,7 +35,7 @@ func TestIntegratorTemplated_writesConsolidatedCache(t *testing.T) {
 			{Name: "name", JSONDataPath: "inputs.json"},
 		},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	t.Run("consolidated cache is written", func(t *testing.T) {
 		cache, err := loadTemplatedInputs(downstreamDir)
@@ -75,7 +75,7 @@ func TestIntegratorTemplated_migratesLegacyCacheOnRun(t *testing.T) {
 			{Name: "name", Prompt: "enter name"},
 		},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	t.Run("legacy file removed", func(t *testing.T) {
 		_, err := os.Stat(filepath.Join(downstreamDir, ".gitspork", "rendered.txt.json"))
@@ -111,7 +111,7 @@ func TestIntegratorTemplated_prunesStaleDestinationsFromCache(t *testing.T) {
 			{Name: "name", JSONDataPath: "inputs.json"},
 		},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	cache, err := loadTemplatedInputs(downstreamDir)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestIntegratorTemplated_noopWithEmptyInstructionsAndNoCache(t *testing.T) {
 	upstreamDir := t.TempDir()
 	downstreamDir := t.TempDir()
 
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(nil, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(nil, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	_, err := os.Stat(filepath.Join(downstreamDir, ".gitspork"))
 	assert.True(t, os.IsNotExist(err), "must not create .gitspork/ when there's nothing templated to cache")
@@ -187,7 +187,7 @@ func TestIntegratorTemplated_forceRePrompt(t *testing.T) {
 		// forceRePrompt.
 		upstream, downstream := setupPromptFixture(t, false, "")
 		stub := stubRequestInput(t, "fresh-value")
-		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger()))
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger(), nil))
 		assert.Equal(t, 1, stub.calls, "empty cache must trigger the prompt exactly once")
 		got, err := os.ReadFile(filepath.Join(downstream, "rendered.txt"))
 		require.NoError(t, err)
@@ -200,7 +200,7 @@ func TestIntegratorTemplated_forceRePrompt(t *testing.T) {
 		// here indicates a broken cache path.
 		upstream, downstream := setupPromptFixture(t, true, "cached-value")
 		stub := stubRequestInput(t, "SHOULD-NEVER-BE-USED")
-		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger()))
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, false, sdktypes.NoopLogger(), nil))
 		assert.Equal(t, 0, stub.calls,
 			"cached value must satisfy the prompt input — a call here indicates a broken cache lookup or accidental re-prompt")
 		got, err := os.ReadFile(filepath.Join(downstream, "rendered.txt"))
@@ -216,7 +216,7 @@ func TestIntegratorTemplated_forceRePrompt(t *testing.T) {
 		// entry for subsequent runs.
 		upstream, downstream := setupPromptFixture(t, true, "cached-value")
 		stub := stubRequestInput(t, "re-prompted-value")
-		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger()))
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger(), nil))
 
 		assert.Equal(t, 1, stub.calls,
 			"forceRePrompt=true must trigger the prompt exactly once even when a cached value exists")
@@ -244,7 +244,7 @@ func TestIntegratorTemplated_forceRePrompt(t *testing.T) {
 		// the prompt for fresh installs.
 		upstream, downstream := setupPromptFixture(t, false, "")
 		stub := stubRequestInput(t, "value")
-		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger()))
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstream, downstream, true, sdktypes.NoopLogger(), nil))
 		assert.Equal(t, 1, stub.calls)
 	})
 }
@@ -285,7 +285,7 @@ func TestIntegratorTemplated_previousInput_happyPath(t *testing.T) {
 			}},
 		},
 	}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	aOut, err := os.ReadFile(filepath.Join(downstreamDir, "a.txt"))
 	require.NoError(t, err)
@@ -319,7 +319,7 @@ func TestIntegratorTemplated_previousInput_templateNotFound(t *testing.T) {
 			},
 		}},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "previous template not found: nonexistent.txt.go.tmpl")
 	assert.Contains(t, err.Error(), "b.txt.go.tmpl",
@@ -360,7 +360,7 @@ func TestIntegratorTemplated_previousInput_forwardReferenceFails(t *testing.T) {
 			Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "shared", JSONDataPath: "inputs.json"}},
 		},
 	}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "previous template not found: b.txt.go.tmpl",
 		"previous_input must not resolve forward references — the earlier template can't see values from a template defined later")
@@ -397,7 +397,7 @@ func TestIntegratorTemplated_previousInput_inputNameNotFound(t *testing.T) {
 			}},
 		},
 	}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "previous input name missing_key not found in template a.txt.go.tmpl")
 	assert.Contains(t, err.Error(), "b.txt.go.tmpl",
@@ -440,7 +440,7 @@ func TestIntegratorTemplated_previousInput_jsonParseError_bailsBeforeNextTemplat
 			}},
 		},
 	}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "error parsing json_data_path file",
 		"the parse error, not the previous_input error, should surface (A fails before B runs)")
@@ -484,7 +484,7 @@ func TestIntegratorTemplated_structuredMerge_preferUpstream_YAML(t *testing.T) {
 		Destination: "config.yaml",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	merged, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -509,7 +509,7 @@ func TestIntegratorTemplated_structuredMerge_preferDownstream_YAML(t *testing.T)
 		Destination: "config.yaml",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferDownstream},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	m := readYAMLMap(t, filepath.Join(downstreamDir, "config.yaml"))
 	assert.Equal(t, "from-downstream", m["shared_key"], "downstream must win on collision")
@@ -529,7 +529,7 @@ func TestIntegratorTemplated_structuredMerge_preferUpstream_JSON(t *testing.T) {
 		Destination: "config.json",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	m := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
 	assert.Equal(t, "from-upstream", m["shared_key"])
@@ -549,7 +549,7 @@ func TestIntegratorTemplated_structuredMerge_preferDownstream_JSON(t *testing.T)
 		Destination: "config.json",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferDownstream},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	m := readJSONMap(t, filepath.Join(downstreamDir, "config.json"))
 	assert.Equal(t, "from-downstream", m["shared_key"])
@@ -574,7 +574,7 @@ func TestIntegratorTemplated_structuredMerge_skippedWhenDestinationAbsent(t *tes
 		Destination: "config.yaml",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: config.TemplatedMergeStructuredPreferUpstream},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -595,7 +595,7 @@ func TestIntegratorTemplated_structuredMerge_invalidMode(t *testing.T) {
 		Destination: "config.yaml",
 		Merged:      &config.GitSporkConfigTemplatedMerged{Structured: "prefer-neither"},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid templated merged.structured value")
 	assert.Contains(t, err.Error(), "prefer-neither")
@@ -634,7 +634,7 @@ func TestIntegratorTemplated_structuredMerge_noTmpDirLeak(t *testing.T) {
 	require.NoError(t, err)
 	beforeCount := countGitsporkPrefixed(before)
 
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	after, err := os.ReadDir(tmpRoot)
 	require.NoError(t, err)
@@ -676,7 +676,7 @@ func TestIntegratorTemplated_inputMissingAllSources(t *testing.T) {
 		Destination: "rendered.txt",
 		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "orphan_input"}},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "orphan_input",
 		"error must name the offending input so users can locate it in their .gitspork.yml")
@@ -699,7 +699,7 @@ func TestIntegratorTemplated_jsonDataPath_missingFile(t *testing.T) {
 		Destination: "rendered.txt",
 		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "error reading json_data_path",
 		"error must be the read-side wrapper so the user knows the file wasn't findable (vs a parse error)")
@@ -722,7 +722,7 @@ func TestIntegratorTemplated_missingTemplateFile(t *testing.T) {
 		Destination: "rendered.txt",
 		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "error reading upstream template",
 		"error must indicate the template read failed (vs a parse or render error)")
@@ -747,7 +747,7 @@ func TestIntegratorTemplated_templateParseError(t *testing.T) {
 		Destination: "rendered.txt",
 		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", JSONDataPath: "inputs.json"}},
 	}}
-	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger())
+	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "error parsing related template",
 		"template syntax errors must surface with a distinct wrapping message so users know to fix the template source (not the input data or destination)")
@@ -767,11 +767,11 @@ func TestIntegratorTemplated_repeatRunProducesByteIdenticalCache(t *testing.T) {
 			{Name: "name", JSONDataPath: "inputs.json"},
 		},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	firstBytes, err := os.ReadFile(filepath.Join(downstreamDir, ".gitspork", templatedInputsCacheFileName))
 	require.NoError(t, err)
 
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	secondBytes, err := os.ReadFile(filepath.Join(downstreamDir, ".gitspork", templatedInputsCacheFileName))
 	require.NoError(t, err)
 
@@ -801,7 +801,7 @@ func TestIntegratorTemplated_fromDestinationStructured_yamlHappyPath(t *testing.
 			},
 		}},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	assert.Equal(t, 0, stub.calls, "prompt must not fire when structured read succeeds")
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -834,7 +834,7 @@ func TestIntegratorTemplated_fromDestinationStructured_jsonHappyPath(t *testing.
 			},
 		}},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	assert.Equal(t, 0, stub.calls, "prompt must not fire when JSON structured read succeeds")
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.json"))
 	require.NoError(t, err)
@@ -868,7 +868,7 @@ func TestIntegratorTemplated_fromDestinationStructured_forceRePromptSkipsRead(t 
 			},
 		}},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger(), nil))
 	assert.Equal(t, 1, stub.calls, "forceRePrompt must skip the structured read and fire the prompt exactly once")
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -897,7 +897,7 @@ func TestIntegratorTemplated_fromDestinationStructured_missingFilePromptFallback
 			},
 		}},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	assert.Equal(t, 1, stub.calls, "prompt must fire when destination file is absent")
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -927,7 +927,7 @@ func TestIntegratorTemplated_fromDestinationStructured_pathNotFoundPromptFallbac
 			},
 		}},
 	}}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 	assert.Equal(t, 1, stub.calls, "prompt must fire when path is absent from destination file")
 	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
 	require.NoError(t, err)
@@ -971,10 +971,93 @@ func TestIntegratorTemplated_fromDestinationStructured_valueAvailableToPreviousI
 			}},
 		},
 	}
-	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger()))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
 
 	bOut, err := os.ReadFile(filepath.Join(downstreamDir, "b.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(bOut), "shared-service",
 		"from_destination_structured value must be accessible to previous_input in a later template")
+}
+
+// TestIntegratorTemplated_seedInputs_suppliesPromptInputsWithoutPrompting verifies
+// that values provided via seedInputs pre-populate prompt inputs, preventing
+// interactive prompts from firing.
+func TestIntegratorTemplated_seedInputs_suppliesPromptInputsWithoutPrompting(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", Prompt: "enter name"}},
+	}}
+	seeds := map[string]string{"name": "seeded-value"}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+	assert.Equal(t, 0, stub.calls, "prompt must not fire when a seed value satisfies the input")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, seeded-value!", string(got))
+}
+
+// TestIntegratorTemplated_seedInputs_winsOverCache verifies that a seed value
+// takes precedence over a stale on-disk cached value.
+func TestIntegratorTemplated_seedInputs_winsOverCache(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`Hello, {{ index .Inputs "name" }}!`), 0644))
+	require.NoError(t, saveTemplatedInputs(downstreamDir, map[string]map[string]string{
+		"rendered.txt": {"name": "cached-value"},
+	}))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs:      []config.GitSporkConfigTemplatedInput{{Name: "name", Prompt: "enter name"}},
+	}}
+	seeds := map[string]string{"name": "fresh-seed"}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+	assert.Equal(t, 0, stub.calls, "seeded value must win over cache without prompting")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, fresh-seed!", string(got), "seed value must win over stale cache entry")
+}
+
+// TestIntegratorTemplated_seedInputs_fromDestinationStructuredStillWins verifies
+// that from_destination_structured takes precedence over a seed value when the
+// destination file exists and the path resolves.
+func TestIntegratorTemplated_seedInputs_fromDestinationStructuredStillWins(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte("service: {{ index .Inputs \"service_name\" }}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "config.yaml"),
+		[]byte("service: destination-value\n"), 0644))
+
+	stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "config.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:   "service_name",
+			Prompt: "Service name?",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{
+				Path: "service",
+			},
+		}},
+	}}
+	seeds := map[string]string{"service_name": "seed-value"}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+	assert.Equal(t, 0, stub.calls, "neither prompt nor seed should fire when from_destination_structured resolves")
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "config.yaml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "destination-value",
+		"from_destination_structured must win over seed value")
 }

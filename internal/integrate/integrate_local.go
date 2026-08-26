@@ -55,7 +55,7 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 		if err != nil {
 			return result, err
 		}
-		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger); err != nil {
+		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger, opts.SeedInputs); err != nil {
 			return result, err
 		}
 		result.Upstreams = append(result.Upstreams, sdktypes.IntegratedUpstream{

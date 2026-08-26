@@ -1241,6 +1241,80 @@ func TestIntegratorTemplated_promptDefault_fromSeeded_usesSeededValue(t *testing
 	assert.Equal(t, "Hello, seeded-default!", string(rendered), "seeded default must be applied when user enters nothing")
 }
 
+// TestIntegratorTemplated_promptDefault_fromSeeded_sameKeyAsInputName reproduces
+// the bug where from_seeded references a key whose name matches the input name.
+// Seeds are bulk-copied into templateData.Inputs before the per-input loop, so
+// when the input and seeded key share a name the pre-populated value previously
+// skipped the prompt entirely. The correct behavior: prompt fires with the seeded
+// value as the default, and the user can accept or override it.
+func TestIntegratorTemplated_promptDefault_fromSeeded_sameKeyAsInputName(t *testing.T) {
+	makeFixture := func(t *testing.T) (string, string) {
+		t.Helper()
+		upstreamDir := t.TempDir()
+		downstreamDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+			[]byte(`Bucket: {{ index .Inputs "stateBucketName" }}`), 0644))
+		return upstreamDir, downstreamDir
+	}
+	makeInstructions := func() []config.GitSporkConfigTemplated {
+		return []config.GitSporkConfigTemplated{{
+			Template:    "template.txt",
+			Destination: "rendered.txt",
+			Inputs: []config.GitSporkConfigTemplatedInput{{
+				Name:   "stateBucketName",
+				Prompt: "S3 bucket name:",
+				PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{
+					FromSeeded: "stateBucketName",
+				},
+			}},
+		}}
+	}
+	seeds := map[string]string{"stateBucketName": "my-terraform-state-bucket"}
+
+	t.Run("prompt fires with seeded default when user accepts (empty return)", func(t *testing.T) {
+		upstreamDir, downstreamDir := makeFixture(t)
+		stub := stubRequestInput(t, "")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(makeInstructions(), upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+		require.Equal(t, 1, stub.calls, "prompt must fire even when the seeded key shares the input name")
+		assert.Contains(t, stub.prompts[0], "my-terraform-state-bucket", "prompt must display the seeded value as default")
+		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Bucket: my-terraform-state-bucket", string(rendered),
+			"seeded value must be used when user enters nothing")
+	})
+
+	t.Run("user override wins over seeded default", func(t *testing.T) {
+		upstreamDir, downstreamDir := makeFixture(t)
+		stub := stubRequestInput(t, "user-override-bucket")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(makeInstructions(), upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+		require.Equal(t, 1, stub.calls)
+		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Bucket: user-override-bucket", string(rendered),
+			"user's non-empty input must win over the seeded default")
+	})
+
+	t.Run("key present in cache skips prompt; seed still wins over cache value", func(t *testing.T) {
+		// The key was cached from a prior interactive run, so cachedInputKeys["stateBucketName"]
+		// is true — the prompt must not fire. Seeds still overwrite the stale cache
+		// value per the existing seeds-win-over-cache contract.
+		upstreamDir, downstreamDir := makeFixture(t)
+		require.NoError(t, saveTemplatedInputs(downstreamDir, map[string]map[string]string{
+			"rendered.txt": {"stateBucketName": "previously-entered-bucket"},
+		}))
+		stub := stubRequestInput(t, "SHOULD-NOT-BE-CALLED")
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(makeInstructions(), upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+
+		assert.Equal(t, 0, stub.calls, "prompt must not fire when the key was answered in a prior run")
+		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "Bucket: my-terraform-state-bucket", string(rendered),
+			"seed overwrites stale cache per seeds-win-over-cache contract")
+	})
+}
+
 // TestIntegratorTemplated_promptDefault_fromSeeded_fallsBackToValue verifies that
 // when from_seeded is set but the key is absent from seedInputs, the static
 // Value field is used as the fallback default.

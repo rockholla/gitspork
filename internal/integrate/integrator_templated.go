@@ -82,6 +82,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 			maps.Copy(templateData.Inputs, cached)
 			maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 		}
+		// Snapshot which keys came from cache before seeds overwrite them.
+		// Used below to distinguish "cached user answer" from "seed-supplied value"
+		// for inputs that use prompt_default.from_seeded (which must still prompt).
+		cachedInputKeys := make(map[string]bool, len(templateData.Inputs))
+		for k := range templateData.Inputs {
+			cachedInputKeys[k] = true
+		}
 		// SeedInputs win over stale cache entries; from_destination_structured still wins
 		// over seeds (handled per-input below with continue).
 		if len(seedInputs) > 0 {
@@ -128,7 +135,8 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				// templated instructions in this run.
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" {
-				if templateData.Inputs[input.Name] == "" || forceRePrompt {
+				hasSeededDefault := input.PromptDefault != nil && input.PromptDefault.FromSeeded != ""
+				if templateData.Inputs[input.Name] == "" || forceRePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
 					prompt := input.Prompt
 					promptDefaultVal := ""
 					if input.PromptDefault != nil {

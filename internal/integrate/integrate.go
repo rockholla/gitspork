@@ -692,7 +692,7 @@ func filterUpstreamOnly(files []string, patterns []string, logger sdktypes.Logge
 		excluded := false
 		for _, g := range globs {
 			if g.Match(f) {
-				logger.Log("⚠️ skipping %s — excluded by upstream_only", f)
+				logger.Log("⚠️  skipping %s — excluded by upstream_only", f)
 				excluded = true
 				break
 			}

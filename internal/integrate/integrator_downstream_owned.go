@@ -10,19 +10,25 @@ import (
 )
 
 // IntegratorDownstreamOwned will process a list of files to be managed as owned by the downstream gitspork repo, just initially bootstrapped by the upstream
-type IntegratorDownstreamOwned struct{}
+type IntegratorDownstreamOwned struct {
+	UpstreamOnly []string
+}
 
 var _ Integrator[config.OwnedEntry] = (*IntegratorDownstreamOwned)(nil)
 
 // Integrate seeds each downstream-owned file from the upstream a single time,
 // applying rename entries' destination resolution. A file is only copied when
 // its downstream destination does not already exist — the downstream owns it
-// thereafter.
+// thereafter. Files matching any upstream_only pattern are skipped with a warning.
 func (i *IntegratorDownstreamOwned) Integrate(entries []config.OwnedEntry, upstreamPath string, downstreamPath string, logger sdktypes.Logger) error {
 	for _, entry := range entries {
 		integrateFiles, err := getIntegrateFiles(upstreamPath, []string{entry.SourcePattern()})
 		if err != nil {
 			return fmt.Errorf("error determining the list of files to integrate in %s from %q: %v", upstreamPath, entry.SourcePattern(), err)
+		}
+		integrateFiles, err = filterUpstreamOnly(integrateFiles, i.UpstreamOnly, logger)
+		if err != nil {
+			return err
 		}
 		for _, integrateFile := range integrateFiles {
 			dest := entry.ResolveDest(integrateFile)

@@ -22,7 +22,9 @@ const (
 )
 
 // IntegratorSharedOwnershipMerged will process a list of files to have shared ownership and generic merging based on blocks defined as owned by the upstream repo
-type IntegratorSharedOwnershipMerged struct{}
+type IntegratorSharedOwnershipMerged struct {
+	UpstreamOnly []string
+}
 
 var _ Integrator[string] = (*IntegratorSharedOwnershipMerged)(nil)
 
@@ -37,6 +39,10 @@ func (i *IntegratorSharedOwnershipMerged) Integrate(configuredGlobPatterns []str
 	integrateFiles, err := getIntegrateFiles(upstreamPath, configuredGlobPatterns)
 	if err != nil {
 		return fmt.Errorf("error determining the list of files to integrate in %s from %v: %v", upstreamPath, configuredGlobPatterns, err)
+	}
+	integrateFiles, err = filterUpstreamOnly(integrateFiles, i.UpstreamOnly, logger)
+	if err != nil {
+		return err
 	}
 	for _, integrateFile := range integrateFiles {
 		if err := mergeOneSharedOwnershipFile(upstreamPath, downstreamPath, integrateFile, logger); err != nil {

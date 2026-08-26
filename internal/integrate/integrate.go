@@ -341,28 +341,30 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 		}
 	}
 
+	upstreamOnly := gitSporkConfig.UpstreamOnly
+
 	logger.Log("%s", greenBold.Sprint("integrating configured upstream-owned resources from upstream to downstream"))
-	if err := (&IntegratorUpstreamOwned{}).Integrate(gitSporkConfig.UpstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorUpstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.UpstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating upstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured downstream-owned resources from upstream to downstream"))
-	if err := (&IntegratorDownstreamOwned{}).Integrate(gitSporkConfig.DownstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorDownstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.DownstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating downstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership generic resources to merge b/w upstream and downstream"))
-	if err := (&IntegratorSharedOwnershipMerged{}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipMerged{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.merged: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
 	}
 
@@ -670,6 +672,38 @@ func resolveUpstreamVersionRef(url string, auth authInfo, version string) (plumb
 		return branchRef, nil
 	}
 	return "", fmt.Errorf("upstream version %q not found as branch or tag on remote", version)
+}
+
+// filterUpstreamOnly removes files whose relative paths match any upstream_only
+// pattern, logging a warning for each exclusion. Globs are compiled once per
+// call. An uncompilable pattern returns an error immediately.
+func filterUpstreamOnly(files []string, patterns []string, logger sdktypes.Logger) ([]string, error) {
+	if len(patterns) == 0 {
+		return files, nil
+	}
+	globs := make([]glob.Glob, len(patterns))
+	for i, p := range patterns {
+		g, err := glob.Compile(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid upstream_only pattern %q: %v", p, err)
+		}
+		globs[i] = g
+	}
+	kept := files[:0:0]
+	for _, f := range files {
+		excluded := false
+		for _, g := range globs {
+			if g.Match(f) {
+				logger.Log("⚠️  skipping %s — excluded by upstream_only", f)
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			kept = append(kept, f)
+		}
+	}
+	return kept, nil
 }
 
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {

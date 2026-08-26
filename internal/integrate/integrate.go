@@ -339,28 +339,30 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 		}
 	}
 
+	upstreamOnly := gitSporkConfig.UpstreamOnly
+
 	logger.Log("%s", greenBold.Sprint("integrating configured upstream-owned resources from upstream to downstream"))
-	if err := (&IntegratorUpstreamOwned{}).Integrate(gitSporkConfig.UpstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorUpstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.UpstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating upstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured downstream-owned resources from upstream to downstream"))
-	if err := (&IntegratorDownstreamOwned{}).Integrate(gitSporkConfig.DownstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorDownstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.DownstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating downstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership generic resources to merge b/w upstream and downstream"))
-	if err := (&IntegratorSharedOwnershipMerged{}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipMerged{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.merged: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
-	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
+	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
 		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
 	}
 

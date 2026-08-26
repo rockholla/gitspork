@@ -15,7 +15,7 @@ const (
 )
 
 // ensureGitsporkAttributes writes or updates a .gitattributes file at atDir so that
-// gitspork's cache files (.gitspork/**/*.json) are marked as generated for git and
+// gitspork's managed files under .gitspork/**/* are marked as generated for git and
 // GitHub tooling. The operation is idempotent: if the file already contains our
 // exact managed block, it is left untouched.
 //

@@ -129,7 +129,7 @@ func TestIntegratorTemplated_noopWithEmptyInstructionsAndNoCache(t *testing.T) {
 	_, err := os.Stat(filepath.Join(downstreamDir, ".gitspork"))
 	assert.True(t, os.IsNotExist(err), "must not create .gitspork/ when there's nothing templated to cache")
 	_, err = os.Stat(filepath.Join(downstreamDir, ".gitattributes"))
-	assert.True(t, os.IsNotExist(err), "must not create .gitattributes on a downstream with no templated integration")
+	assert.True(t, os.IsNotExist(err), "IntegratorTemplated must not create .gitattributes — that is integrate()'s responsibility")
 }
 
 // stubRequestInput replaces requestInputFn with a counting stub for the

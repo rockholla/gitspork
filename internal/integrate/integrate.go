@@ -670,6 +670,38 @@ func resolveUpstreamVersionRef(url string, auth authInfo, version string) (plumb
 	return "", fmt.Errorf("upstream version %q not found as branch or tag on remote", version)
 }
 
+// filterUpstreamOnly removes files whose relative paths match any upstream_only
+// pattern, logging a warning for each exclusion. Globs are compiled once per
+// call. An uncompilable pattern returns an error immediately.
+func filterUpstreamOnly(files []string, patterns []string, logger sdktypes.Logger) ([]string, error) {
+	if len(patterns) == 0 {
+		return files, nil
+	}
+	globs := make([]glob.Glob, len(patterns))
+	for i, p := range patterns {
+		g, err := glob.Compile(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid upstream_only pattern %q: %v", p, err)
+		}
+		globs[i] = g
+	}
+	kept := files[:0:0]
+	for _, f := range files {
+		excluded := false
+		for _, g := range globs {
+			if g.Match(f) {
+				logger.Log("⚠️ skipping %s — excluded by upstream_only", f)
+				excluded = true
+				break
+			}
+		}
+		if !excluded {
+			kept = append(kept, f)
+		}
+	}
+	return kept, nil
+}
+
 func getIntegrateFiles(inDir string, configuredGlobPatterns []string) ([]string, error) {
 	allFiles := []string{}
 	err := filepath.Walk(inDir, func(path string, info os.FileInfo, err error) error {

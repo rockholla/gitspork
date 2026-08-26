@@ -487,6 +487,31 @@ func TestCheckDrift_selfIntegrationBlockedByOriginURL(t *testing.T) {
 		"CheckDrift must catch by-origin self-integration against the caller repo, before provisioning scratch clone")
 }
 
+func TestCheckDrift_doesNotReportGitsporkAttributesAsDrift(t *testing.T) {
+	// Regression: a downstream integrated before ensureGitsporkAttributes was
+	// introduced has no .gitattributes in HEAD. CheckDrift must not flag the
+	// gitspork-managed block as drift when re-integration writes it.
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	downstreamDir := testharness.EmptyDownstream(t)
+	testIntegrateAndCommitBaseline(t, upstreamDir, downstreamDir)
+
+	// Simulate pre-feature state: remove .gitattributes so HEAD lacks it,
+	// mirroring a downstream that was integrated before this feature existed.
+	require.NoError(t, os.Remove(filepath.Join(downstreamDir, ".gitattributes")))
+	repo, err := gogit.PlainOpen(downstreamDir)
+	require.NoError(t, err)
+	testharness.CommitAllWithMessage(t, repo, "simulate pre-gitattributes-feature state")
+
+	report, err := CheckDrift(&sdktypes.CheckDriftOptions{
+		Logger:             logutil.New(),
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err, "gitspork-managed .gitattributes must not be reported as drift")
+	require.NotNil(t, report)
+	assert.False(t, report.HasDrift)
+	assert.Empty(t, report.Files)
+}
+
 // snapshotWorktree wraps listWorktreeFiles (the production walker used by
 // CheckDrift for file attribution) so the invariant test measures the caller's
 // worktree the same way production code does. If listWorktreeFiles ever

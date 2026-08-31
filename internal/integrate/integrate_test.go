@@ -641,19 +641,48 @@ func Test_materializeFS_preservesExecutableBit(t *testing.T) {
 	})
 }
 
-func Test_materializeFS_zeroModeDefaultsToReadable(t *testing.T) {
-	// fstest.MapFS leaves Mode: 0 when not explicitly set. materializeFS must
-	// not write mode-0 files (which are unreadable), but fall back to 0644.
-	fsys := fstest.MapFS{
-		"config.yml": {Data: []byte("key: value\n")}, // Mode intentionally unset (zero)
-	}
+func Test_materializeFS_lowModeFallback(t *testing.T) {
+	// Both fstest.MapFS (Mode: 0 when unset) and embed.FS (always 0444) lack
+	// the owner-write bit. materializeFS must ensure materialized files are at
+	// least 0644 so downstream writes (syncFile, merges, etc.) can succeed.
+	t.Run("mode-0 file gets 0644 floor", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"config.yml": {Data: []byte("key: value\n")}, // Mode intentionally unset (zero)
+		}
+		dir, err := materializeFS(fsys)
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
 
-	dir, err := materializeFS(fsys)
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+		info, err := os.Stat(filepath.Join(dir, "config.yml"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0644), info.Mode().Perm(), "zero-mode file must land as 0644")
+	})
 
-	info, err := os.Stat(filepath.Join(dir, "config.yml"))
-	require.NoError(t, err)
-	assert.NotEqual(t, os.FileMode(0), info.Mode().Perm(), "mode-0 file must not be written as unreadable")
-	assert.NotZero(t, info.Mode()&0400, "owner read bit must be set so the file is readable")
+	t.Run("embed.FS-style 0444 file gets owner-write bit added", func(t *testing.T) {
+		// embed.FS reports 0444 for all regular files. Materializing as 0444
+		// produces a read-only downstream file, which breaks subsequent syncs.
+		fsys := fstest.MapFS{
+			"Makefile": {Data: []byte("all:\n\techo hi\n"), Mode: 0444},
+		}
+		dir, err := materializeFS(fsys)
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		info, err := os.Stat(filepath.Join(dir, "Makefile"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0644), info.Mode().Perm(), "0444 file must have owner-write added")
+	})
+
+	t.Run("executable 0755 file keeps execute bit", func(t *testing.T) {
+		fsys := fstest.MapFS{
+			"script.sh": {Data: []byte("#!/bin/sh\n"), Mode: 0755},
+		}
+		dir, err := materializeFS(fsys)
+		require.NoError(t, err)
+		defer os.RemoveAll(dir)
+
+		info, err := os.Stat(filepath.Join(dir, "script.sh"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "executable mode must be preserved")
+	})
 }

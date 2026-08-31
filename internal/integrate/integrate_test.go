@@ -618,3 +618,24 @@ func TestIntegrateLocal_blocksSelfIntegrationByPath(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, sdktypes.ErrSelfIntegration))
 }
+
+func Test_materializeFS_preservesExecutableBit(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "script.sh"), []byte("#!/bin/sh\necho hello\n"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "regular.txt"), []byte("just text\n"), 0644))
+
+	dir, err := materializeFS(os.DirFS(srcDir))
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	t.Run("executable file retains executable bit", func(t *testing.T) {
+		info, err := os.Stat(filepath.Join(dir, "script.sh"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+	})
+	t.Run("non-executable file stays non-executable", func(t *testing.T) {
+		info, err := os.Stat(filepath.Join(dir, "regular.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0644), info.Mode().Perm())
+	})
+}

@@ -166,8 +166,16 @@ func mergeOneSharedOwnershipFile(upstreamPath, downstreamPath, integrateFile str
 		return fmt.Errorf("error scanning/buffering downstream file %s: %v", integrateFile, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(downstreamPath, integrateFile), []byte(mergedContent), 0644); err != nil {
+	upstreamStat, err := os.Stat(filepath.Join(upstreamPath, integrateFile))
+	if err != nil {
+		return fmt.Errorf("error statting upstream file %s: %v", integrateFile, err)
+	}
+	dst := filepath.Join(downstreamPath, integrateFile)
+	if err := os.WriteFile(dst, []byte(mergedContent), 0644); err != nil {
 		return fmt.Errorf("error writing merged file %s to downstream: %v", integrateFile, err)
+	}
+	if err := os.Chmod(dst, upstreamStat.Mode().Perm()); err != nil {
+		return fmt.Errorf("error setting mode on merged file %s: %v", integrateFile, err)
 	}
 	return nil
 }

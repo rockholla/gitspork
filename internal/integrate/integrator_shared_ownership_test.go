@@ -329,3 +329,23 @@ func TestIntegratorSharedOwnershipMerged(t *testing.T) {
 		assert.Contains(t, string(got), "orphan second block")
 	})
 }
+
+func TestIntegratorSharedOwnershipMerged_preservesUpstreamFileMode(t *testing.T) {
+	beginMarker := "# ::gitspork::begin-upstream-owned-block"
+	endMarker := "# ::gitspork::end-upstream-owned-block"
+
+	upstream := beginMarker + "\nupstream content\n" + endMarker + "\n"
+	downstream := beginMarker + "\nstale content\n" + endMarker + "\n"
+
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "script.sh"), []byte(upstream), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "script.sh"), []byte(downstream), 0644))
+
+	integrator := &IntegratorSharedOwnershipMerged{}
+	require.NoError(t, integrator.Integrate([]string{"script.sh"}, upstreamDir, downstreamDir, sdktypes.NoopLogger()))
+
+	info, err := os.Stat(filepath.Join(downstreamDir, "script.sh"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "merged file must inherit the upstream file mode")
+}

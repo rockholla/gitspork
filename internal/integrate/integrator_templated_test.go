@@ -724,8 +724,8 @@ func TestIntegratorTemplated_missingTemplateFile(t *testing.T) {
 	}}
 	err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "error reading upstream template",
-		"error must indicate the template read failed (vs a parse or render error)")
+	assert.Contains(t, err.Error(), "upstream template",
+		"error must indicate the template could not be accessed (vs a parse or render error)")
 	assert.Contains(t, err.Error(), "missing-template.txt",
 		"error must name the missing template so the user can create it or fix the config path")
 }
@@ -1344,4 +1344,21 @@ func TestIntegratorTemplated_promptDefault_fromSeeded_fallsBackToValue(t *testin
 	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, static-fallback!", string(rendered), "static fallback must be applied when seeded key is absent")
+}
+
+func TestIntegratorTemplated_preservesExecutableBitFromTemplate(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "script.sh"), []byte("#!/bin/sh\necho hello\n"), 0755))
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "script.sh",
+		Destination: "rendered.sh",
+		Inputs:      []config.GitSporkConfigTemplatedInput{},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+
+	info, err := os.Stat(filepath.Join(downstreamDir, "rendered.sh"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "rendered template must inherit the upstream template file mode")
 }

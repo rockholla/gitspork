@@ -81,6 +81,10 @@ func materializeFS(fsys fs.FS) (string, error) {
 		if d.IsDir() {
 			return os.MkdirAll(dest, 0755)
 		}
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
 		data, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
@@ -88,7 +92,7 @@ func materializeFS(fsys fs.FS) (string, error) {
 		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 			return fmt.Errorf("creating parent dir for %s: %w", dest, err)
 		}
-		return os.WriteFile(dest, data, 0644)
+		return os.WriteFile(dest, data, info.Mode().Perm())
 	}); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("writing FS to temp dir: %w", err)

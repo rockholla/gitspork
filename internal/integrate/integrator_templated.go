@@ -190,7 +190,12 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 
 		// now that we have our template data populated we can actually render the template from upstream to the downstream destination
-		templateFileBytes, err := os.ReadFile(filepath.Join(upstreamPath, templatedInstruction.Template))
+		templateFilePath := filepath.Join(upstreamPath, templatedInstruction.Template)
+		templateFileStat, err := os.Stat(templateFilePath)
+		if err != nil {
+			return fmt.Errorf("error statting upstream template %s: %v", templatedInstruction.Template, err)
+		}
+		templateFileBytes, err := os.ReadFile(templateFilePath)
 		if err != nil {
 			return fmt.Errorf("error reading upstream template %s: %v", templatedInstruction.Template, err)
 		}
@@ -248,6 +253,9 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				if err := writeStructuredData(merged, structuredDataType, fullDestinationPath); err != nil {
 					return fmt.Errorf("error writing merged structured data in templated instruction from %s: %v", templatedInstruction.Template, err)
 				}
+				if err := os.Chmod(fullDestinationPath, templateFileStat.Mode().Perm()); err != nil {
+					return fmt.Errorf("error setting mode on rendered template %s: %v", templatedInstruction.Destination, err)
+				}
 				return nil
 			}(); err != nil {
 				return err
@@ -255,6 +263,9 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		} else {
 			if err := os.WriteFile(fullDestinationPath, renderedBytes.Bytes(), 0644); err != nil {
 				return fmt.Errorf("error writing rendered templated file from instruction %s: %v", templatedInstruction.Destination, err)
+			}
+			if err := os.Chmod(fullDestinationPath, templateFileStat.Mode().Perm()); err != nil {
+				return fmt.Errorf("error setting mode on rendered template %s: %v", templatedInstruction.Destination, err)
 			}
 		}
 

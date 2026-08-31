@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
@@ -617,4 +618,42 @@ func TestIntegrateLocal_blocksSelfIntegrationByPath(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, sdktypes.ErrSelfIntegration))
+}
+
+func Test_materializeFS_preservesExecutableBit(t *testing.T) {
+	srcDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "script.sh"), []byte("#!/bin/sh\necho hello\n"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "regular.txt"), []byte("just text\n"), 0644))
+
+	dir, err := materializeFS(os.DirFS(srcDir))
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	t.Run("executable file retains executable bit", func(t *testing.T) {
+		info, err := os.Stat(filepath.Join(dir, "script.sh"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+	})
+	t.Run("non-executable file stays non-executable", func(t *testing.T) {
+		info, err := os.Stat(filepath.Join(dir, "regular.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0644), info.Mode().Perm())
+	})
+}
+
+func Test_materializeFS_zeroModeDefaultsToReadable(t *testing.T) {
+	// fstest.MapFS leaves Mode: 0 when not explicitly set. materializeFS must
+	// not write mode-0 files (which are unreadable), but fall back to 0644.
+	fsys := fstest.MapFS{
+		"config.yml": {Data: []byte("key: value\n")}, // Mode intentionally unset (zero)
+	}
+
+	dir, err := materializeFS(fsys)
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	info, err := os.Stat(filepath.Join(dir, "config.yml"))
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), info.Mode().Perm(), "mode-0 file must not be written as unreadable")
+	assert.NotZero(t, info.Mode()&0400, "owner read bit must be set so the file is readable")
 }

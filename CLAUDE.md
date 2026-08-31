@@ -86,6 +86,10 @@ Run `make release` from the `main` branch. The script validates semver (requires
 
 Pre-release tags (e.g. `v1.2.3-rc.1`) can be pushed from any branch.
 
+## Git workflow
+
+Always work on a feature branch — never commit directly to `main`. If the current branch is `main` when starting a task, create a new branch first. This applies to bug fixes, follow-up commits, and regressions discovered after a PR merges.
+
 ## Key design decisions worth knowing
 
 **Upstream delta propagation:** When `integrate` runs against a new upstream commit, `computeUpstreamDelta` (in `internal/integrate/upstream_delta.go`) diffs `prevHash..newHash` in the upstream repo and applies file deletions/renames to the downstream before the normal integration logic runs. Critically, it builds managed globs from the **previous commit's `.gitspork.yml`** (with fallback to new config), not the new one — this ensures files removed by `gitspork rm` (which strips them from config in the same commit) are still recognized as managed and propagated as deletions.

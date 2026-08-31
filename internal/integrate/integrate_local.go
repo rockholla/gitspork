@@ -85,13 +85,13 @@ func materializeFS(fsys fs.FS) (string, error) {
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
-		perm := info.Mode().Perm()
-		if perm == 0 {
-			// fs.FS implementations like fstest.MapFS leave Mode unset (zero);
-			// fall back to a safe readable default rather than writing an
-			// inaccessible file.
-			perm = 0644
-		}
+		// OR with 0644 so materialized files always have owner read+write.
+		// embed.FS reports 0444 (no write bit) and fstest.MapFS leaves Mode
+		// unset (0) — both produce read-only or inaccessible files in the temp
+		// dir, which syncFile then propagates to the downstream. OR-ing 0644
+		// adds the missing bits without removing any execute bits that a real
+		// filesystem source (e.g. os.DirFS) may have set.
+		perm := info.Mode().Perm() | 0644
 		data, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)

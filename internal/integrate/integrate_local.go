@@ -85,6 +85,13 @@ func materializeFS(fsys fs.FS) (string, error) {
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
+		perm := info.Mode().Perm()
+		if perm == 0 {
+			// fs.FS implementations like fstest.MapFS leave Mode unset (zero);
+			// fall back to a safe readable default rather than writing an
+			// inaccessible file.
+			perm = 0644
+		}
 		data, err := fs.ReadFile(fsys, path)
 		if err != nil {
 			return fmt.Errorf("reading %s: %w", path, err)
@@ -92,7 +99,7 @@ func materializeFS(fsys fs.FS) (string, error) {
 		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 			return fmt.Errorf("creating parent dir for %s: %w", dest, err)
 		}
-		return os.WriteFile(dest, data, info.Mode().Perm())
+		return os.WriteFile(dest, data, perm)
 	}); err != nil {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("writing FS to temp dir: %w", err)

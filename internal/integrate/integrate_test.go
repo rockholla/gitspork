@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
@@ -638,4 +639,21 @@ func Test_materializeFS_preservesExecutableBit(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(0644), info.Mode().Perm())
 	})
+}
+
+func Test_materializeFS_zeroModeDefaultsToReadable(t *testing.T) {
+	// fstest.MapFS leaves Mode: 0 when not explicitly set. materializeFS must
+	// not write mode-0 files (which are unreadable), but fall back to 0644.
+	fsys := fstest.MapFS{
+		"config.yml": {Data: []byte("key: value\n")}, // Mode intentionally unset (zero)
+	}
+
+	dir, err := materializeFS(fsys)
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	info, err := os.Stat(filepath.Join(dir, "config.yml"))
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), info.Mode().Perm(), "mode-0 file must not be written as unreadable")
+	assert.NotZero(t, info.Mode()&0400, "owner read bit must be set so the file is readable")
 }

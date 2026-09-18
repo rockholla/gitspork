@@ -607,6 +607,13 @@ func TestIntegratorTemplated_structuredMerge_invalidMode(t *testing.T) {
 // PR #66 (defer scoping) holds: rendering many templated instructions in one
 // Integrate call must not leave temp directories behind at the end of the run.
 func TestIntegratorTemplated_structuredMerge_noTmpDirLeak(t *testing.T) {
+	// Redirect the OS temp root to a private dir so parallel tests cannot create
+	// or clean up gitspork-prefixed dirs and skew the before/after count.
+	isolatedTmpRoot, err := os.MkdirTemp("", "test-tmproot-*")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(isolatedTmpRoot) })
+	t.Setenv("TMPDIR", isolatedTmpRoot)
+
 	// Build an upstream with three templates + matching existing downstream files
 	// so all three trigger the tmpDir path.
 	upstreamDir := t.TempDir()

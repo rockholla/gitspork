@@ -1,34 +1,18 @@
-name: Sync Copilot Instructions
+name: Verify Copilot Instructions Sync
 
 on:
-  push:
+  pull_request:
     branches: [ main ]
-    paths: [ 'CLAUDE.md' ]
 
 jobs:
-  sync:
+  verify-sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
     - uses: actions/checkout@v5
-    - name: Copy CLAUDE.md to .github/copilot-instructions.md
-      run: cp CLAUDE.md .github/copilot-instructions.md
-    - name: Open PR if changed
-      env:
-        GH_TOKEN: ${{ github.token }}
+    - name: Check CLAUDE.md matches .github/copilot-instructions.md
       run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add .github/copilot-instructions.md
-        git diff --cached --quiet && exit 0
-        BRANCH="chore/sync-copilot-instructions-$(date +%s)"
-        git checkout -b "$BRANCH"
-        git commit -m "chore: sync copilot-instructions.md from CLAUDE.md"
-        git push origin "$BRANCH"
-        gh pr create \
-          --title "chore: sync copilot-instructions.md from CLAUDE.md" \
-          --body "Auto-generated: syncs \`.github/copilot-instructions.md\` from \`CLAUDE.md\`." \
-          --base main \
-          --head "$BRANCH"
+        if ! diff -q CLAUDE.md .github/copilot-instructions.md > /dev/null 2>&1; then
+          echo "::error::CLAUDE.md and .github/copilot-instructions.md are out of sync. Run: cp CLAUDE.md .github/copilot-instructions.md"
+          diff CLAUDE.md .github/copilot-instructions.md || true
+          exit 1
+        fi

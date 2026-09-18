@@ -1,6 +1,6 @@
 module github.com/rockholla/gitspork/v2
 
-go 1.26
+go 1.26.0
 
 toolchain go1.26.5
 
@@ -37,7 +37,7 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

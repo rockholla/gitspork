@@ -272,6 +272,13 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdkt
 	return dir, nil
 }
 
+// mirrorUsable reports whether dir holds a git repository that can be opened.
+// It's a cheap structural check (config/HEAD/refs), not a full fsck.
+func mirrorUsable(dir string) bool {
+	_, err := git.PlainOpen(dir)
+	return err == nil
+}
+
 // runCacheOp inspects the state of a cache entry and performs the appropriate
 // operation — no-op if fresh, refresh if stale, populate if missing. Emits a
 // distinct log line per branch matching Section 1's Log-line contract.
@@ -279,7 +286,19 @@ func runCacheOp(dir, tsFile, url string, ttl time.Duration, auth authInfo, logge
 	fetchedAt, tsErr := readFetchedAt(tsFile)
 	tsPresent := tsErr == nil
 
-	// Populate path: no timestamp file OR no cache dir yet.
+	// The timestamp alone doesn't prove the mirror exists: the directory can
+	// be removed (e.g. by hand) while its sidecar survives. Trusting a fresh
+	// timestamp would hand back a missing or broken mirror until the TTL
+	// lapsed, failing every working clone in the meantime.
+	if tsPresent && !mirrorUsable(dir) {
+		logger.Log("upstream cache entry for %s at %s is missing or unusable; repopulating", url, dir)
+		if err := os.RemoveAll(dir); err != nil {
+			return fmt.Errorf("removing unusable upstream cache entry at %s: %w", dir, err)
+		}
+		tsPresent = false
+	}
+
+	// Populate path: no timestamp file, or no usable cache dir.
 	if !tsPresent {
 		logger.Log("populating upstream cache for %s at %s", url, dir)
 		if err := populateCache(dir, url, auth, progress); err != nil {

@@ -402,3 +402,47 @@ func Test_ensureUpstreamCache_explicitRootUnwritable_errors(t *testing.T) {
 	require.Error(t, err, "explicit user-configured unwritable root must surface as error, not silently fall back")
 	assert.Contains(t, err.Error(), unwritable)
 }
+
+// A fresh timestamp must not be trusted on its own: if the mirror directory
+// was removed (e.g. deleted by hand, leaving the .fetched-at sidecar), a
+// "cache hit" would hand callers a path that doesn't exist and every working
+// clone would fail with "repository ... does not exist" until the TTL lapsed.
+func Test_ensureUpstreamCache_freshTimestampMissingMirror_repopulates(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
+
+	dir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, authInfo{}, sdktypes.NoopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(dir)) // mirror gone, fresh sidecar left behind
+	require.FileExists(t, dir+".fetched-at")
+
+	returnedDir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, authInfo{}, sdktypes.NoopLogger(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, dir, returnedDir)
+	repo, err := gogit.PlainOpen(returnedDir)
+	require.NoError(t, err, "missing mirror must be repopulated, not reported as a cache hit")
+	_, err = repo.CommitObject(upstreamHash)
+	assert.NoError(t, err)
+}
+
+// Same, for a mirror directory that exists but isn't a usable repository
+// (e.g. partially deleted) while its timestamp is still fresh.
+func Test_ensureUpstreamCache_freshTimestampBrokenMirror_repopulates(t *testing.T) {
+	upstreamDir, upstreamHash := testharness.MinimalUpstream(t)
+	root := t.TempDir()
+	cfg := cacheConfig{Root: root, TTL: 2 * time.Hour}
+	key := cacheKey("file://" + upstreamDir)
+	dir, tsFile, _ := cacheEntryPaths(root, key)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "objects"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "leftover"), []byte("x"), 0644))
+	require.NoError(t, writeFetchedAt(tsFile, time.Now()))
+
+	returnedDir, err := ensureUpstreamCache(cfg, "file://"+upstreamDir, authInfo{}, sdktypes.NoopLogger(), nil)
+	require.NoError(t, err)
+	repo, err := gogit.PlainOpen(returnedDir)
+	require.NoError(t, err, "broken mirror must be repopulated, not reported as a cache hit")
+	_, err = repo.CommitObject(upstreamHash)
+	assert.NoError(t, err)
+}

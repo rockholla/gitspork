@@ -103,8 +103,13 @@ func CacheKeyForURL(url string) string {
 func cacheEntryPaths(root, key string) (dir, tsFile, lockFile string) {
 	dir = filepath.Join(root, key)
 	tsFile = filepath.Join(root, key+".fetched-at")
-	lockFile = filepath.Join(root, key+".lock")
+	lockFile = cacheLockFile(dir)
 	return
+}
+
+// cacheLockFile returns the per-URL lock file for the cache entry at dir.
+func cacheLockFile(dir string) string {
+	return dir + ".lock"
 }
 
 // isCacheFresh reports whether a cache entry whose last fetch happened at
@@ -217,7 +222,9 @@ func refreshCache(dir, url string, auth authInfo, progress io.Writer) error {
 // refreshing as needed under an exclusive per-URL flock, and returns the
 // absolute path to a healthy bare mirror. Returns "" (no error) when the
 // cache is disabled — the caller must fall back to a direct clone in that
-// case.
+// case. The lock is released on return; callers that then read the mirror
+// must hold the shared lock (rLockCacheEntry on cacheLockFile(dir)) while
+// they do.
 //
 // Corruption recovery: any cache-side error (populate or refresh) triggers
 // a single wipe-and-repopulate retry. On second failure the wrapped error
@@ -250,11 +257,11 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdkt
 	key := cacheKey(url)
 	dir, tsFile, lockFile := cacheEntryPaths(cfg.Root, key)
 
-	fl := getOrCreateFlock(lockFile)
-	if err := fl.Lock(); err != nil {
-		return "", fmt.Errorf("acquiring upstream cache lock at %s: %w", lockFile, err)
+	unlock, err := lockCacheEntry(lockFile)
+	if err != nil {
+		return "", err
 	}
-	defer func() { _ = fl.Unlock() }()
+	defer unlock()
 
 	// First attempt.
 	if err := runCacheOp(dir, tsFile, url, cfg.TTL, auth, logger, progress); err != nil {

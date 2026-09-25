@@ -239,6 +239,12 @@ func shellGitFetch(ctx context.Context, dir, remoteURL string, opts shellGitFetc
 	// as root inside Docker against a cache mounted from a non-root-owned host
 	// path.
 	args := []string{"-c", "safe.directory=*"}
+	// Run the auto-maintenance (gc/repack) that fetch may trigger in the
+	// foreground. By default it detaches and keeps rewriting the mirror's
+	// object store after fetch returns — after the caller has released the
+	// exclusive cache lock — deleting packs that concurrent working clones
+	// are reading.
+	args = append(args, "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false")
 	credArgs, childEnv := prepareShellGitAuth(src, opts.Token)
 	args = append(args, credArgs...)
 	args = append(args, "-C", dir, "fetch", "--prune", src, "+refs/*:refs/*")

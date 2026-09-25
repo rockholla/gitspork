@@ -473,6 +473,13 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 	}
 	if cacheDir != "" {
 		// Working clone reads from the local bare mirror. No network, no auth.
+		// Hold the shared lock until we're done with it, so another call can't
+		// refresh or wipe the mirror under the clone (see cache_lock.go).
+		unlock, err := rLockCacheEntry(cacheLockFile(cacheDir))
+		if err != nil {
+			return "", err
+		}
+		defer unlock()
 		cloneOptions.URL = "file://" + cacheDir
 	} else {
 		cloneOptions.ClientOptions = auth.clientOptions

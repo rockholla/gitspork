@@ -1,13 +1,18 @@
 package integrate
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/gofrs/flock"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/rockholla/gitspork/v2/test/testharness"
 	"github.com/stretchr/testify/assert"
@@ -168,18 +173,45 @@ func Test_readFetchedAt_malformedContent(t *testing.T) {
 	assert.Contains(t, err.Error(), "parsing")
 }
 
-func Test_getOrCreateFlock_returnsSameInstancePerPath(t *testing.T) {
-	dir := t.TempDir()
-	a := filepath.Join(dir, "one.lock")
-	b := filepath.Join(dir, "two.lock")
+// Goroutines in one process must be excluded from each other the same way
+// separate processes are: a writer waits for other writers and for readers,
+// and readers only share with readers.
+func Test_cacheEntryLocks_excludeWithinOneProcess(t *testing.T) {
+	cases := []struct {
+		name          string
+		held, wanted  func(string) (func(), error)
+		wantExclusion bool
+	}{
+		{"exclusive blocks exclusive", lockCacheEntry, lockCacheEntry, true},
+		{"shared blocks exclusive", rLockCacheEntry, lockCacheEntry, true},
+		{"exclusive blocks shared", lockCacheEntry, rLockCacheEntry, true},
+		{"shared allows shared", rLockCacheEntry, rLockCacheEntry, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lockFile := filepath.Join(t.TempDir(), "entry.lock")
+			unlockHeld, err := tc.held(lockFile)
+			require.NoError(t, err)
 
-	// Same path → same instance (identity check).
-	assert.Same(t, getOrCreateFlock(a), getOrCreateFlock(a),
-		"repeated calls with the same path must return the same *flock.Flock")
+			acquired := make(chan func())
+			go func() {
+				unlock, err := tc.wanted(lockFile)
+				assert.NoError(t, err)
+				acquired <- unlock
+			}()
 
-	// Different paths → different instances.
-	assert.NotSame(t, getOrCreateFlock(a), getOrCreateFlock(b),
-		"different paths must yield distinct *flock.Flock instances")
+			select {
+			case unlock := <-acquired:
+				assert.False(t, tc.wantExclusion, "second lock was acquired while the first was held")
+				unlock()
+				unlockHeld()
+			case <-time.After(300 * time.Millisecond):
+				assert.True(t, tc.wantExclusion, "second lock should not have waited")
+				unlockHeld()
+				(<-acquired)()
+			}
+		})
+	}
 }
 
 func Test_populateCache_localFileURL(t *testing.T) {
@@ -445,4 +477,151 @@ func Test_ensureUpstreamCache_freshTimestampBrokenMirror_repopulates(t *testing.
 	require.NoError(t, err, "broken mirror must be repopulated, not reported as a cache hit")
 	_, err = repo.CommitObject(upstreamHash)
 	assert.NoError(t, err)
+}
+
+// Callers such as a multi-repo upgrade tool integrate from several goroutines
+// at once against the same upstream, all sharing one cache entry. Each call
+// must be excluded from the others while it populates or refreshes the
+// mirror, and a working clone must not read the mirror while another call is
+// writing to (or wiping) it. Otherwise clones fail mid-read (git's "hardlink
+// different from source" check, or vanished files) and a failed concurrent
+// populate's wipe-and-retry can delete a mirror that another call just
+// finished, leaving a fresh timestamp with no mirror behind it.
+func Test_cloneUpstreamForIntegrate_concurrentCallsSharingCacheEntry_allSucceed(t *testing.T) {
+	upstreamDir := largerUpstream(t, 100)
+	const workers = 6
+	const rounds = 3
+	for round := range rounds {
+		// Fresh cache per round so every round races on the initial populate;
+		// the tiny TTL makes later calls in the round race on refresh too.
+		t.Setenv("GITSPORK_CACHE_DIR", t.TempDir())
+		errs := make([]error, workers)
+		var wg sync.WaitGroup
+		for i := range workers {
+			wg.Go(func() {
+				req := &internalRequest{Logger: sdktypes.NoopLogger(), cacheTTL: time.Nanosecond}
+				_, errs[i] = cloneUpstreamForIntegrate(t.TempDir(), req, sdktypes.UpstreamSpec{URL: "file://" + upstreamDir})
+			})
+		}
+		wg.Wait()
+		for i, err := range errs {
+			require.NoError(t, err, "round %d, worker %d", round, i)
+		}
+	}
+}
+
+// A working clone reads the mirror (git clone --local hardlinks its object
+// files) after ensureUpstreamCache has returned. While it does, another call
+// must not be able to take the exclusive lock and refresh or wipe the mirror;
+// otherwise the clone sees pack files that are still being written or have
+// been repacked away, and git aborts ("hardlink different from source",
+// "failed to create link").
+func Test_cloneUpstreamForIntegrate_holdsCacheLockWhileCloningFromMirror(t *testing.T) {
+	if !useShellGitFastPath() {
+		t.Skip("needs shell git: the check runs from git's clone progress output")
+	}
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	url := "file://" + upstreamDir
+	cacheRoot := t.TempDir()
+	t.Setenv("GITSPORK_CACHE_DIR", cacheRoot)
+	_, _, lockFile := cacheEntryPaths(cacheRoot, cacheKey(url))
+	cloneDir := t.TempDir()
+
+	// git writes this line to its progress stream once the working clone has
+	// started, and blocks until Write returns, so the clone is in progress
+	// while the probe runs.
+	probe := &lockProbeWriter{trigger: fmt.Sprintf("Cloning into '%s'", cloneDir), lockFile: lockFile}
+	req := &internalRequest{Logger: sdktypes.NoopLogger(), progress: probe}
+	_, err := cloneUpstreamForIntegrate(cloneDir, req, sdktypes.UpstreamSpec{URL: url})
+	require.NoError(t, err)
+
+	require.True(t, probe.probed, "never saw the working clone start in git's progress output")
+	assert.False(t, probe.writerGotLock, "a writer took the exclusive cache lock while the working clone was reading the mirror")
+}
+
+// lockProbeWriter tries the exclusive cache lock, without waiting, the first
+// time a progress write contains trigger.
+type lockProbeWriter struct {
+	trigger       string
+	lockFile      string
+	probed        bool
+	writerGotLock bool
+}
+
+func (w *lockProbeWriter) Write(p []byte) (int, error) {
+	if !w.probed && strings.Contains(string(p), w.trigger) {
+		w.probed = true
+		fl := flock.New(w.lockFile)
+		if locked, err := fl.TryLock(); err == nil && locked {
+			w.writerGotLock = true
+			_ = fl.Unlock()
+		}
+	}
+	return len(p), nil
+}
+
+// fetch can start git's auto-maintenance (gc/repack), which by default
+// detaches and keeps rewriting the mirror after fetch returns — after the
+// exclusive cache lock is released — deleting packs that concurrent working
+// clones are reading. A refresh must run it in the foreground.
+func Test_refreshCache_runsAutoMaintenanceInForeground(t *testing.T) {
+	if !useShellGitFastPath() {
+		t.Skip("auto-maintenance only runs on the shell git path")
+	}
+	upstreamDir, _ := testharness.MinimalUpstream(t)
+	url := "file://" + upstreamDir
+	mirrorDir := filepath.Join(t.TempDir(), "mirror")
+	require.NoError(t, populateCache(mirrorDir, url, authInfo{}, nil))
+	addUpstreamCommit(t, upstreamDir)
+
+	// trace2 records every git child process, including the maintenance run
+	// fetch spawns.
+	trace := filepath.Join(t.TempDir(), "trace2.json")
+	t.Setenv("GIT_TRACE2_EVENT", trace)
+	require.NoError(t, refreshCache(mirrorDir, url, authInfo{}, nil))
+
+	events, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	var maintenanceRuns int
+	for line := range strings.Lines(string(events)) {
+		var ev struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Event != "child_start" {
+			continue
+		}
+		if slices.Contains(ev.Argv, "maintenance") || slices.Contains(ev.Argv, "gc") {
+			maintenanceRuns++
+			assert.NotContains(t, ev.Argv, "--detach", "fetch started detached auto-maintenance: %v", ev.Argv)
+		}
+	}
+	require.NotZero(t, maintenanceRuns, "fetch started no auto-maintenance; the test no longer exercises it")
+}
+
+// addUpstreamCommit commits a new file to the upstream repo at dir.
+func addUpstreamCommit(t *testing.T, dir string) {
+	t.Helper()
+	repo, err := gogit.PlainOpen(dir)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "upstream-owned", "added.txt"), []byte("added\n"), 0644))
+	testharness.CommitAllWithMessage(t, repo, "add a file")
+}
+
+// largerUpstream is MinimalUpstream plus n extra upstream-owned files spread
+// over several commits, so cache populates and working clones take long
+// enough for concurrent calls to overlap.
+func largerUpstream(t *testing.T, n int) string {
+	t.Helper()
+	dir, _ := testharness.MinimalUpstream(t)
+	repo, err := gogit.PlainOpen(dir)
+	require.NoError(t, err)
+	for i := range n {
+		name := filepath.Join(dir, "upstream-owned", fmt.Sprintf("file-%03d.txt", i))
+		require.NoError(t, os.WriteFile(name, []byte(strings.Repeat(fmt.Sprintf("line %d\n", i), 200)), 0644))
+		if i%50 == 49 {
+			testharness.CommitAllWithMessage(t, repo, fmt.Sprintf("add files up to %d", i))
+		}
+	}
+	return dir
 }

@@ -453,36 +453,9 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		}
 		auth = authInfo{clientOptions: []client.Option{client.WithSSHAuth(agentAuth)}}
 	}
-	// Resolve cache configuration (merging CLI/env/defaults). If enabled and
-	// healthy, we clone from the machine-scoped bare mirror rather than the
-	// network.
-	var cacheCfg cacheConfig
-	cacheCfg, err = resolveCacheConfig(req.cacheTTL, req.noCache)
-	if err != nil {
-		return "", err
-	}
-	var cacheDir string
-	cacheDir, err = ensureUpstreamCache(cacheCfg, upstreamURL, auth, req.Logger, req.progress)
-	if err != nil {
-		return "", err
-	}
-
 	cloneOptions := &git.CloneOptions{
 		URL:      upstreamURL,
 		Progress: &logutil.LoggerWriter{L: req.Logger},
-	}
-	if cacheDir != "" {
-		// Working clone reads from the local bare mirror. No network, no auth.
-		// Hold the shared lock until we're done with it, so another call can't
-		// refresh or wipe the mirror under the clone (see cache_lock.go).
-		unlock, err := rLockCacheEntry(cacheLockFile(cacheDir))
-		if err != nil {
-			return "", err
-		}
-		defer unlock()
-		cloneOptions.URL = "file://" + cacheDir
-	} else {
-		cloneOptions.ClientOptions = auth.clientOptions
 	}
 
 	// Interpret upstream.Version:
@@ -516,6 +489,30 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 
 	if canShallowClone(req.upstreamCommit, req.prevUpstreamCommitHash, versionIsCommitHash) {
 		cloneOptions.Depth = 1
+	}
+
+	// Resolve cache configuration (merging CLI/env/defaults). If enabled and
+	// healthy, we clone from the machine-scoped bare mirror rather than the
+	// network. Done after the version probe above, so a slow remote isn't
+	// probed while holding the cache entry's shared lock and holding off
+	// writers.
+	var cacheCfg cacheConfig
+	cacheCfg, err = resolveCacheConfig(req.cacheTTL, req.noCache)
+	if err != nil {
+		return "", err
+	}
+	cacheDir, releaseCache, err := ensureUpstreamCache(cacheCfg, upstreamURL, auth, req.Logger, req.progress)
+	if err != nil {
+		return "", err
+	}
+	// Holding the shared lock until return keeps other calls from
+	// refreshing or wiping the mirror while the clone below reads it.
+	defer releaseCache()
+	if cacheDir != "" {
+		// Working clone reads from the local bare mirror. No network, no auth.
+		cloneOptions.URL = "file://" + cacheDir
+	} else {
+		cloneOptions.ClientOptions = auth.clientOptions
 	}
 
 	req.Logger.Log("checking out upstream %s from cache at %s (this may take a moment on large upstreams)", upstream.URL, cloneOptions.URL)
@@ -553,18 +550,6 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		}
 	} else {
 		repo, err = git.PlainClone(cloneDir, cloneOptions)
-		if err != nil && cacheDir != "" {
-			// Rare: a concurrent fetch-prune in the cache deleted a ref this
-			// working clone snapshotted. Retry once against the same cache; the
-			// deleting fetch is one-shot so a second attempt has fresh refs.
-			// Only meaningful on the go-git path — the shell git --local path
-			// snapshots refs atomically via a single git clone invocation.
-			_ = os.RemoveAll(cloneDir)
-			if mkErr := os.MkdirAll(cloneDir, 0755); mkErr != nil {
-				return "", fmt.Errorf("re-creating clone dir after cache-race retry: %w", mkErr)
-			}
-			repo, err = git.PlainClone(cloneDir, cloneOptions)
-		}
 		if err != nil {
 			return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
 		}

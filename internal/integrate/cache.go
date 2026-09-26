@@ -103,13 +103,8 @@ func CacheKeyForURL(url string) string {
 func cacheEntryPaths(root, key string) (dir, tsFile, lockFile string) {
 	dir = filepath.Join(root, key)
 	tsFile = filepath.Join(root, key+".fetched-at")
-	lockFile = cacheLockFile(dir)
+	lockFile = filepath.Join(root, key+".lock")
 	return
-}
-
-// cacheLockFile returns the per-URL lock file for the cache entry at dir.
-func cacheLockFile(dir string) string {
-	return dir + ".lock"
 }
 
 // isCacheFresh reports whether a cache entry whose last fetch happened at
@@ -219,27 +214,33 @@ func refreshCache(dir, url string, auth authInfo, progress io.Writer) error {
 
 // ensureUpstreamCache is the main entry point for the upstream mirror cache.
 // It resolves the cache directory for a given canonical URL, populating or
-// refreshing as needed under an exclusive per-URL flock, and returns the
-// absolute path to a healthy bare mirror. Returns "" (no error) when the
-// cache is disabled — the caller must fall back to a direct clone in that
-// case. The lock is released on return; callers that then read the mirror
-// must hold the shared lock (rLockCacheEntry on cacheLockFile(dir)) while
-// they do.
+// refreshing as needed, and returns the absolute path to a healthy bare
+// mirror together with release, which the caller must call once it has
+// finished reading the mirror. Until then the caller holds the entry's shared
+// lock, so no other call can refresh or wipe the mirror underneath it (see
+// cache_lock.go). Returns "" (no error, no-op release) when the cache is
+// disabled — the caller must fall back to a direct clone in that case.
+//
+// A fresh, usable entry is only read, so it is checked under the shared lock
+// and returned still holding it: cache hits neither wait for other callers'
+// clones nor leave a gap between the check and the caller's read. Otherwise
+// the entry is populated or refreshed under the exclusive lock, which is then
+// traded for the shared one.
 //
 // Corruption recovery: any cache-side error (populate or refresh) triggers
 // a single wipe-and-repopulate retry. On second failure the wrapped error
 // is surfaced. Retries are hard-bounded to prevent infinite loops against
 // a genuinely broken remote.
-func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdktypes.Logger, progress io.Writer) (string, error) {
+func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdktypes.Logger, progress io.Writer) (dir string, release func(), err error) {
 	if cfg.Disabled {
-		return "", nil
+		return "", func() {}, nil
 	}
 
 	if err := os.MkdirAll(cfg.Root, 0755); err != nil {
 		// Explicit user config (GITSPORK_CACHE_DIR set) — surface the error;
 		// don't second-guess.
 		if !cfg.RootIsDefault {
-			return "", fmt.Errorf("creating upstream cache root %s: %w", cfg.Root, err)
+			return "", nil, fmt.Errorf("creating upstream cache root %s: %w", cfg.Root, err)
 		}
 		// Default path unwritable — common in containers with no writable
 		// HOME/XDG_CACHE_HOME. Fall back to os.TempDir() so cache still
@@ -248,7 +249,7 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdkt
 		// mounted volume.
 		tmpRoot := filepath.Join(os.TempDir(), "gitspork", "repos")
 		if mkErr := os.MkdirAll(tmpRoot, 0755); mkErr != nil {
-			return "", fmt.Errorf("creating upstream cache root %s: %w (tempdir fallback %s also failed: %v)", cfg.Root, err, tmpRoot, mkErr)
+			return "", nil, fmt.Errorf("creating upstream cache root %s: %w (tempdir fallback %s also failed: %v)", cfg.Root, err, tmpRoot, mkErr)
 		}
 		logger.Log("upstream cache root %s not writable (%v); falling back to ephemeral tempdir at %s", cfg.Root, err, tmpRoot)
 		cfg.Root = tmpRoot
@@ -257,26 +258,54 @@ func ensureUpstreamCache(cfg cacheConfig, url string, auth authInfo, logger sdkt
 	key := cacheKey(url)
 	dir, tsFile, lockFile := cacheEntryPaths(cfg.Root, key)
 
+	release, err = rLockCacheEntry(lockFile)
+	if err != nil {
+		return "", nil, err
+	}
+	if fetchedAt, err := readFetchedAt(tsFile); err == nil && isCacheFresh(fetchedAt, cfg.TTL) && mirrorUsable(dir) {
+		age := time.Since(fetchedAt).Round(time.Second)
+		logger.Log("upstream cache hit for %s (fetched %s ago, ttl: %s)", url, age, cfg.TTL)
+		return dir, release, nil
+	}
+	release()
+
+	if err := updateCacheEntry(dir, tsFile, lockFile, url, cfg.TTL, auth, logger, progress); err != nil {
+		return "", nil, err
+	}
+	// flock can't downgrade atomically, so another caller may change the
+	// entry between the exclusive lock's release and this; if it breaks the
+	// mirror, the caller's clone fails rather than reading it mid-change.
+	release, err = rLockCacheEntry(lockFile)
+	if err != nil {
+		return "", nil, err
+	}
+	return dir, release, nil
+}
+
+// updateCacheEntry populates or refreshes the cache entry as needed under its
+// exclusive lock, with a single wipe-and-repopulate retry on failure.
+func updateCacheEntry(dir, tsFile, lockFile, url string, ttl time.Duration, auth authInfo, logger sdktypes.Logger, progress io.Writer) error {
 	unlock, err := lockCacheEntry(lockFile)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer unlock()
 
-	// First attempt.
-	if err := runCacheOp(dir, tsFile, url, cfg.TTL, auth, logger, progress); err != nil {
+	// First attempt. runCacheOp re-checks the entry: another caller may have
+	// refreshed it while this one waited for the lock.
+	if err := runCacheOp(dir, tsFile, url, ttl, auth, logger, progress); err != nil {
 		// Wipe and retry once.
 		_ = os.RemoveAll(dir)
 		_ = os.Remove(tsFile)
 		logger.Log("populating upstream cache for %s at %s", url, dir)
 		if err := populateCache(dir, url, auth, progress); err != nil {
-			return "", fmt.Errorf("upstream cache populate failed after wipe-and-retry: %w", err)
+			return fmt.Errorf("upstream cache populate failed after wipe-and-retry: %w", err)
 		}
 		if err := writeFetchedAt(tsFile, time.Now()); err != nil {
-			return "", fmt.Errorf("writing upstream cache timestamp after recovery: %w", err)
+			return fmt.Errorf("writing upstream cache timestamp after recovery: %w", err)
 		}
 	}
-	return dir, nil
+	return nil
 }
 
 // mirrorUsable reports whether dir holds a git repository that can be opened.

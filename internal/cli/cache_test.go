@@ -53,9 +53,33 @@ func Test_cacheClearCommand_wipesRoot(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 
 	entries, err := os.ReadDir(dir)
-	if err == nil {
-		assert.Empty(t, entries, "cache root must be empty after clear --force")
+	require.NoError(t, err)
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
 	}
+	assert.Equal(t, []string{"entry1.lock"}, names, "clear --force must wipe everything but the lock file")
+}
+
+// Deleting a lock file after unlocking it lets two callers hold "the" lock at
+// once: one already waiting on the old, now-unlinked file gets it, while the
+// next caller creates and locks a new file at the same path. An integrate
+// running during the clear could then populate or clone the mirror unguarded.
+func Test_cacheClearCommand_keepsLockFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GITSPORK_CACHE_DIR", dir)
+	url := "file:///some/upstream"
+	key := integrate.CacheKeyForURL(url)
+	require.NoError(t, os.MkdirAll(dir+"/"+key, 0755))
+	require.NoError(t, os.WriteFile(dir+"/"+key+".fetched-at", []byte("123"), 0644))
+	require.NoError(t, os.WriteFile(dir+"/"+key+".lock", nil, 0644))
+
+	cmd := (&CacheSubcommand{}).GetCmd()
+	cmd.SetArgs([]string{"clear", "--url", url, "--force"})
+	require.NoError(t, cmd.Execute())
+
+	assert.NoFileExists(t, dir+"/"+key)
+	assert.FileExists(t, dir+"/"+key+".lock")
 }
 
 func Test_cacheClearCommand_wipesSingleURL(t *testing.T) {

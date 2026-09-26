@@ -187,8 +187,11 @@ func TestCache_clearSubcommand_wipesAll(t *testing.T) {
 	out, code := runner.Run(t, []string{"cache", "clear", "--force"}, cacheDir)
 	require.Equal(t, 0, code, "cache clear --force exited non-zero:\n%s", out)
 
+	// Lock files stay behind on purpose: deleting one after unlocking lets
+	// two callers hold the lock at once.
 	entries, err = os.ReadDir(cacheDir)
-	if err == nil {
-		assert.Empty(t, entries, "cache root must be empty after clear --force")
+	require.NoError(t, err)
+	for _, e := range entries {
+		assert.True(t, strings.HasSuffix(e.Name(), ".lock"), "cache clear --force left %s behind", e.Name())
 	}
 }

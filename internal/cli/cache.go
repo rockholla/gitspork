@@ -94,8 +94,10 @@ func (s *CacheSubcommand) clearCmd() *cobra.Command {
 				}
 				removeErr := os.RemoveAll(t.dir)
 				_ = os.Remove(t.tsFile)
+				// The lock file stays: deleting it after unlocking would let a
+				// caller waiting on the old file and one creating a new file at
+				// the same path both hold the lock.
 				_ = fl.Unlock()
-				_ = os.Remove(t.lockFile)
 				if removeErr != nil {
 					return fmt.Errorf("removing %s: %w", t.dir, removeErr)
 				}

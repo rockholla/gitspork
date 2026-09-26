@@ -573,28 +573,51 @@ func Test_ensureUpstreamCache_cacheHitDoesNotWaitForClonesInProgress(t *testing.
 // must not be able to take the exclusive lock and refresh or wipe the mirror;
 // otherwise the clone sees pack files that are still being written or have
 // been repacked away, and git aborts ("hardlink different from source",
-// "failed to create link").
+// "failed to create link"). That must hold whichever way the call got the
+// mirror: populated, refreshed, or served from the cache.
 func Test_cloneUpstreamForIntegrate_holdsCacheLockWhileCloningFromMirror(t *testing.T) {
 	if !useShellGitFastPath() {
 		t.Skip("needs shell git: the check runs from git's clone progress output")
 	}
-	upstreamDir, _ := testharness.MinimalUpstream(t)
-	url := "file://" + upstreamDir
-	cacheRoot := t.TempDir()
-	t.Setenv("GITSPORK_CACHE_DIR", cacheRoot)
-	_, _, lockFile := cacheEntryPaths(cacheRoot, cacheKey(url))
-	cloneDir := t.TempDir()
+	cases := []struct {
+		name     string
+		warm     bool          // populate the cache before the probed call
+		ttl      time.Duration // the probed call's cache TTL
+		wantPath string        // the cache log line that proves which path ran
+	}{
+		{"populated", false, 2 * time.Hour, "populating upstream cache"},
+		{"refreshed", true, time.Nanosecond, "refreshing upstream cache"},
+		{"cache hit", true, 2 * time.Hour, "upstream cache hit"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			upstreamDir, _ := testharness.MinimalUpstream(t)
+			url := "file://" + upstreamDir
+			cacheRoot := t.TempDir()
+			t.Setenv("GITSPORK_CACHE_DIR", cacheRoot)
+			_, _, lockFile := cacheEntryPaths(cacheRoot, cacheKey(url))
+			if tc.warm {
+				warm := &internalRequest{Logger: sdktypes.NoopLogger(), cacheTTL: 2 * time.Hour}
+				_, err := cloneUpstreamForIntegrate(t.TempDir(), warm, sdktypes.UpstreamSpec{URL: url})
+				require.NoError(t, err)
+			}
 
-	// git writes this line to its progress stream once the working clone has
-	// started, and blocks until Write returns, so the clone is in progress
-	// while the probe runs.
-	probe := &lockProbeWriter{trigger: fmt.Sprintf("Cloning into '%s'", cloneDir), lockFile: lockFile}
-	req := &internalRequest{Logger: sdktypes.NoopLogger(), progress: probe}
-	_, err := cloneUpstreamForIntegrate(cloneDir, req, sdktypes.UpstreamSpec{URL: url})
-	require.NoError(t, err)
+			// git writes this line to its progress stream once the working
+			// clone has started, and blocks until Write returns, so the clone
+			// is in progress while the probe runs.
+			cloneDir := t.TempDir()
+			probe := &lockProbeWriter{trigger: fmt.Sprintf("Cloning into '%s'", cloneDir), lockFile: lockFile}
+			logger := &recordingLogger{}
+			req := &internalRequest{Logger: logger, cacheTTL: tc.ttl, progress: probe}
+			_, err := cloneUpstreamForIntegrate(cloneDir, req, sdktypes.UpstreamSpec{URL: url})
+			require.NoError(t, err)
 
-	require.True(t, probe.probed, "never saw the working clone start in git's progress output")
-	assert.False(t, probe.writerGotLock, "a writer took the exclusive cache lock while the working clone was reading the mirror")
+			require.True(t, slices.ContainsFunc(logger.logs, func(l string) bool { return strings.Contains(l, tc.wantPath) }),
+				"expected the %q path, got logs: %q", tc.wantPath, logger.logs)
+			require.True(t, probe.probed, "never saw the working clone start in git's progress output")
+			assert.False(t, probe.writerGotLock, "a writer took the exclusive cache lock while the working clone was reading the mirror")
+		})
+	}
 }
 
 // lockProbeWriter tries the exclusive cache lock, without waiting, the first

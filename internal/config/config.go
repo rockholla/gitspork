@@ -97,7 +97,7 @@ type GitSporkConfigTemplatedInputPrevious struct {
 
 // GitSporkConfigTemplatedInputDestinationStructured allows for re-using an already-rendered destination template's value, assuming the destination type is structured data, as the value to use as input
 type GitSporkConfigTemplatedInputDestinationStructured struct {
-	Path string `yaml:"path" comment:"JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting"`
+	Path string `yaml:"path" comment:"JSON or YAML path, e.g. 'user.name.first'; a segment may index a list as 'items[0]' or select its first mapping with a matching field as 'items[name=web]' (values cannot contain '.' or ']'); if already present at the template destination path, that value will be used without prompting"`
 }
 
 // GitSporkConfigTemplatedMerged

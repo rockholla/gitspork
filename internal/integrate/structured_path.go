@@ -21,7 +21,9 @@ import (
 //
 // Path segments may include bracket index notation to index into a sequence,
 // e.g. "items[0].name" navigates to the element at index 0 of "items" and
-// then reads "name" from that mapping.
+// then reads "name" from that mapping. A bracket may instead hold a key=value
+// selector: "items[name=web].port" takes the first mapping element of "items"
+// whose "name" is the scalar "web". Selector values cannot contain '.' or ']'.
 func resolveStructuredPath(filePath, dotPath string) (string, bool, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
 	var parseFn func([]byte) (*node, error)
@@ -49,7 +51,7 @@ func resolveStructuredPath(filePath, dotPath string) (string, bool, error) {
 
 	current := root
 	for _, seg := range strings.Split(dotPath, ".") {
-		name, idx, hasIdx, segErr := parsePathSegment(seg)
+		name, sel, hasSel, segErr := parsePathSegment(seg)
 		if segErr != nil {
 			return "", false, segErr
 		}
@@ -63,14 +65,15 @@ func resolveStructuredPath(filePath, dotPath string) (string, bool, error) {
 		}
 		current = child
 
-		if hasIdx {
+		if hasSel {
 			if current.kind != nodeSequence {
 				return "", false, nil
 			}
-			if idx < 0 || idx >= len(current.seq) {
+			item, ok := sel.pick(current.seq)
+			if !ok {
 				return "", false, nil
 			}
-			current = current.seq[idx]
+			current = item
 		}
 	}
 
@@ -91,23 +94,55 @@ func resolveStructuredPath(filePath, dotPath string) (string, bool, error) {
 	}
 }
 
+// pathSelector picks one element of a sequence: by index, or by the first
+// mapping element whose key holds the scalar value.
+type pathSelector struct {
+	index      int
+	key, value string
+}
+
+func (p pathSelector) pick(seq []*node) (*node, bool) {
+	if p.key == "" {
+		if p.index >= len(seq) {
+			return nil, false
+		}
+		return seq[p.index], true
+	}
+	for _, item := range seq {
+		if item.kind != nodeMapping {
+			continue
+		}
+		if v, ok := item.mapping.Get(p.key); ok && v.kind == nodeScalar && v.scalar != nil && fmt.Sprint(v.scalar) == p.value {
+			return item, true
+		}
+	}
+	return nil, false
+}
+
 // parsePathSegment splits a dot-path segment into its field name and an
-// optional non-negative integer index. "items[2]" → ("items", 2, true, nil).
-// "name" → ("name", 0, false, nil).
-func parsePathSegment(seg string) (name string, idx int, hasIdx bool, err error) {
+// optional bracket selector. "items[2]" → ("items", index 2, true, nil);
+// "items[name=web]" → ("items", key "name" value "web", true, nil);
+// "name" → ("name", _, false, nil).
+func parsePathSegment(seg string) (name string, sel pathSelector, hasSel bool, err error) {
 	open := strings.LastIndex(seg, "[")
 	if open == -1 {
-		return seg, 0, false, nil
+		return seg, sel, false, nil
 	}
 	if !strings.HasSuffix(seg, "]") {
-		return "", 0, false, fmt.Errorf("invalid path segment %q: '[' without matching ']'", seg)
+		return "", sel, false, fmt.Errorf("invalid path segment %q: '[' without matching ']'", seg)
 	}
-	idxStr := seg[open+1 : len(seg)-1]
-	i, convErr := strconv.Atoi(idxStr)
+	inner := seg[open+1 : len(seg)-1]
+	if key, value, ok := strings.Cut(inner, "="); ok {
+		if key == "" || value == "" {
+			return "", sel, false, fmt.Errorf("invalid path segment %q: selector must be key=value", seg)
+		}
+		return seg[:open], pathSelector{key: key, value: value}, true, nil
+	}
+	i, convErr := strconv.Atoi(inner)
 	if convErr != nil || i < 0 {
-		return "", 0, false, fmt.Errorf("invalid path segment %q: index must be a non-negative integer", seg)
+		return "", sel, false, fmt.Errorf("invalid path segment %q: index must be a non-negative integer or a key=value selector", seg)
 	}
-	return seg[:open], i, true, nil
+	return seg[:open], pathSelector{index: i}, true, nil
 }
 
 // sequenceToJSONString serializes a sequence node whose elements are all

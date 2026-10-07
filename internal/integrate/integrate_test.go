@@ -228,7 +228,7 @@ func Test_integrate_writesGitattributesWithNoTemplatedInstructions(t *testing.T)
 	// .gitattributes was only written when IntegratorTemplated ran.
 	cfg := &config.GitSporkConfig{}
 
-	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, sdktypes.NoopLogger(), nil))
+	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, false, sdktypes.NoopLogger(), nil))
 
 	attrs, err := os.ReadFile(filepath.Join(downstreamDir, ".gitattributes"))
 	require.NoError(t, err)
@@ -685,4 +685,17 @@ func Test_materializeFS_lowModeFallback(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "executable mode must be preserved")
 	})
+}
+
+func TestIntegrate_rejectsForceRePromptWithNonInteractive(t *testing.T) {
+	_, err := IntegrateLocal(&sdktypes.IntegrateLocalOptions{
+		UpstreamPaths: []string{t.TempDir()}, DownstreamPath: t.TempDir(),
+		ForceRePrompt: true, NonInteractive: true,
+	})
+	assert.ErrorIs(t, err, errForceRePromptNonInteractive)
+	_, err = Integrate(&sdktypes.IntegrateOptions{
+		Upstreams:     []sdktypes.UpstreamSpec{{URL: "https://example.invalid/repo.git"}},
+		ForceRePrompt: true, NonInteractive: true,
+	})
+	assert.ErrorIs(t, err, errForceRePromptNonInteractive)
 }

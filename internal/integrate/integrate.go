@@ -3,6 +3,7 @@ package integrate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,6 +54,10 @@ type authInfo struct {
 	clientOptions []client.Option
 }
 
+// errForceRePromptNonInteractive rejects re-prompting with no one to answer, which
+// would silently replace every cached answer with its default.
+var errForceRePromptNonInteractive = errors.New("ForceRePrompt and NonInteractive cannot be combined")
+
 // internalRequest carries wiring needed by integrateOneInternal that is not
 // part of the public IntegrateOptions surface. It exists to keep the SDK's
 // IntegrateOptions minimal while still allowing drift-check to signal special
@@ -61,6 +66,7 @@ type internalRequest struct {
 	Logger                 sdktypes.Logger
 	DownstreamRepoPath     string
 	ForceRePrompt          bool
+	nonInteractive         bool
 	forDriftCheck          bool   // true = skip state write, skip delta
 	upstreamCommit         string // when forDriftCheck: the pinned commit
 	prevUpstreamCommitHash string // set by integrateOne between calls
@@ -157,6 +163,9 @@ func Integrate(opts *sdktypes.IntegrateOptions) (*sdktypes.IntegrateResult, erro
 	if len(opts.Upstreams) == 0 {
 		return result, fmt.Errorf("no upstream specified: set Upstreams on IntegrateOptions")
 	}
+	if opts.ForceRePrompt && opts.NonInteractive {
+		return result, errForceRePromptNonInteractive
+	}
 
 	for _, upstream := range opts.Upstreams {
 		integrated, err := integrateOne(opts, upstream)
@@ -175,6 +184,7 @@ func integrateOne(opts *sdktypes.IntegrateOptions, upstream sdktypes.UpstreamSpe
 		Logger:             opts.Logger,
 		DownstreamRepoPath: opts.DownstreamRepoPath,
 		ForceRePrompt:      opts.ForceRePrompt,
+		nonInteractive:     opts.NonInteractive,
 		cacheTTL:           opts.CacheTTL,
 		noCache:            opts.NoCache,
 		progress:           opts.Progress,
@@ -225,6 +235,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		Logger:                 req.Logger,
 		DownstreamRepoPath:     req.DownstreamRepoPath,
 		ForceRePrompt:          req.ForceRePrompt,
+		nonInteractive:         req.nonInteractive,
 		forDriftCheck:          req.forDriftCheck,
 		upstreamCommit:         req.upstreamCommit,
 		prevUpstreamCommitHash: prevHash,
@@ -261,7 +272,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		}
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.forDriftCheck, req.Logger, nil); err != nil {
+	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.nonInteractive, req.forDriftCheck, req.Logger, nil); err != nil {
 		return sdktypes.IntegratedUpstream{}, err
 	}
 
@@ -287,7 +298,7 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 	}, nil
 }
 
-func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) error {
+func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, nonInteractive bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) error {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	if !forDriftCheck {
@@ -369,7 +380,7 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured templated resources from upstream to downstream"))
-	if err := (&IntegratorTemplated{}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger, seedInputs); err != nil {
+	if err := (&IntegratorTemplated{NonInteractive: nonInteractive}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger, seedInputs); err != nil {
 		return fmt.Errorf("error integrating templated: %v", err)
 	}
 

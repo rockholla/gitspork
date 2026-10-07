@@ -25,6 +25,9 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 	if len(opts.UpstreamPaths) == 0 && len(opts.UpstreamFSes) == 0 {
 		return result, fmt.Errorf("no upstream specified: set UpstreamPaths or UpstreamFSes on IntegrateLocalOptions")
 	}
+	if opts.ForceRePrompt && opts.NonInteractive {
+		return result, errForceRePromptNonInteractive
+	}
 
 	// Materialize each fs.FS to a temp dir so the path-based integration
 	// pipeline can process it unchanged. All temp dirs are removed on return.
@@ -55,7 +58,7 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 		if err != nil {
 			return result, err
 		}
-		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, false, opts.Logger, opts.SeedInputs); err != nil {
+		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, opts.NonInteractive, false, opts.Logger, opts.SeedInputs); err != nil {
 			return result, err
 		}
 		result.Upstreams = append(result.Upstreams, sdktypes.IntegratedUpstream{

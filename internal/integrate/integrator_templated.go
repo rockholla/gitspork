@@ -22,7 +22,10 @@ import (
 var requestInputFn = inputpkg.RequestInput
 
 // IntegratorTemplated will process a list of instructions on how to render Go templates in the upstream to downstream rendered files
-type IntegratorTemplated struct{}
+type IntegratorTemplated struct {
+	// NonInteractive resolves prompt inputs to their default without prompting.
+	NonInteractive bool
+}
 
 var _ TemplatedIntegrator = (*IntegratorTemplated)(nil)
 
@@ -158,15 +161,17 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 							prompt = fmt.Sprintf("%s (default = %s)", input.Prompt, promptDefaultVal)
 						}
 					}
-					requestInputOpts := &inputpkg.RequestInputOptions{
-						Type:   inputpkg.SingleValue,
-						Prompt: prompt,
+					val := ""
+					if !i.NonInteractive {
+						requestInputResult, err := requestInputFn(&inputpkg.RequestInputOptions{
+							Type:   inputpkg.SingleValue,
+							Prompt: prompt,
+						})
+						if err != nil {
+							return fmt.Errorf("error setting up prompt input: %v", err)
+						}
+						val = requestInputResult.StringValue
 					}
-					requestInputResult, err := requestInputFn(requestInputOpts)
-					if err != nil {
-						return fmt.Errorf("error setting up prompt input: %v", err)
-					}
-					val := requestInputResult.StringValue
 					if val == "" && promptDefaultVal != "" {
 						val = promptDefaultVal
 					}

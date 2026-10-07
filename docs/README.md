@@ -50,7 +50,7 @@ templated: # list of instruction for templated source files in the upstream that
   - name: "input_four" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_four?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt, previous_input)
-      path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first', if already present at the template destination path, that value will be used without prompting
+      path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first'; a segment may index a list as 'items[0]' or select its first mapping with a matching field as 'items[name=web]' (values cannot contain '.' or ']'); if already present at the template destination path, that value will be used without prompting
   - name: "input_five" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_five?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input

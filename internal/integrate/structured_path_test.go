@@ -201,3 +201,63 @@ func TestResolveStructuredPath_nullValue_json(t *testing.T) {
 	assert.False(t, found, "an explicit null JSON value must be treated as not-found, not returned as \"<nil>\"")
 	assert.Equal(t, "", v)
 }
+
+const selectorYAML = `stages:
+  - plain
+  - stage:
+      identifier: build
+  - identifier: deploy
+    service: first
+  - identifier: deploy
+    service: second
+variables:
+  - name: SERVICE_NAME
+    value: hello
+  - name: PORT
+    value: 8080
+`
+
+func TestResolveStructuredPath_keySelector(t *testing.T) {
+	dir := t.TempDir()
+	yamlPath := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(yamlPath, []byte(selectorYAML), 0644))
+	jsonPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(jsonPath,
+		[]byte(`{"variables":[{"name":"SERVICE_NAME","value":"hello"},{"name":"PORT","value":8080}]}`), 0644))
+
+	for _, tc := range []struct {
+		name, file, path, want string
+		found                  bool
+	}{
+		{"yaml match", yamlPath, "variables[name=SERVICE_NAME].value", "hello", true},
+		{"non-string value", yamlPath, "variables[name=PORT].value", "8080", true},
+		{"first of duplicates, non-mappings skipped", yamlPath, "stages[identifier=deploy].service", "first", true},
+		{"no match", yamlPath, "variables[name=MISSING].value", "", false},
+		{"key on non-sequence", yamlPath, "variables[0].name[x=y]", "", false},
+		{"json match", jsonPath, "variables[name=PORT].value", "8080", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v, found, err := resolveStructuredPath(tc.file, tc.path)
+			require.NoError(t, err)
+			assert.Equal(t, tc.found, found)
+			assert.Equal(t, tc.want, v)
+		})
+	}
+}
+
+func TestResolveStructuredPath_keySelector_malformed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(selectorYAML), 0644))
+	for _, p := range []string{
+		"variables[=hello].value",
+		"variables[name=].value",
+		"variables[name=a.b].value", // '.' splits the selector, leaving an unclosed '['
+	} {
+		t.Run(p, func(t *testing.T) {
+			_, _, err := resolveStructuredPath(path, p)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid path segment")
+		})
+	}
+}

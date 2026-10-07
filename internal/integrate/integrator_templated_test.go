@@ -1369,3 +1369,27 @@ func TestIntegratorTemplated_preservesExecutableBitFromTemplate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "rendered template must inherit the upstream template file mode")
 }
+
+func TestIntegratorTemplated_downstreamOwnedKeepsCachedInputsWhenSkipped(t *testing.T) {
+	upstreamDir, downstreamDir := setupTemplatedFixture(t,
+		`Hello, {{ index .Inputs "name" }}!`,
+		`{"name":"world"}`,
+	)
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:        "template.txt",
+		Destination:     "rendered.txt",
+		DownstreamOwned: true,
+		Inputs: []config.GitSporkConfigTemplatedInput{
+			{Name: "name", JSONDataPath: "inputs.json"},
+		},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+	first, err := os.ReadFile(filepath.Join(downstreamDir, ".gitspork", templatedInputsCacheFileName))
+	require.NoError(t, err)
+
+	// The second run skips rendering because the destination exists.
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+	second, err := os.ReadFile(filepath.Join(downstreamDir, ".gitspork", templatedInputsCacheFileName))
+	require.NoError(t, err)
+	assert.Equal(t, string(first), string(second), "skipping a downstream_owned destination must keep its cached inputs")
+}

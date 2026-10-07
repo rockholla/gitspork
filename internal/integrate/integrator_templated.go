@@ -69,6 +69,10 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 			fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
 			if _, err := os.Stat(fullDestPath); err == nil {
 				logger.Log("⏭️  skipping %s (downstream_owned: true, destination already exists)", templatedInstruction.Destination)
+				// Still configured, so keep its inputs rather than letting the rebuild prune them.
+				if cached, ok := existingCache[templatedInstruction.Destination]; ok {
+					nextCache[templatedInstruction.Destination] = cached
+				}
 				continue
 			}
 		}

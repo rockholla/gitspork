@@ -868,3 +868,30 @@ func TestIntegrateLocal_templated_downstreamOwned_skipsOnSubsequent(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, "downstream-edited", string(content), "downstream_owned file must not be overwritten on subsequent integrates")
 }
+
+// TestIntegrateLocal_nonInteractive_rendersPromptDefaults: with NonInteractive
+// set, a prompt input resolves to its prompt_default without a terminal.
+func TestIntegrateLocal_nonInteractive_rendersPromptDefaults(t *testing.T) {
+	downstreamDir := emptyDownstream(t)
+	upstream := fstest.MapFS{
+		".gitspork.yml": {Data: []byte(`templated:
+- template: greeting.txt.tmpl
+  destination: greeting.txt
+  inputs:
+  - name: name
+    prompt: "Who to greet?"
+    prompt_default:
+      value: world
+`)},
+		"greeting.txt.tmpl": {Data: []byte(`Hello, {{ index .Inputs "name" }}!`)},
+	}
+	_, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{upstream},
+		DownstreamPath: downstreamDir,
+		NonInteractive: true,
+	})
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "greeting.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, world!", string(got))
+}

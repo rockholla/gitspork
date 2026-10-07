@@ -32,6 +32,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 	var upstreamFlags []string
 	var downstreamRepoPath string
 	var forceRePrompt bool
+	var nonInteractive bool
 	var cacheTTL time.Duration
 	var noCache bool
 
@@ -49,6 +50,7 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 				Logger:             logger,
 				DownstreamRepoPath: downstreamRepoPath,
 				ForceRePrompt:      forceRePrompt,
+				NonInteractive:     nonInteractive,
 				CacheTTL:           cacheTTL,
 				NoCache:            noCache,
 			}
@@ -92,6 +94,8 @@ func (isc *IntegrateSubcommand) GetCmd() *cobra.Command {
 		"local path to the downstream repo clone to integrate/re-integrate, defaults to the present working directory")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
 		"If true, will disregard any previous prompt input value caches for templated instructions")
+	cmd.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false,
+		"If true, templated prompts take their prompt_default (or empty) instead of reading input; cannot be combined with --force-re-prompt")
 	cmd.PersistentFlags().DurationVar(&cacheTTL, "cache-ttl", 0,
 		"upstream mirror cache freshness threshold (e.g. 2h, 30m); if a cached upstream is younger than this, no fetch is performed. "+
 			"Zero-value means 'use GITSPORK_CACHE_TTL env if set, else 2h'. Use --no-cache to bypass entirely.")

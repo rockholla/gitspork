@@ -14,6 +14,12 @@ type IntegrateOptions struct {
 	ForceRePrompt      bool
 	Logger             Logger
 
+	// NonInteractive answers every templated prompt input with its
+	// prompt_default (or empty) instead of reading from the terminal. Values
+	// from seeds, the input cache and from_destination_structured still win.
+	// Cannot be combined with ForceRePrompt.
+	NonInteractive bool
+
 	// CacheTTL controls the machine-scoped upstream mirror cache freshness
 	// threshold. A cache entry younger than CacheTTL is used as-is; older
 	// triggers a `git fetch` refresh. Zero-value means "use GITSPORK_CACHE_TTL
@@ -50,6 +56,12 @@ type IntegrateLocalOptions struct {
 	DownstreamPath string
 	ForceRePrompt  bool
 	Logger         Logger
+
+	// NonInteractive answers every templated prompt input with its
+	// prompt_default (or empty) instead of reading from the terminal. Values
+	// from seeds, the input cache and from_destination_structured still win.
+	// Cannot be combined with ForceRePrompt.
+	NonInteractive bool
 
 	// CacheTTL controls the machine-scoped upstream mirror cache freshness
 	// threshold. A cache entry younger than CacheTTL is used as-is; older

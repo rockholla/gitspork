@@ -28,6 +28,7 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 	var upstreamPaths []string
 	var downstreamPath string
 	var forceRePrompt bool
+	var nonInteractive bool
 
 	var cmd = &cobra.Command{
 		Use:   "integrate-local",
@@ -39,6 +40,7 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 				UpstreamPaths:  upstreamPaths,
 				DownstreamPath: downstreamPath,
 				ForceRePrompt:  forceRePrompt,
+				NonInteractive: nonInteractive,
 			}); err != nil {
 				if errors.Is(err, sdktypes.ErrSelfIntegration) {
 					logger.Log("%v", err)
@@ -56,6 +58,8 @@ func (ilsc *IntegrateLocalSubcommand) GetCmd() *cobra.Command {
 		"local path to integrate/re-integrate w/ the standards set at the upstream-path")
 	cmd.PersistentFlags().BoolVarP(&forceRePrompt, "force-re-prompt", "f", false,
 		"If true, will disregard any previous prompt input value caches for templated instructions")
+	cmd.PersistentFlags().BoolVar(&nonInteractive, "non-interactive", false,
+		"If true, templated prompts take their prompt_default (or empty) instead of reading input; cannot be combined with --force-re-prompt")
 
 	return cmd
 }

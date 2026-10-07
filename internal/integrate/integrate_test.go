@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 	gogitssh "github.com/go-git/go-git/v6/plumbing/transport/ssh"
 	"github.com/rockholla/gitspork/v2/internal/config"
+	inputpkg "github.com/rockholla/gitspork/v2/internal/input"
 	"github.com/rockholla/gitspork/v2/internal/logutil"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/rockholla/gitspork/v2/test/testharness"
@@ -228,7 +229,7 @@ func Test_integrate_writesGitattributesWithNoTemplatedInstructions(t *testing.T)
 	// .gitattributes was only written when IntegratorTemplated ran.
 	cfg := &config.GitSporkConfig{}
 
-	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, sdktypes.NoopLogger(), nil))
+	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, false, sdktypes.NoopLogger(), nil))
 
 	attrs, err := os.ReadFile(filepath.Join(downstreamDir, ".gitattributes"))
 	require.NoError(t, err)
@@ -685,4 +686,43 @@ func Test_materializeFS_lowModeFallback(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(0755), info.Mode().Perm(), "executable mode must be preserved")
 	})
+}
+
+func TestIntegrate_rejectsForceRePromptWithNonInteractive(t *testing.T) {
+	_, err := IntegrateLocal(&sdktypes.IntegrateLocalOptions{
+		UpstreamPaths: []string{t.TempDir()}, DownstreamPath: t.TempDir(),
+		ForceRePrompt: true, NonInteractive: true,
+	})
+	assert.ErrorIs(t, err, errForceRePromptNonInteractive)
+	_, err = Integrate(&sdktypes.IntegrateOptions{
+		Upstreams:     []sdktypes.UpstreamSpec{{URL: "https://example.invalid/repo.git"}},
+		ForceRePrompt: true, NonInteractive: true,
+	})
+	assert.ErrorIs(t, err, errForceRePromptNonInteractive)
+}
+
+// TestIntegrate_nonInteractive_remoteRendersPromptDefaults covers the remote path, where
+// NonInteractive is copied through two internal requests before reaching the templated integrator.
+func TestIntegrate_nonInteractive_remoteRendersPromptDefaults(t *testing.T) {
+	upstreamDir := testharness.NewUpstreamRepo(t, map[string]string{
+		"greeting.txt.tmpl": `Hello, {{ index .Inputs "name" }}!`,
+	}, "templated:\n- template: greeting.txt.tmpl\n  destination: greeting.txt\n  inputs:\n  - name: name\n    prompt: \"Who to greet?\"\n    prompt_default:\n      value: world\n")
+	downstreamDir := testharness.NewDownstreamRepo(t)
+
+	orig := requestInputFn
+	t.Cleanup(func() { requestInputFn = orig })
+	requestInputFn = func(*inputpkg.RequestInputOptions) (*inputpkg.RequestInputResult, error) {
+		t.Fatal("NonInteractive must not prompt")
+		return nil, nil
+	}
+	_, err := Integrate(&sdktypes.IntegrateOptions{
+		Upstreams:          []sdktypes.UpstreamSpec{{URL: upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+		NonInteractive:     true,
+		NoCache:            true,
+	})
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(downstreamDir, "greeting.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "Hello, world!", string(got))
 }

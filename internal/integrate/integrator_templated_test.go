@@ -1393,3 +1393,30 @@ func TestIntegratorTemplated_downstreamOwnedKeepsCachedInputsWhenSkipped(t *test
 	require.NoError(t, err)
 	assert.Equal(t, string(first), string(second), "skipping a downstream_owned destination must keep its cached inputs")
 }
+
+func TestIntegratorTemplated_nonInteractive_usesDefaultsWithoutPrompting(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"),
+		[]byte(`{{ index .Inputs "name" }}/{{ index .Inputs "blank" }}`), 0644))
+
+	orig := requestInputFn
+	t.Cleanup(func() { requestInputFn = orig })
+	requestInputFn = func(*inputpkg.RequestInputOptions) (*inputpkg.RequestInputResult, error) {
+		t.Fatal("NonInteractive must not prompt")
+		return nil, nil
+	}
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{
+			{Name: "name", Prompt: "Enter name", PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "world"}},
+			{Name: "blank", Prompt: "Enter blank"},
+		},
+	}}
+	require.NoError(t, (&IntegratorTemplated{NonInteractive: true}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "world/", string(rendered))
+}

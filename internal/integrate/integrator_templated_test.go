@@ -1456,5 +1456,11 @@ func TestIntegratorTemplated_promptDefaultWithoutPrompt(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(downstreamDir, "rendered.yaml")))
 	assert.Equal(t, "timeout: 60", integrateAndRead(nil), "cached answer wins over the default")
 
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "rendered.yaml"), []byte("timeout: 45"), 0644))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger(), nil))
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "timeout: 30", string(rendered), "force-re-prompt resets to the default")
+
 	assert.Zero(t, sc.calls, "an input without prompt must never ask")
 }

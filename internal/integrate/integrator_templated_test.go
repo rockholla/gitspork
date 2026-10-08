@@ -1460,6 +1460,14 @@ func TestIntegratorTemplated_choices(t *testing.T) {
 		assert.ErrorContains(t, err, `input job: "yes" is not one of choices`)
 	})
 
+	t.Run("rejects a cached answer outside choices", func(t *testing.T) {
+		stubRequestInput(t, "")
+		downstreamDir := t.TempDir()
+		require.NoError(t, saveTemplatedInputs(downstreamDir, map[string]map[string]string{"rendered.txt": {"job": "ture"}}))
+		err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
+		assert.ErrorContains(t, err, `input job: "ture" is not one of choices`)
+	})
+
 	t.Run("non-interactive without a default is an error", func(t *testing.T) {
 		noDefault := []config.GitSporkConfigTemplated{instructions[0]}
 		noDefault[0].Inputs = []config.GitSporkConfigTemplatedInput{{Name: "job", Prompt: "Enable?", Choices: []string{"true", "false"}}}

@@ -24,3 +24,16 @@ func TestParseGitSporkConfig_choicesRejectsDefaultOutsideChoices(t *testing.T) {
 	_, err := ParseGitSporkConfig(path)
 	assert.ErrorContains(t, err, `prompt_default.value "yes" is not one of choices`)
 }
+
+func TestParseGitSporkConfig_choicesRequiresPrompt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitspork.yml")
+	require.NoError(t, os.WriteFile(path, []byte(`templated:
+- template: t.tmpl
+  destination: t.txt
+  inputs:
+  - name: scheduledJob
+    choices: ["true", "false"]
+`), 0644))
+	_, err := ParseGitSporkConfig(path)
+	assert.ErrorContains(t, err, "choices requires prompt")
+}

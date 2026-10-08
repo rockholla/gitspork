@@ -72,7 +72,9 @@ func RequestInput(opts *RequestInputOptions) (*RequestInputResult, error) {
 		if err == io.EOF {
 			err = nil
 		}
-		result.StringValue = fmt.Sprintf("%v", choice)
+		if choice != nil {
+			result.StringValue = fmt.Sprintf("%v", choice)
+		}
 		return result, err
 	case YesNo:
 		stdinReader := bufio.NewReader(os.Stdin)

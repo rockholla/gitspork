@@ -19,6 +19,10 @@ type IntegratedUpstream struct {
 	URL        string
 	Subpath    string
 	CommitHash string
+	// Inputs holds the resolved templated inputs, keyed by destination path
+	// then input name. Each destination also carries every seed input;
+	// nil when the upstream has nothing templated.
+	Inputs map[string]map[string]string
 }
 
 // DriftReport is the structural return value of CheckDrift. HasDrift is false

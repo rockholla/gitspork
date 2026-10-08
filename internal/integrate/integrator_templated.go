@@ -166,7 +166,10 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					if !i.NonInteractive {
 						opts := &inputpkg.RequestInputOptions{Type: inputpkg.SingleValue, Prompt: prompt}
 						if len(input.Choices) > 0 {
-							opts = &inputpkg.RequestInputOptions{Type: inputpkg.Selection, Prompt: input.Prompt, SelectOptions: input.Choices, Default: promptDefaultVal}
+							opts.Type = inputpkg.Selection
+							opts.Prompt = input.Prompt
+							opts.SelectOptions = input.Choices
+							opts.Default = promptDefaultVal
 						}
 						requestInputResult, err := requestInputFn(opts)
 						if err != nil {

@@ -131,6 +131,9 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 	}
 	for _, t := range config.Templated {
 		for _, in := range t.Inputs {
+			if len(in.Choices) > 0 && in.Prompt == "" {
+				return config, fmt.Errorf("invalid templated input %s in %s: choices requires prompt", in.Name, gitSporkConfigFilePath)
+			}
 			if len(in.Choices) > 0 && in.PromptDefault != nil && in.PromptDefault.Value != "" && !slices.Contains(in.Choices, in.PromptDefault.Value) {
 				return config, fmt.Errorf("invalid templated input %s in %s: prompt_default.value %q is not one of choices %v", in.Name, gitSporkConfigFilePath, in.PromptDefault.Value, in.Choices)
 			}

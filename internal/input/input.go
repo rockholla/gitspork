@@ -29,6 +29,8 @@ type RequestInputOptions struct {
 	Type          RequestInputType
 	Prompt        string
 	SelectOptions []string
+	// Default is the SelectOptions entry the Selection cursor starts on.
+	Default string
 }
 
 // RequestInputResult is an object representing the result of a RequestInput run
@@ -61,6 +63,9 @@ func RequestInput(opts *RequestInputOptions) (*RequestInputResult, error) {
 	case Selection:
 		menu := NewMenu(fmt.Sprintf("➡️ %s", promptColor.Sprint(opts.Prompt)))
 		for _, selectOption := range opts.SelectOptions {
+			if selectOption == opts.Default {
+				menu.CursorPos = len(menu.MenuItems)
+			}
 			menu.AddItem(selectOption, selectOption)
 		}
 		choice, err := menu.Display()

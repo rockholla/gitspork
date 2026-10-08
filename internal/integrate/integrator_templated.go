@@ -141,7 +141,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				// populated data into the previous_input chain for subsequent
 				// templated instructions in this run.
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-			} else if input.Prompt != "" || input.PromptDefault != nil {
+			} else if input.Prompt != "" || (input.PromptDefault != nil && input.PreviousInput == nil) {
 				hasSeededDefault := input.PromptDefault != nil && input.PromptDefault.FromSeeded != ""
 				if templateData.Inputs[input.Name] == "" || forceRePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
 					prompt := input.Prompt

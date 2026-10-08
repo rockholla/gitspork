@@ -1453,5 +1453,8 @@ func TestIntegratorTemplated_promptDefaultWithoutPrompt(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(downstreamDir, "rendered.yaml")))
 	assert.Equal(t, "timeout: 60", integrateAndRead(map[string]string{"timeout": "60"}), "seed wins over the default")
 
+	require.NoError(t, os.Remove(filepath.Join(downstreamDir, "rendered.yaml")))
+	assert.Equal(t, "timeout: 60", integrateAndRead(nil), "cached answer wins over the default")
+
 	assert.Zero(t, sc.calls, "an input without prompt must never ask")
 }

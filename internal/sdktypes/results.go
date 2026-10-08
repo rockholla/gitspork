@@ -20,7 +20,7 @@ type IntegratedUpstream struct {
 	Subpath    string
 	CommitHash string
 	// Inputs holds the resolved templated inputs, keyed by destination path
-	// then input name.
+	// then input name. Each destination also carries every seed input.
 	Inputs map[string]map[string]string
 }
 

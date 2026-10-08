@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"text/template"
 
 	"github.com/rockholla/gitspork/v2/internal/config"
@@ -163,10 +164,14 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					}
 					val := ""
 					if !i.NonInteractive {
-						requestInputResult, err := requestInputFn(&inputpkg.RequestInputOptions{
-							Type:   inputpkg.SingleValue,
-							Prompt: prompt,
-						})
+						opts := &inputpkg.RequestInputOptions{Type: inputpkg.SingleValue, Prompt: prompt}
+						if len(input.Choices) > 0 {
+							opts.Type = inputpkg.Selection
+							opts.Prompt = input.Prompt
+							opts.SelectOptions = input.Choices
+							opts.Default = promptDefaultVal
+						}
+						requestInputResult, err := requestInputFn(opts)
 						if err != nil {
 							return fmt.Errorf("error setting up prompt input: %v", err)
 						}
@@ -177,6 +182,9 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					}
 					templateData.Inputs[input.Name] = val
 					capturedInputValues[templatedInstruction.Template][input.Name] = val
+				}
+				if len(input.Choices) > 0 && !slices.Contains(input.Choices, templateData.Inputs[input.Name]) {
+					return fmt.Errorf("input %s: %q is not one of choices %v", input.Name, templateData.Inputs[input.Name], input.Choices)
 				}
 			} else if input.PreviousInput != nil {
 				var previousInputErr error

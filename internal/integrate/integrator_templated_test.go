@@ -1420,3 +1420,58 @@ func TestIntegratorTemplated_nonInteractive_usesDefaultsWithoutPrompting(t *test
 	require.NoError(t, err)
 	assert.Equal(t, "world/", string(rendered))
 }
+
+func TestIntegratorTemplated_choices(t *testing.T) {
+	upstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"), []byte(`{{ index .Inputs "job" }}`), 0644))
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:          "job",
+			Prompt:        "Enable the scheduled job?",
+			Choices:       []string{"true", "false"},
+			PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "false"},
+		}},
+	}}
+
+	t.Run("prompts with a selection menu starting on the default", func(t *testing.T) {
+		downstreamDir := t.TempDir()
+		var got *inputpkg.RequestInputOptions
+		orig := requestInputFn
+		t.Cleanup(func() { requestInputFn = orig })
+		requestInputFn = func(opts *inputpkg.RequestInputOptions) (*inputpkg.RequestInputResult, error) {
+			got = opts
+			return &inputpkg.RequestInputResult{StringValue: "true"}, nil
+		}
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+		require.NotNil(t, got)
+		assert.Equal(t, inputpkg.Selection, got.Type)
+		assert.Equal(t, []string{"true", "false"}, got.SelectOptions)
+		assert.Equal(t, "false", got.Default)
+		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "true", string(rendered))
+	})
+
+	t.Run("rejects a seed outside choices", func(t *testing.T) {
+		stubRequestInput(t, "")
+		err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, t.TempDir(), false, sdktypes.NoopLogger(), map[string]string{"job": "yes"})
+		assert.ErrorContains(t, err, `input job: "yes" is not one of choices`)
+	})
+
+	t.Run("rejects a cached answer outside choices", func(t *testing.T) {
+		stubRequestInput(t, "")
+		downstreamDir := t.TempDir()
+		require.NoError(t, saveTemplatedInputs(downstreamDir, map[string]map[string]string{"rendered.txt": {"job": "ture"}}))
+		err := (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil)
+		assert.ErrorContains(t, err, `input job: "ture" is not one of choices`)
+	})
+
+	t.Run("non-interactive without a default is an error", func(t *testing.T) {
+		noDefault := []config.GitSporkConfigTemplated{instructions[0]}
+		noDefault[0].Inputs = []config.GitSporkConfigTemplatedInput{{Name: "job", Prompt: "Enable?", Choices: []string{"true", "false"}}}
+		err := (&IntegratorTemplated{NonInteractive: true}).Integrate(noDefault, upstreamDir, t.TempDir(), false, sdktypes.NoopLogger(), nil)
+		assert.ErrorContains(t, err, `input job: "" is not one of choices`)
+	})
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/goccy/go-yaml"
 	"github.com/rockholla/go-lib/marshal"
@@ -77,6 +78,7 @@ type GitSporkConfigTemplatedInput struct {
 	Name                      string                                             `yaml:"name" comment:"name of the input as defined in the template like 'index .Inputs \"[name]\"'"`
 	Prompt                    string                                             `yaml:"prompt,omitempty" comment:"(optional, one-of required) prompt to present to the user in order to gather the input value"`
 	PromptDefault             *GitSporkConfigTemplatedPromptDefault              `yaml:"prompt_default,omitempty" comment:"(optional) allows to specify instruction on a default value for a prompt should the user not provide input"`
+	Choices                   []string                                           `yaml:"choices,omitempty" comment:"(optional) fixed set of answers for 'prompt', shown as a selection menu; seeded, cached and default values must be one of these"`
 	ExpectSeeded              bool                                               `yaml:"expect_seeded,omitempty" comment:"(optional one-of-required) whether or not we expect this input to have come from seed data; only supported in integrate-local (and the SDK's IntegrateLocal), not remote integrate"`
 	JSONDataPath              string                                             `yaml:"json_data_path,omitempty" comment:"(optional, one-of required) JSON data file path (relative to the downstream path) containing the input value at the root property equal to the 'name'. Contract is that downstream is responsible for maintaining this path."`
 	PreviousInput             *GitSporkConfigTemplatedInputPrevious              `yaml:"previous_input,omitempty" comment:"(optional, one-of-required) reference to an input already known from this template or another template defined before this one"`
@@ -125,6 +127,16 @@ func ParseGitSporkConfig(gitSporkConfigFilePath string) (*GitSporkConfig, error)
 	for _, e := range config.DownstreamOwned {
 		if err := e.Validate(); err != nil {
 			return config, fmt.Errorf("invalid downstream_owned entry in %s: %v", gitSporkConfigFilePath, err)
+		}
+	}
+	for _, t := range config.Templated {
+		for _, in := range t.Inputs {
+			if len(in.Choices) > 0 && in.Prompt == "" {
+				return config, fmt.Errorf("invalid templated input %s in %s: choices requires prompt", in.Name, gitSporkConfigFilePath)
+			}
+			if len(in.Choices) > 0 && in.PromptDefault != nil && in.PromptDefault.Value != "" && !slices.Contains(in.Choices, in.PromptDefault.Value) {
+				return config, fmt.Errorf("invalid templated input %s in %s: prompt_default.value %q is not one of choices %v", in.Name, gitSporkConfigFilePath, in.PromptDefault.Value, in.Choices)
+			}
 		}
 	}
 	return config, nil
@@ -209,6 +221,14 @@ func GetGitSporkConfigSchema() (string, string, error) {
 						Prompt: "What is the value of input_seven?",
 						PromptDefault: &GitSporkConfigTemplatedPromptDefault{
 							Value: "static-default-value",
+						},
+					},
+					{
+						Name:    "input_eight",
+						Prompt:  "Enable the scheduled job?",
+						Choices: []string{"true", "false"},
+						PromptDefault: &GitSporkConfigTemplatedPromptDefault{
+							Value: "false",
 						},
 					},
 				},

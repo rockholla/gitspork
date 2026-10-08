@@ -63,6 +63,13 @@ templated: # list of instruction for templated source files in the upstream that
     prompt: "What is the value of input_seven?" # (optional, one-of required) prompt to present to the user in order to gather the input value
     prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
       value: "static-default-value" # static value to use as the default value should the user not provide input to the prompt
+  - name: "input_eight" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "Enable the scheduled job?" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
+      value: "false" # static value to use as the default value should the user not provide input to the prompt
+    choices: # (optional) fixed set of answers for 'prompt', shown as a selection menu; seeded, cached and default values must be one of these
+    - "true"
+    - "false"
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 - template: "meta-seed.txt.go.tmpl" # source path of the Go template file to use in the upstream

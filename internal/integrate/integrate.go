@@ -272,7 +272,8 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		}
 	}
 
-	if err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.nonInteractive, req.forDriftCheck, req.Logger, nil); err != nil {
+	inputs, err := integrate(gitSporkConfig, upstreamRootPath, req.DownstreamRepoPath, req.ForceRePrompt, req.nonInteractive, req.forDriftCheck, req.Logger, nil)
+	if err != nil {
 		return sdktypes.IntegratedUpstream{}, err
 	}
 
@@ -295,15 +296,16 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		URL:        originalUpstreamURL,
 		Subpath:    upstream.Subpath,
 		CommitHash: commitHash,
+		Inputs:     inputs,
 	}, nil
 }
 
-func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, nonInteractive bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) error {
+func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, nonInteractive bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) (map[string]map[string]string, error) {
 	greenBold := color.New(color.FgHiGreen, color.Bold)
 
 	if !forDriftCheck {
 		if err := ensureGitsporkAttributes(downstreamPath); err != nil {
-			return fmt.Errorf("error ensuring .gitattributes for .gitspork/ content: %v", err)
+			return nil, fmt.Errorf("error ensuring .gitattributes for .gitspork/ content: %v", err)
 		}
 	}
 
@@ -322,20 +324,20 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 	for _, migrationConfigPath := range gitSporkConfig.Migrations {
 		migrationConfig, err := config.ParseMigrationConfig(filepath.Join(upstreamPath, migrationConfigPath))
 		if err != nil {
-			return fmt.Errorf("error parsing migration config: %v", err)
+			return nil, fmt.Errorf("error parsing migration config: %v", err)
 		}
 		if migrationConfig.PreIntegrate != nil {
 			migrationConfig.PreIntegrate.ID = fmt.Sprintf("%s:%s", migrationConfigPath, preIntegrateMigrationID)
 			preIntegrateMigrations, err = queueMigrationIfNotCompleted(migrationConfig.PreIntegrate, preIntegrateMigrations)
 			if err != nil {
-				return fmt.Errorf("error queuing post-integrate migrations: %v", err)
+				return nil, fmt.Errorf("error queuing post-integrate migrations: %v", err)
 			}
 		}
 		if migrationConfig.PostIntegrate != nil {
 			migrationConfig.PostIntegrate.ID = fmt.Sprintf("%s:%s", migrationConfigPath, postIntegrateMigrationID)
 			postIntegrateMigrations, err = queueMigrationIfNotCompleted(migrationConfig.PostIntegrate, postIntegrateMigrations)
 			if err != nil {
-				return fmt.Errorf("error queuing post-integrate migrations: %v", err)
+				return nil, fmt.Errorf("error queuing post-integrate migrations: %v", err)
 			}
 		}
 	}
@@ -343,11 +345,11 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 	for _, preIntegrateMigration := range preIntegrateMigrations {
 		logger.Log("%s", greenBold.Sprintf("running pre-integrate migration defined in upstream against the downstream: %s", preIntegrateMigration.ID))
 		if err := runMigration(preIntegrateMigration, upstreamPath, downstreamPath, logger); err != nil {
-			return fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
+			return nil, fmt.Errorf("error running pre-integrate migration against the downstream: %v", err)
 		}
 		if !forDriftCheck {
 			if err := recordCompleteMigration(preIntegrateMigration.ID, downstreamPath); err != nil {
-				return fmt.Errorf("error recording successful migration result: %v", err)
+				return nil, fmt.Errorf("error recording successful migration result: %v", err)
 			}
 		}
 	}
@@ -356,47 +358,48 @@ func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downs
 
 	logger.Log("%s", greenBold.Sprint("integrating configured upstream-owned resources from upstream to downstream"))
 	if err := (&IntegratorUpstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.UpstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
-		return fmt.Errorf("error integrating upstream-owned: %v", err)
+		return nil, fmt.Errorf("error integrating upstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured downstream-owned resources from upstream to downstream"))
 	if err := (&IntegratorDownstreamOwned{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.DownstreamOwned, upstreamPath, downstreamPath, logger); err != nil {
-		return fmt.Errorf("error integrating downstream-owned: %v", err)
+		return nil, fmt.Errorf("error integrating downstream-owned: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership generic resources to merge b/w upstream and downstream"))
 	if err := (&IntegratorSharedOwnershipMerged{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Merged, upstreamPath, downstreamPath, logger); err != nil {
-		return fmt.Errorf("error integrating shared-ownership.merged: %v", err)
+		return nil, fmt.Errorf("error integrating shared-ownership.merged: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering upstream data"))
 	if err := (&IntegratorSharedOwnershipStructuredPreferUpstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferUpstream, upstreamPath, downstreamPath, logger); err != nil {
-		return fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
+		return nil, fmt.Errorf("error integrating shared-ownership.structured.prefer_upstream: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured shared-ownership structured resources to merge, prefering downstream data"))
 	if err := (&IntegratorSharedOwnershipStructuredPreferDownstream{UpstreamOnly: upstreamOnly}).Integrate(gitSporkConfig.SharedOwnership.Structured.PreferDownstream, upstreamPath, downstreamPath, logger); err != nil {
-		return fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
+		return nil, fmt.Errorf("error integrating shared-ownership.structured.prefer_downstream: %v", err)
 	}
 
 	logger.Log("%s", greenBold.Sprint("integrating configured templated resources from upstream to downstream"))
-	if err := (&IntegratorTemplated{NonInteractive: nonInteractive}).Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger, seedInputs); err != nil {
-		return fmt.Errorf("error integrating templated: %v", err)
+	templated := &IntegratorTemplated{NonInteractive: nonInteractive}
+	if err := templated.Integrate(gitSporkConfig.Templated, upstreamPath, downstreamPath, forceRePrompt, logger, seedInputs); err != nil {
+		return nil, fmt.Errorf("error integrating templated: %v", err)
 	}
 
 	for _, postIntegrateMigration := range postIntegrateMigrations {
 		logger.Log("%s", greenBold.Sprintf("running post-integrate migration defined in upstream against the downstream: %s", postIntegrateMigration.ID))
 		if err := runMigration(postIntegrateMigration, upstreamPath, downstreamPath, logger); err != nil {
-			return fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
+			return nil, fmt.Errorf("error running post-integrate migration against the downstream: %v", err)
 		}
 		if !forDriftCheck {
 			if err := recordCompleteMigration(postIntegrateMigration.ID, downstreamPath); err != nil {
-				return fmt.Errorf("error recording successful migration result: %v", err)
+				return nil, fmt.Errorf("error recording successful migration result: %v", err)
 			}
 		}
 	}
 
-	return nil
+	return templated.Resolved, nil
 }
 
 // applySSHKnownHosts sets the host key callback on agentAuth from SSH_KNOWN_HOSTS.

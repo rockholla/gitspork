@@ -25,6 +25,8 @@ var requestInputFn = inputpkg.RequestInput
 type IntegratorTemplated struct {
 	// NonInteractive resolves prompt inputs to their default without prompting.
 	NonInteractive bool
+	// Resolved holds the inputs per destination after Integrate succeeds.
+	Resolved map[string]map[string]string
 }
 
 var _ TemplatedIntegrator = (*IntegratorTemplated)(nil)
@@ -284,5 +286,6 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 	if err := saveTemplatedInputs(downstreamPath, nextCache); err != nil {
 		return fmt.Errorf("error writing templated inputs cache: %v", err)
 	}
+	i.Resolved = nextCache
 	return nil
 }

@@ -58,11 +58,13 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 		if err != nil {
 			return result, err
 		}
-		if err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, opts.NonInteractive, false, opts.Logger, opts.SeedInputs); err != nil {
+		inputs, err := integrate(gitSporkConfig, upstreamPath, opts.DownstreamPath, opts.ForceRePrompt, opts.NonInteractive, false, opts.Logger, opts.SeedInputs)
+		if err != nil {
 			return result, err
 		}
 		result.Upstreams = append(result.Upstreams, sdktypes.IntegratedUpstream{
-			URL: upstreamPath, // local path (or materialized temp dir) in URL slot; no CommitHash for local
+			URL:    upstreamPath, // local path (or materialized temp dir) in URL slot; no CommitHash for local
+			Inputs: inputs,
 		})
 	}
 	return result, nil

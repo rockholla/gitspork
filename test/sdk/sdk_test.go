@@ -895,3 +895,20 @@ func TestIntegrateLocal_nonInteractive_rendersPromptDefaults(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, world!", string(got))
 }
+
+// integrate-local: resolved templated inputs are returned per destination
+func TestIntegrateLocal_returnsResolvedInputs(t *testing.T) {
+	fsys := fstest.MapFS{
+		".gitspork.yml":        {Data: []byte("templated:\n- template: greeting.txt.go.tmpl\n  destination: greeting.txt\n  inputs:\n  - name: greeting\n    expect_seeded: true\n")},
+		"greeting.txt.go.tmpl": {Data: []byte(`{{ index .Inputs "greeting" }}`)},
+	}
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamFSes:   []fs.FS{fsys},
+		DownstreamPath: emptyDownstream(t),
+		SeedInputs:     map[string]string{"greeting": "hello"},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 1)
+	assert.Equal(t, map[string]map[string]string{"greeting.txt": {"greeting": "hello"}}, result.Upstreams[0].Inputs)
+}

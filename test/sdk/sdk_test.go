@@ -959,3 +959,27 @@ func TestCheckDrift_reportCarriesUpstreamConfig(t *testing.T) {
 	require.True(t, errors.Is(err, gitspork.ErrDriftDetected))
 	check(t, report)
 }
+
+// The config types are nameable from the root package, so a caller can pass a
+// result's Config around and build one in its own tests.
+func TestUpstreamConfig_typesAreNameable(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamPaths:  []string{upstreamDir},
+		DownstreamPath: emptyDownstream(t),
+	})
+	require.NoError(t, err)
+
+	var cfg *gitspork.UpstreamConfig = result.Upstreams[0].Config
+	require.NotNil(t, cfg)
+
+	built := gitspork.IntegratedUpstream{
+		URL: "u",
+		Config: &gitspork.UpstreamConfig{
+			UpstreamOwned:   []string{"a/**"},
+			SharedOwnership: gitspork.SharedOwnership{Merged: []string{".gitignore"}},
+			Templated:       []gitspork.TemplatedDestination{{Destination: "out.txt", DownstreamOwned: true}},
+		},
+	}
+	assert.Equal(t, []string{".gitignore"}, built.Config.SharedOwnership.Merged)
+}

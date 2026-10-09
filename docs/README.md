@@ -17,8 +17,6 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 When getting started, you can run `gitspork init --help` or `gitspork schema` to see the schema and documentation for `.gitspork.yml`:
 
 ```yaml
-Main .gitspork.yml schema:
----------------------------------------------
 upstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream
 - "upstream-owned.txt"
 - from: "upstream-owned-renamed-from.txt" # (rename) upstream source glob/path
@@ -78,14 +76,6 @@ templated: # list of instruction for templated source files in the upstream that
     prompt: "What is the value of input_one?" # (optional, one-of required) prompt to present to the user in order to gather the input value
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"
-
-
-Migration YAML schema:
----------------------------------------------
-pre_integrate:
-  exec: "./.gitspork/migrations/0001/pre-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
-post_integrate:
-  exec: "./.gitspork/migrations/0001/post-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
 ```
 
 Additionally, the schema for migrations yaml files will also be provided in the output of that command:

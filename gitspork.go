@@ -44,6 +44,19 @@ type IntegrateResult = sdktypes.IntegrateResult
 // no scheme, and CommitHash is empty (local paths have no commit-hash concept).
 type IntegratedUpstream = sdktypes.IntegratedUpstream
 
+// UpstreamConfig is the ownership layout an upstream's .gitspork.yml declared,
+// carried by IntegratedUpstream.Config: the upstream_owned, downstream_owned,
+// upstream_only, shared_ownership and templated destinations, as glob patterns
+// relative to the downstream root. A {from, to} rename is listed by its to.
+type UpstreamConfig = sdktypes.UpstreamConfig
+
+// SharedOwnership is the shared_ownership part of an UpstreamConfig.
+type SharedOwnership = sdktypes.SharedOwnership
+
+// TemplatedDestination is where a templated entry renders in the downstream,
+// one element of UpstreamConfig.Templated.
+type TemplatedDestination = sdktypes.TemplatedDestination
+
 // DriftReport is the structural return value of CheckDrift. HasDrift is false
 // when the downstream matches the recorded integration state; true when
 // differences were found. Files enumerates the drifted entries with per-file

@@ -104,11 +104,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {
+			// Only a prompted input has something to re-ask.
+			rePrompt := forceRePrompt && input.Prompt != ""
 			// from_destination_structured is an optional first-pass: read a scalar from
 			// the already-rendered destination file. If resolved, the value wins immediately
 			// and the remaining sources are skipped. If not resolved (file/path absent, null
 			// value, or forceRePrompt), execution falls through to the sources below.
-			if input.FromDestinationStructured != nil && !forceRePrompt {
+			if input.FromDestinationStructured != nil && !rePrompt {
 				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
 				value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
 				if err != nil {
@@ -143,7 +145,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
 			} else if input.Prompt != "" || (input.PromptDefault != nil && input.PreviousInput == nil) {
 				hasSeededDefault := input.PromptDefault != nil && input.PromptDefault.FromSeeded != ""
-				if templateData.Inputs[input.Name] == "" || forceRePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
+				if templateData.Inputs[input.Name] == "" || rePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
 					prompt := input.Prompt
 					promptDefaultVal := ""
 					if input.PromptDefault != nil {

@@ -1460,7 +1460,37 @@ func TestIntegratorTemplated_promptDefaultWithoutPrompt(t *testing.T) {
 	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger(), nil))
 	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.yaml"))
 	require.NoError(t, err)
-	assert.Equal(t, "timeout: 30", string(rendered), "force-re-prompt resets to the default")
+	assert.Equal(t, "timeout: 45", string(rendered), "force-re-prompt keeps the downstream value")
+
+	freshDownstream := t.TempDir()
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, freshDownstream, true, sdktypes.NoopLogger(), map[string]string{"timeout": "60"}))
+	rendered, err = os.ReadFile(filepath.Join(freshDownstream, "rendered.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "timeout: 60", string(rendered), "force-re-prompt keeps the seed")
 
 	assert.Zero(t, sc.calls, "an input without prompt must never ask")
+}
+
+func TestIntegratorTemplated_previousInputWinsOverPromptDefault(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"), []byte(`{{ index .Inputs "copy" }}`), 0644))
+	stubRequestInput(t, "")
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{
+			{Name: "source", PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "from-source"}},
+			{
+				Name:          "copy",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{Template: "template.txt", Name: "source"},
+				PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "unused"},
+			},
+		},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "from-source", string(rendered))
 }

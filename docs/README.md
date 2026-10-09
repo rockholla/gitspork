@@ -255,6 +255,8 @@ func main() {
 
 The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.
 
+Each integrated upstream in those results (`IntegratedUpstream`, also listed in `DriftReport.Upstreams`) carries `Config`, the ownership layout its `.gitspork.yml` declared at the integrated commit: the `upstream_owned`, `downstream_owned`, `upstream_only`, `shared_ownership` and `templated` destinations, as glob patterns relative to the downstream root (a `{from, to}` rename is listed by its `to`). A caller can use it to decide things by ownership, such as which paths a downstream's CODEOWNERS should leave ownerless, without fetching the upstream itself.
+
 ## Exit codes
 
 - `0` — success.

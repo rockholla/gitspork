@@ -895,3 +895,67 @@ func TestIntegrateLocal_nonInteractive_rendersPromptDefaults(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, world!", string(got))
 }
+
+// integrate: the result carries the ownership layout the upstream's .gitspork.yml declared
+func TestIntegrate_resultCarriesUpstreamConfig(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 1)
+	cfg := result.Upstreams[0].Config
+	require.NotNil(t, cfg)
+	assert.Equal(t, []string{"upstream-owned/**"}, cfg.UpstreamOwned)
+	assert.Empty(t, cfg.DownstreamOwned)
+}
+
+// integrate-local: same, for a local upstream
+func TestIntegrateLocal_resultCarriesUpstreamConfig(t *testing.T) {
+	upstreamDir, _ := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	result, err := gitspork.IntegrateLocal(&gitspork.IntegrateLocalOptions{
+		UpstreamPaths:  []string{upstreamDir},
+		DownstreamPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Upstreams, 1)
+	require.NotNil(t, result.Upstreams[0].Config)
+	assert.Equal(t, []string{"upstream-owned/**"}, result.Upstreams[0].Config.UpstreamOwned)
+}
+
+// check-drift: the report carries the config the downstream's recorded commit declared,
+// with or without drift
+func TestCheckDrift_reportCarriesUpstreamConfig(t *testing.T) {
+	upstreamDir, upstreamHash := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	writeAndCommit(t, downstreamDir, ".gitspork/marker", "baseline")
+
+	check := func(t *testing.T, report *gitspork.DriftReport) {
+		t.Helper()
+		require.NotNil(t, report)
+		require.Len(t, report.Upstreams, 1)
+		assert.Equal(t, upstreamHash.String(), report.Upstreams[0].CommitHash)
+		require.NotNil(t, report.Upstreams[0].Config)
+		assert.Equal(t, []string{"upstream-owned/**"}, report.Upstreams[0].Config.UpstreamOwned)
+	}
+
+	report, err := gitspork.CheckDrift(&gitspork.CheckDriftOptions{DownstreamRepoPath: downstreamDir})
+	require.NoError(t, err)
+	check(t, report)
+
+	writeAndCommit(t, downstreamDir, "upstream-owned/file.txt", "drifted content\n")
+	report, err = gitspork.CheckDrift(&gitspork.CheckDriftOptions{DownstreamRepoPath: downstreamDir})
+	require.True(t, errors.Is(err, gitspork.ErrDriftDetected))
+	check(t, report)
+}

@@ -269,7 +269,7 @@ func TestIntegrateForDriftCheck_honors_UpstreamCommit(t *testing.T) {
 	require.NoError(t, err)
 
 	logger := logutil.New()
-	err = IntegrateForDriftCheck(&DriftCheckRequest{
+	_, err = IntegrateForDriftCheck(&DriftCheckRequest{
 		Logger:             logger,
 		DownstreamRepoPath: downstreamDir,
 		UpstreamURL:        "file://" + upstreamDir,

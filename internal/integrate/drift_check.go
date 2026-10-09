@@ -27,10 +27,10 @@ type DriftCheckRequest struct {
 }
 
 // IntegrateForDriftCheck runs a single-upstream integrate pinned to a specific
-// commit hash and skips the state write. It's used by internal/drift to
+// commit hash and skips the state write, returning what was integrated. It's used by internal/drift to
 // reconstruct the downstream at each recorded upstream's last-integrated
 // commit and then diff against HEAD.
-func IntegrateForDriftCheck(req *DriftCheckRequest) error {
+func IntegrateForDriftCheck(req *DriftCheckRequest) (sdktypes.IntegratedUpstream, error) {
 	if req.Logger == nil {
 		req.Logger = sdktypes.NoopLogger()
 	}
@@ -48,8 +48,9 @@ func IntegrateForDriftCheck(req *DriftCheckRequest) error {
 		noCache:            req.NoCache,
 		progress:           req.Progress,
 	}
-	if _, err := integrateOneInternal(internalReq, upstream); err != nil {
-		return fmt.Errorf("drift-check re-integration failed: %w", err)
+	integrated, err := integrateOneInternal(internalReq, upstream)
+	if err != nil {
+		return integrated, fmt.Errorf("drift-check re-integration failed: %w", err)
 	}
-	return nil
+	return integrated, nil
 }

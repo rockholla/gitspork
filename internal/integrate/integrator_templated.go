@@ -104,11 +104,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 		}
 		// we'll begin by gathering inputs to start
 		for _, input := range templatedInstruction.Inputs {
+			// Only a prompted input has something to re-ask.
+			rePrompt := forceRePrompt && input.Prompt != ""
 			// from_destination_structured is an optional first-pass: read a scalar from
 			// the already-rendered destination file. If resolved, the value wins immediately
 			// and the remaining sources are skipped. If not resolved (file/path absent, null
 			// value, or forceRePrompt), execution falls through to the sources below.
-			if input.FromDestinationStructured != nil && !forceRePrompt {
+			if input.FromDestinationStructured != nil && !rePrompt {
 				fullDestPath := filepath.Join(downstreamPath, templatedInstruction.Destination)
 				value, found, err := resolveStructuredPath(fullDestPath, input.FromDestinationStructured.Path)
 				if err != nil {
@@ -141,9 +143,9 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 				// populated data into the previous_input chain for subsequent
 				// templated instructions in this run.
 				maps.Copy(capturedInputValues[templatedInstruction.Template], templateData.Inputs)
-			} else if input.Prompt != "" {
+			} else if input.Prompt != "" || (input.PromptDefault != nil && input.PreviousInput == nil) {
 				hasSeededDefault := input.PromptDefault != nil && input.PromptDefault.FromSeeded != ""
-				if templateData.Inputs[input.Name] == "" || forceRePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
+				if templateData.Inputs[input.Name] == "" || rePrompt || (hasSeededDefault && !cachedInputKeys[input.Name]) {
 					prompt := input.Prompt
 					promptDefaultVal := ""
 					if input.PromptDefault != nil {
@@ -157,12 +159,13 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 						} else {
 							promptDefaultVal = input.PromptDefault.Value
 						}
-						if promptDefaultVal != "" {
+						if promptDefaultVal != "" && input.Prompt != "" {
 							prompt = fmt.Sprintf("%s (default = %s)", input.Prompt, promptDefaultVal)
 						}
 					}
 					val := ""
-					if !i.NonInteractive {
+					// An input with only prompt_default takes the default without asking.
+					if !i.NonInteractive && input.Prompt != "" {
 						requestInputResult, err := requestInputFn(&inputpkg.RequestInputOptions{
 							Type:   inputpkg.SingleValue,
 							Prompt: prompt,
@@ -194,7 +197,7 @@ func (i *IntegratorTemplated) Integrate(templatedInstructions []config.GitSporkC
 					return fmt.Errorf("error in previous_input configuration under template %s: %v", templatedInstruction.Template, previousInputErr)
 				}
 			} else {
-				return fmt.Errorf("templated definition %s requires at least one of 'expect_seeded', 'prompt', 'json_data_path', or 'previous_input' to be defined", input.Name)
+				return fmt.Errorf("templated definition %s requires at least one of 'expect_seeded', 'prompt', 'prompt_default', 'json_data_path', or 'previous_input' to be defined", input.Name)
 			}
 		}
 

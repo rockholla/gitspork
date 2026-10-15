@@ -229,7 +229,8 @@ func Test_integrate_writesGitattributesWithNoTemplatedInstructions(t *testing.T)
 	// .gitattributes was only written when IntegratorTemplated ran.
 	cfg := &config.GitSporkConfig{}
 
-	require.NoError(t, integrate(cfg, upstreamDir, downstreamDir, false, false, false, sdktypes.NoopLogger(), nil))
+	_, err := integrate(cfg, upstreamDir, downstreamDir, false, false, false, sdktypes.NoopLogger(), nil)
+	require.NoError(t, err)
 
 	attrs, err := os.ReadFile(filepath.Join(downstreamDir, ".gitattributes"))
 	require.NoError(t, err)

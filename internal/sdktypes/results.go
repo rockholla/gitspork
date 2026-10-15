@@ -19,6 +19,10 @@ type IntegratedUpstream struct {
 	URL        string
 	Subpath    string
 	CommitHash string
+	// Inputs holds the resolved templated inputs, keyed by destination path
+	// then input name. Each destination also carries every seed input;
+	// nil when the upstream has nothing templated.
+	Inputs map[string]map[string]string
 	// Config is the ownership layout the upstream's .gitspork.yml declared at
 	// CommitHash (or, for IntegrateLocal, at the local path). It is what drove
 	// this integrate, so a caller that needs to know which downstream paths the

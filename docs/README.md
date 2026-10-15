@@ -17,8 +17,6 @@ The `docs/examples/` directory contains fully worked scenarios showing gitspork 
 When getting started, you can run `gitspork init --help` or `gitspork schema` to see the schema and documentation for `.gitspork.yml`:
 
 ```yaml
-Main .gitspork.yml schema:
----------------------------------------------
 upstream_owned: # file patterns (https://github.com/gobwas/glob) fully owned by the upstream; an entry may instead be a {from, to} map to rename a file as it syncs to the downstream
 - "upstream-owned.txt"
 - from: "upstream-owned-renamed-from.txt" # (rename) upstream source glob/path
@@ -51,18 +49,23 @@ templated: # list of instruction for templated source files in the upstream that
       name: "input_one" # Name of the input from that template from which to pull the value
   - name: "input_four" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_four?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt, previous_input)
+    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt/prompt_default, previous_input)
       path: "some.nested.key" # JSON or YAML path, e.g. 'user.name.first'; a segment may index a list as 'items[0]' or select its first mapping with a matching field as 'items[name=web]' (values cannot contain '.' or ']'); if already present at the template destination path, that value will be used without prompting
   - name: "input_five" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_five?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
+    prompt_default: # (optional) default value for a prompt should the user not provide input; without 'prompt', the input takes this default without asking
       from_seeded: "mySeededDataKey" # if seed data provided and the seed map contains this key, the prompt default comes from that value; falls back to 'value' if the key is absent or empty
   - name: "input_six" # name of the input as defined in the template like 'index .Inputs "[name]"'
     expect_seeded: true # (optional one-of-required) whether or not we expect this input to have come from seed data; only supported in integrate-local (and the SDK's IntegrateLocal), not remote integrate
   - name: "input_seven" # name of the input as defined in the template like 'index .Inputs "[name]"'
     prompt: "What is the value of input_seven?" # (optional, one-of required) prompt to present to the user in order to gather the input value
-    prompt_default: # (optional) allows to specify instruction on a default value for a prompt should the user not provide input
+    prompt_default: # (optional) default value for a prompt should the user not provide input; without 'prompt', the input takes this default without asking
       value: "static-default-value" # static value to use as the default value should the user not provide input to the prompt
+  - name: "input_eight" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt_default: # (optional) default value for a prompt should the user not provide input; without 'prompt', the input takes this default without asking
+      value: "30" # static value to use as the default value should the user not provide input to the prompt
+    from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt/prompt_default, previous_input)
+      path: "some.timeout" # JSON or YAML path, e.g. 'user.name.first'; a segment may index a list as 'items[0]' or select its first mapping with a matching field as 'items[name=web]' (values cannot contain '.' or ']'); if already present at the template destination path, that value will be used without prompting
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 - template: "meta-seed.txt.go.tmpl" # source path of the Go template file to use in the upstream
@@ -73,14 +76,6 @@ templated: # list of instruction for templated source files in the upstream that
     prompt: "What is the value of input_one?" # (optional, one-of required) prompt to present to the user in order to gather the input value
 migrations: # list of YAML file paths in the upstream repo, relative to the upstream repo root or subpath if specified, containing downstream repo migration instructions
 - ".gitspork/migrations/0001/migration.yml"
-
-
-Migration YAML schema:
----------------------------------------------
-pre_integrate:
-  exec: "./.gitspork/migrations/0001/pre-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
-post_integrate:
-  exec: "./.gitspork/migrations/0001/post-integrate.sh" # command, or path to a script relative to the upstream repo root or subpath if specified, to execute in the downstream repo as a migration-related operation
 ```
 
 Additionally, the schema for migrations yaml files will also be provided in the output of that command:
@@ -254,6 +249,8 @@ func main() {
 `UpstreamPaths` and `UpstreamFSes` may be combined in a single call; paths are processed first, then FSes.
 
 The SDK returns structural data (`*DriftReport`, `*IntegrateResult`) so orchestrators and drift bots can consume outcomes programmatically. Pass `Logger: nil` on any Options struct to suppress internal progress output.
+
+Each integrated upstream in those results (`IntegratedUpstream`, also listed in `DriftReport.Upstreams`) carries `Config`, the ownership layout its `.gitspork.yml` declared at the integrated commit: the `upstream_owned`, `downstream_owned`, `upstream_only`, `shared_ownership` and `templated` destinations, as glob patterns relative to the downstream root (a `{from, to}` rename is listed by its `to`). A caller can use it to decide things by ownership, such as which paths a downstream's CODEOWNERS should leave ownerless, without fetching the upstream itself.
 
 ## Exit codes
 

@@ -1420,3 +1420,77 @@ func TestIntegratorTemplated_nonInteractive_usesDefaultsWithoutPrompting(t *test
 	require.NoError(t, err)
 	assert.Equal(t, "world/", string(rendered))
 }
+
+func TestIntegratorTemplated_promptDefaultWithoutPrompt(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.yaml"),
+		[]byte(`timeout: {{ index .Inputs "timeout" }}`), 0644))
+	sc := stubRequestInput(t, "prompted")
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.yaml",
+		Destination: "rendered.yaml",
+		Inputs: []config.GitSporkConfigTemplatedInput{{
+			Name:                      "timeout",
+			FromDestinationStructured: &config.GitSporkConfigTemplatedInputDestinationStructured{Path: "timeout"},
+			PromptDefault:             &config.GitSporkConfigTemplatedPromptDefault{Value: "30"},
+		}},
+	}}
+	integrateAndRead := func(seeds map[string]string) string {
+		t.Helper()
+		require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), seeds))
+		rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.yaml"))
+		require.NoError(t, err)
+		return string(rendered)
+	}
+
+	assert.Equal(t, "timeout: 30", integrateAndRead(nil), "unresolved input takes the default")
+
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "rendered.yaml"), []byte("timeout: 45"), 0644))
+	assert.Equal(t, "timeout: 45", integrateAndRead(nil), "downstream value wins over the default")
+
+	require.NoError(t, os.Remove(filepath.Join(downstreamDir, "rendered.yaml")))
+	assert.Equal(t, "timeout: 60", integrateAndRead(map[string]string{"timeout": "60"}), "seed wins over the default")
+
+	require.NoError(t, os.Remove(filepath.Join(downstreamDir, "rendered.yaml")))
+	assert.Equal(t, "timeout: 60", integrateAndRead(nil), "cached answer wins over the default")
+
+	require.NoError(t, os.WriteFile(filepath.Join(downstreamDir, "rendered.yaml"), []byte("timeout: 45"), 0644))
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, true, sdktypes.NoopLogger(), nil))
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "timeout: 45", string(rendered), "force-re-prompt keeps the downstream value")
+
+	freshDownstream := t.TempDir()
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, freshDownstream, true, sdktypes.NoopLogger(), map[string]string{"timeout": "60"}))
+	rendered, err = os.ReadFile(filepath.Join(freshDownstream, "rendered.yaml"))
+	require.NoError(t, err)
+	assert.Equal(t, "timeout: 60", string(rendered), "force-re-prompt keeps the seed")
+
+	assert.Zero(t, sc.calls, "an input without prompt must never ask")
+}
+
+func TestIntegratorTemplated_previousInputWinsOverPromptDefault(t *testing.T) {
+	upstreamDir := t.TempDir()
+	downstreamDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "template.txt"), []byte(`{{ index .Inputs "copy" }}`), 0644))
+	stubRequestInput(t, "")
+
+	instructions := []config.GitSporkConfigTemplated{{
+		Template:    "template.txt",
+		Destination: "rendered.txt",
+		Inputs: []config.GitSporkConfigTemplatedInput{
+			{Name: "source", PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "from-source"}},
+			{
+				Name:          "copy",
+				PreviousInput: &config.GitSporkConfigTemplatedInputPrevious{Template: "template.txt", Name: "source"},
+				PromptDefault: &config.GitSporkConfigTemplatedPromptDefault{Value: "unused"},
+			},
+		},
+	}}
+	require.NoError(t, (&IntegratorTemplated{}).Integrate(instructions, upstreamDir, downstreamDir, false, sdktypes.NoopLogger(), nil))
+	rendered, err := os.ReadFile(filepath.Join(downstreamDir, "rendered.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "from-source", string(rendered))
+}

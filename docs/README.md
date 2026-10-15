@@ -66,6 +66,13 @@ templated: # list of instruction for templated source files in the upstream that
       value: "30" # static value to use as the default value should the user not provide input to the prompt
     from_destination_structured: # (optional) pull value from a dot-delimited path in the already-rendered destination file (must be JSON or YAML); if resolved, the value is used immediately; if not (file/path absent, null, or forceRePrompt), falls through to the remaining configured sources (expect_seeded, json_data_path, prompt/prompt_default, previous_input)
       path: "some.timeout" # JSON or YAML path, e.g. 'user.name.first'; a segment may index a list as 'items[0]' or select its first mapping with a matching field as 'items[name=web]' (values cannot contain '.' or ']'); if already present at the template destination path, that value will be used without prompting
+  - name: "input_nine" # name of the input as defined in the template like 'index .Inputs "[name]"'
+    prompt: "Enable the scheduled job?" # (optional, one-of required) prompt to present to the user in order to gather the input value
+    prompt_default: # (optional) default value for a prompt should the user not provide input; without 'prompt', the input takes this default without asking
+      value: "false" # static value to use as the default value should the user not provide input to the prompt
+    choices: # (optional) fixed set of answers for 'prompt', shown as a selection menu; seeded, cached and default values must be one of these
+    - "true"
+    - "false"
   merged: # optional instruction for merging with pre-existing file in the destination, if present, post-render
     structured: "prefer-downstream" # instruction for a structured merged post-render, either 'prefer-upstream' or 'prefer-downstream'
 - template: "meta-seed.txt.go.tmpl" # source path of the Go template file to use in the upstream

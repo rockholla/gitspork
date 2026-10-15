@@ -62,7 +62,8 @@ func IntegrateLocal(opts *sdktypes.IntegrateLocalOptions) (*sdktypes.IntegrateRe
 			return result, err
 		}
 		result.Upstreams = append(result.Upstreams, sdktypes.IntegratedUpstream{
-			URL: upstreamPath, // local path (or materialized temp dir) in URL slot; no CommitHash for local
+			URL:    upstreamPath, // local path (or materialized temp dir) in URL slot; no CommitHash for local
+			Config: upstreamConfigFrom(gitSporkConfig),
 		})
 	}
 	return result, nil

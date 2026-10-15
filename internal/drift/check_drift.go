@@ -152,7 +152,7 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			return report, fmt.Errorf("error listing worktree files before integrate: %v", err)
 		}
 
-		if err := integrate.IntegrateForDriftCheck(&integrate.DriftCheckRequest{
+		integrated, err := integrate.IntegrateForDriftCheck(&integrate.DriftCheckRequest{
 			Logger:             opts.Logger,
 			DownstreamRepoPath: scratchPath,
 			UpstreamURL:        entry.spec.URL,
@@ -162,9 +162,11 @@ func CheckDrift(opts *sdktypes.CheckDriftOptions) (*sdktypes.DriftReport, error)
 			CacheTTL:           opts.CacheTTL,
 			NoCache:            opts.NoCache,
 			Progress:           opts.Progress,
-		}); err != nil {
+		})
+		if err != nil {
 			return report, fmt.Errorf("error running integration for drift check: %w", err)
 		}
+		report.Upstreams = append(report.Upstreams, integrated)
 
 		afterFiles, err := listWorktreeFiles(scratchPath)
 		if err != nil {

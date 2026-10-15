@@ -295,7 +295,40 @@ func integrateOneInternal(req *internalRequest, upstream sdktypes.UpstreamSpec) 
 		URL:        originalUpstreamURL,
 		Subpath:    upstream.Subpath,
 		CommitHash: commitHash,
+		Config:     upstreamConfigFrom(gitSporkConfig),
 	}, nil
+}
+
+// upstreamConfigFrom is the public, ownership-only view of a parsed .gitspork.yml.
+// Renamed entries are listed by their downstream destination.
+func upstreamConfigFrom(c *config.GitSporkConfig) *sdktypes.UpstreamConfig {
+	destinations := func(entries []config.OwnedEntry) []string {
+		out := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.IsRename() {
+				out = append(out, e.To)
+			} else {
+				out = append(out, e.Pattern)
+			}
+		}
+		return out
+	}
+	copyOf := func(in []string) []string { return append([]string{}, in...) }
+	cfg := &sdktypes.UpstreamConfig{
+		UpstreamOwned:   destinations(c.UpstreamOwned),
+		DownstreamOwned: destinations(c.DownstreamOwned),
+		UpstreamOnly:    copyOf(c.UpstreamOnly),
+		SharedOwnership: sdktypes.SharedOwnership{
+			Merged:                     copyOf(c.SharedOwnership.Merged),
+			StructuredPreferUpstream:   copyOf(c.SharedOwnership.Structured.PreferUpstream),
+			StructuredPreferDownstream: copyOf(c.SharedOwnership.Structured.PreferDownstream),
+		},
+		Templated: make([]sdktypes.TemplatedDestination, 0, len(c.Templated)),
+	}
+	for _, t := range c.Templated {
+		cfg.Templated = append(cfg.Templated, sdktypes.TemplatedDestination{Destination: t.Destination, DownstreamOwned: t.DownstreamOwned})
+	}
+	return cfg
 }
 
 func integrate(gitSporkConfig *config.GitSporkConfig, upstreamPath string, downstreamPath string, forceRePrompt bool, nonInteractive bool, forDriftCheck bool, logger sdktypes.Logger, seedInputs map[string]string) error {

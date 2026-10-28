@@ -105,9 +105,10 @@ var ErrGitBinaryMissing = sdktypes.ErrGitBinaryMissing
 // distinguish this from other errors via errors.Is(err, ErrSelfIntegration).
 var ErrSelfIntegration = sdktypes.ErrSelfIntegration
 
-// ErrUpstreamCommitNotFound is returned by CheckDrift when the upstream commit
-// recorded in the downstream state can't be fetched from the upstream, e.g. it
-// was only on a branch that has since been deleted. Detect via
+// ErrUpstreamCommitNotFound is returned by CheckDrift when the upstream
+// reports it doesn't have the commit recorded in the downstream state, e.g. it
+// was only on a branch that has since been deleted. Other fetch failures
+// (network, auth) are not reported with it. Detect via
 // errors.Is(err, gitspork.ErrUpstreamCommitNotFound).
 var ErrUpstreamCommitNotFound = sdktypes.ErrUpstreamCommitNotFound
 

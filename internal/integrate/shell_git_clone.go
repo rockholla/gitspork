@@ -282,7 +282,12 @@ func shellGitFetchCommit(ctx context.Context, dir, remoteURL, sha, token string,
 		cmd.Stderr = io.MultiWriter(&stderr, progress)
 	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git fetch %s %s in %s: %w: %s", remoteURL, sha, dir, err, strings.TrimSpace(stderr.String()))
+		reason := strings.TrimSpace(stderr.String())
+		// what upload-pack (git's own and GitHub's) says for a commit it doesn't have
+		if strings.Contains(reason, "not our ref") {
+			return fmt.Errorf("%w: %s (was it only on a deleted branch?): %s", sdktypes.ErrUpstreamCommitNotFound, sha, reason)
+		}
+		return fmt.Errorf("git fetch %s %s in %s: %w: %s", remoteURL, sha, dir, err, reason)
 	}
 	return nil
 }

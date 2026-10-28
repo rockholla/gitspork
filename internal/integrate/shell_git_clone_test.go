@@ -458,7 +458,21 @@ func TestEnsureUpstreamCommit(t *testing.T) {
 		t.Run(name+" unknown commit", func(t *testing.T) {
 			repo, dir := clone(t)
 			err := ensureUpstreamCommit(repo, dir, "file://"+upstreamDir, "", authInfo{}, strings.Repeat("ab", 20), useShellGit, nil, sdktypes.NoopLogger())
-			assert.ErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound)
+			require.Error(t, err)
+			if useShellGit {
+				// upload-pack's "not our ref" is a definite answer
+				assert.ErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound)
+			} else {
+				// go-git's error doesn't say why, so it isn't claimed as not-found
+				assert.NotErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound)
+			}
+		})
+
+		t.Run(name+" unreachable upstream is not reported as not found", func(t *testing.T) {
+			repo, dir := clone(t)
+			err := ensureUpstreamCommit(repo, dir, "file://"+filepath.Join(t.TempDir(), "missing"), "", authInfo{}, prHash.String(), useShellGit, nil, sdktypes.NoopLogger())
+			require.Error(t, err)
+			assert.NotErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound)
 		})
 	}
 
@@ -482,6 +496,13 @@ func TestEnsureUpstreamCommit(t *testing.T) {
 		err := shellGitFetchCommit(context.Background(), dir, "file://"+upstreamDir, "--upload-pack=touch "+marker+";git-upload-pack", "", nil)
 		require.Error(t, err)
 		assert.NoFileExists(t, marker)
+	})
+
+	t.Run("checkout args work on old git", func(t *testing.T) {
+		// git before ~2.44 reads checkout's --end-of-options as a pathspec
+		args := shellGitCheckoutArgs("/clone", prHash.String())
+		assert.NotContains(t, args, "--end-of-options")
+		assert.Equal(t, []string{"checkout", prHash.String(), "--"}, args[len(args)-3:])
 	})
 
 	t.Run("present commit is a no-op", func(t *testing.T) {

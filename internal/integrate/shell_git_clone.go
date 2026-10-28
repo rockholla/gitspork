@@ -260,3 +260,34 @@ func shellGitFetch(ctx context.Context, dir, remoteURL string, opts shellGitFetc
 	}
 	return nil
 }
+
+// shellGitFetchCommit fetches one commit by SHA from remoteURL into the repo
+// at dir. No ref is updated; the objects land with FETCH_HEAD. Auth works as
+// in shellGitFetch.
+func shellGitFetchCommit(ctx context.Context, dir, remoteURL, sha, token string, progress io.Writer) error {
+	src := strings.TrimPrefix(remoteURL, "file://")
+	// -c safe.directory=* — see the note on shellGitClone.
+	args := []string{"-c", "safe.directory=*"}
+	credArgs, childEnv := prepareShellGitAuth(src, token)
+	args = append(args, credArgs...)
+	args = append(args, "-C", dir, "fetch", "--no-tags", "--end-of-options", src, sha)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if childEnv != nil {
+		cmd.Env = childEnv
+	}
+	// keep git's reason for the error even when progress also gets it
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if progress != nil {
+		cmd.Stderr = io.MultiWriter(&stderr, progress)
+	}
+	if err := cmd.Run(); err != nil {
+		reason := strings.TrimSpace(stderr.String())
+		// what upload-pack (git's own and GitHub's) says for a commit it doesn't have
+		if strings.Contains(reason, "not our ref") {
+			return fmt.Errorf("%w: %s (was it only on a deleted branch?): %s", sdktypes.ErrUpstreamCommitNotFound, sha, reason)
+		}
+		return fmt.Errorf("git fetch %s %s in %s: %w: %s", remoteURL, sha, dir, err, reason)
+	}
+	return nil
+}

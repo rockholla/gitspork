@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -43,6 +44,8 @@ var (
 	reHTTPProto                            = regexp.MustCompile(`^https?://`)
 	// commitHashRe matches short (7-char) through full (40-char) git commit hashes.
 	commitHashRe = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+	// fullCommitHashRe matches a full SHA-1 or SHA-256 commit hash.
+	fullCommitHashRe = regexp.MustCompile(`^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$`)
 )
 
 // authInfo bundles the two auth representations needed across the code:
@@ -552,8 +555,10 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 	if err != nil {
 		return "", err
 	}
-	// Holding the shared lock until return keeps other calls from
-	// refreshing or wiping the mirror while the clone below reads it.
+	// Holding the shared lock keeps other calls from refreshing or wiping the
+	// mirror while the clone below reads it; it's released once the clone is
+	// done, so later network work doesn't hold off writers.
+	releaseCache = sync.OnceFunc(releaseCache)
 	defer releaseCache()
 	if cacheDir != "" {
 		// Working clone reads from the local bare mirror. No network, no auth.
@@ -601,12 +606,16 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 			return "", fmt.Errorf("error cloning upstream gitspork repo: %v", err)
 		}
 	}
+	releaseCache()
 	if req.upstreamCommit != "" {
+		if err := ensureUpstreamCommit(repo, cloneDir, upstreamURL, upstream.Token, auth, req.upstreamCommit, useShellGit, req.progress, req.Logger); err != nil {
+			return "", err
+		}
 		if useShellGit {
 			// Shell git checkout on our own fresh clone. -c advice.detachedHead=false
 			// silences the "you're in detached HEAD state" warning that would
 			// otherwise print for every drift-check re-integrate.
-			checkoutCmd := exec.CommandContext(context.TODO(), "git", "-c", "safe.directory=*", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", req.upstreamCommit)
+			checkoutCmd := exec.CommandContext(context.TODO(), "git", shellGitCheckoutArgs(cloneDir, req.upstreamCommit)...)
 			checkoutCmd.Stderr = &logutil.LoggerWriter{L: req.Logger}
 			if err := checkoutCmd.Run(); err != nil {
 				return "", fmt.Errorf("git checkout %s in %s: %w", req.upstreamCommit, cloneDir, err)
@@ -663,6 +672,64 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 // pure waste.
 func canShallowClone(upstreamCommit, prevUpstreamCommitHash string, versionIsCommitHash bool) bool {
 	return upstreamCommit == "" && prevUpstreamCommitHash == "" && !versionIsCommitHash
+}
+
+// ensureUpstreamCommit makes sure the pinned drift-check commit is in the
+// fresh clone. A clone only carries commits reachable from branches and tags,
+// so a commit recorded while integrating from a branch that was later
+// squash-merged and deleted is missing. Hosts like GitHub still serve it by
+// SHA (e.g. via refs/pull/*), so fetch it directly from the network upstream,
+// never the cache. Returns ErrUpstreamCommitNotFound only when the upstream
+// says it doesn't have the commit; other fetch failures are returned as is.
+func ensureUpstreamCommit(repo *git.Repository, cloneDir, upstreamURL, token string, auth authInfo, sha string, useShellGit bool, progress io.Writer, logger sdktypes.Logger) error {
+	// sha comes from the downstream state file and is passed to git, so
+	// accept only a full hash (gitspork always records one)
+	if !fullCommitHashRe.MatchString(sha) {
+		return fmt.Errorf("upstream commit %q in the downstream state is not a full commit hash", sha)
+	}
+	hash := plumbing.NewHash(sha)
+	if _, err := repo.CommitObject(hash); err == nil {
+		return nil
+	}
+	logger.Log("upstream commit %s is not on any upstream branch or tag, fetching it by SHA", sha)
+	var fetchErr error
+	if useShellGit {
+		fetchErr = shellGitFetchCommit(context.TODO(), cloneDir, upstreamURL, sha, token, progress)
+		// reopen so go-git sees the pack shell git just wrote
+		reopened, err := git.PlainOpen(cloneDir)
+		if err != nil {
+			return fmt.Errorf("reopening %s after fetching %s: %w", cloneDir, sha, err)
+		}
+		repo = reopened
+	} else {
+		fetchErr = repo.Fetch(&git.FetchOptions{
+			RemoteURL:     upstreamURL,
+			RefSpecs:      []gitconfig.RefSpec{gitconfig.RefSpec(sha + ":refs/gitspork/upstream-commit")},
+			ClientOptions: auth.clientOptions,
+			Progress:      &logutil.LoggerWriter{L: logger},
+		})
+		if errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			fetchErr = nil
+		}
+	}
+	if errors.Is(fetchErr, sdktypes.ErrUpstreamCommitNotFound) {
+		return fetchErr
+	}
+	if fetchErr != nil {
+		return fmt.Errorf("fetching upstream commit %s by SHA: %w", sha, fetchErr)
+	}
+	if _, err := repo.CommitObject(hash); err != nil {
+		return fmt.Errorf("%w: %s (was it only on a deleted branch?)", sdktypes.ErrUpstreamCommitNotFound, sha)
+	}
+	return nil
+}
+
+// shellGitCheckoutArgs checks out sha detached. The trailing "--" marks sha
+// as a revision on every git version; checkout's --end-of-options only
+// works from git 2.44 or so, and older ones read it as a pathspec.
+func shellGitCheckoutArgs(cloneDir, sha string) []string {
+	// -c advice.detachedHead=false silences the detached-HEAD warning
+	return []string{"-c", "safe.directory=*", "-C", cloneDir, "-c", "advice.detachedHead=false", "checkout", sha, "--"}
 }
 
 // resolveUpstreamVersionRef probes the remote to disambiguate a bare Version

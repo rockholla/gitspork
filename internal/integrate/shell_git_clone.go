@@ -270,16 +270,19 @@ func shellGitFetchCommit(ctx context.Context, dir, remoteURL, sha, token string,
 	args := []string{"-c", "safe.directory=*"}
 	credArgs, childEnv := prepareShellGitAuth(src, token)
 	args = append(args, credArgs...)
-	args = append(args, "-C", dir, "fetch", "--no-tags", src, sha)
+	args = append(args, "-C", dir, "fetch", "--no-tags", "--end-of-options", src, sha)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if childEnv != nil {
 		cmd.Env = childEnv
 	}
+	// keep git's reason for the error even when progress also gets it
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	if progress != nil {
-		cmd.Stderr = progress
+		cmd.Stderr = io.MultiWriter(&stderr, progress)
 	}
-	if _, err := cmd.Output(); err != nil {
-		return fmt.Errorf("git fetch %s %s in %s: %w", remoteURL, sha, dir, err)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git fetch %s %s in %s: %w: %s", remoteURL, sha, dir, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }

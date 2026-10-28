@@ -272,6 +272,29 @@ func TestCheckDrift_noDrift(t *testing.T) {
 	assert.Empty(t, report.Files)
 }
 
+// check-drift: a recorded commit the upstream no longer has (e.g. from a
+// deleted branch) returns the ErrUpstreamCommitNotFound sentinel
+func TestCheckDrift_recordedCommitGone_returnsErrSentinel(t *testing.T) {
+	upstreamDir, head := minimalUpstream(t)
+	downstreamDir := emptyDownstream(t)
+
+	_, err := gitspork.Integrate(&gitspork.IntegrateOptions{
+		Upstreams:          []gitspork.UpstreamSpec{{URL: "file://" + upstreamDir, Version: "main"}},
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.NoError(t, err)
+	statePath := filepath.Join(downstreamDir, ".gitspork", "downstream-state.json")
+	state, err := os.ReadFile(statePath)
+	require.NoError(t, err)
+	require.Contains(t, string(state), head.String())
+	writeAndCommit(t, downstreamDir, ".gitspork/downstream-state.json", strings.ReplaceAll(string(state), head.String(), strings.Repeat("ab", 20)))
+
+	_, err = gitspork.CheckDrift(&gitspork.CheckDriftOptions{
+		DownstreamRepoPath: downstreamDir,
+	})
+	require.True(t, errors.Is(err, gitspork.ErrUpstreamCommitNotFound), "expected ErrUpstreamCommitNotFound, got %v", err)
+}
+
 // check-drift: drift returns HasDrift=true, populated Files, ErrDriftDetected sentinel
 func TestCheckDrift_driftDetected_returnsErrSentinel(t *testing.T) {
 	upstreamDir, _ := minimalUpstream(t)

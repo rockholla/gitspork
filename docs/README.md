@@ -169,7 +169,7 @@ Valid `--upstream` keys are `url` (required), `version`, `subpath`, and `token`.
 
 ## Cache management
 
-`integrate` and `check-drift` share a machine-scoped bare-mirror cache of each upstream repo. First invocation against an upstream URL populates the cache; subsequent invocations reuse it, only fetching from remote once the entry ages past the configured TTL. This is what makes coordinator fan-out efficient — running many `gitspork integrate` invocations against the same upstream from one machine only hits the remote once per TTL window instead of once per downstream.
+`integrate` and `check-drift` share a machine-scoped bare-mirror cache of each upstream repo. First invocation against an upstream URL populates the cache; subsequent invocations reuse it, only fetching from remote once the entry ages past the configured TTL. This is what makes coordinator fan-out efficient — running many `gitspork integrate` invocations against the same upstream from one machine only hits the remote once per TTL window instead of once per downstream. One exception: when `check-drift`'s recorded upstream commit isn't on any upstream branch or tag (e.g. it was integrated from a branch that has since been deleted), it fetches that commit by SHA straight from the remote. If the remote no longer has it either, `check-drift` fails with `ErrUpstreamCommitNotFound`.
 
 Two flags on `integrate` and `check-drift`:
 

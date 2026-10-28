@@ -462,6 +462,28 @@ func TestEnsureUpstreamCommit(t *testing.T) {
 		})
 	}
 
+	t.Run("rejects a value that isn't a full hash", func(t *testing.T) {
+		dir, _ := testharness.MinimalUpstream(t)
+		r, err := gogit.PlainOpen(dir)
+		require.NoError(t, err)
+		marker := filepath.Join(t.TempDir(), "PWNED")
+		for _, bad := range []string{"--upload-pack=touch " + marker + ";git-upload-pack", mainHash.String()[:7], ""} {
+			err := ensureUpstreamCommit(r, dir, "file://"+upstreamDir, "", authInfo{}, bad, true, nil, sdktypes.NoopLogger())
+			require.Error(t, err, bad)
+			assert.NotErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound, bad)
+			assert.Contains(t, err.Error(), "not a full commit hash")
+		}
+		assert.NoFileExists(t, marker)
+	})
+
+	t.Run("fetch treats an option-like SHA as an operand", func(t *testing.T) {
+		dir, _ := testharness.MinimalUpstream(t)
+		marker := filepath.Join(t.TempDir(), "PWNED")
+		err := shellGitFetchCommit(context.Background(), dir, "file://"+upstreamDir, "--upload-pack=touch "+marker+";git-upload-pack", "", nil)
+		require.Error(t, err)
+		assert.NoFileExists(t, marker)
+	})
+
 	t.Run("present commit is a no-op", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "clone")
 		require.NoError(t, shellGitClone(context.Background(), "file://"+upstreamDir, dir, shellGitCloneOptions{Local: true}, nil, sdktypes.NoopLogger()))

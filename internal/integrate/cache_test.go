@@ -13,6 +13,7 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/gofrs/flock"
 	"github.com/rockholla/gitspork/v2/internal/sdktypes"
 	"github.com/rockholla/gitspork/v2/test/testharness"
@@ -725,4 +726,47 @@ func largerUpstream(t *testing.T, n int) string {
 		}
 	}
 	return dir
+}
+
+// A drift-check commit missing from a fresh cache mirror must be fetched from
+// the network upstream, not the mirror the working clone came from.
+func TestCloneUpstreamForIntegrate_fetchesMissingCommitFromUpstreamNotCache(t *testing.T) {
+	for _, shellGit := range []bool{true, false} {
+		t.Run(fmt.Sprintf("shellGit=%v", shellGit), func(t *testing.T) {
+			if !shellGit {
+				t.Setenv("PATH", "/nonexistent-path-for-gitspork-tests")
+			} else if !useShellGitFastPath() {
+				t.Skip("git not on PATH")
+			}
+			root := t.TempDir()
+			t.Setenv(envCacheDir, root)
+			t.Setenv(envNoCache, "")
+			upstreamDir, mainHash := testharness.MinimalUpstream(t)
+			upstreamURL := "file://" + upstreamDir
+			spec := sdktypes.UpstreamSpec{URL: upstreamURL}
+
+			// Populate the mirror, then add a commit only under refs/pull/*.
+			_, err := cloneUpstreamForIntegrate(filepath.Join(t.TempDir(), "c1"), &internalRequest{Logger: sdktypes.NoopLogger(), cacheTTL: time.Hour}, spec)
+			require.NoError(t, err)
+			upstreamRepo, err := gogit.PlainOpen(upstreamDir)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "branch-only.txt"), []byte("x"), 0644))
+			prHash := testharness.CommitAllWithMessage(t, upstreamRepo, "commit from a since-deleted branch")
+			require.NoError(t, upstreamRepo.Storer.SetReference(plumbing.NewHashReference("refs/pull/1/head", prHash)))
+			require.NoError(t, upstreamRepo.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", mainHash)))
+
+			cloneDir := filepath.Join(t.TempDir(), "c2")
+			got, err := cloneUpstreamForIntegrate(cloneDir, &internalRequest{Logger: sdktypes.NoopLogger(), cacheTTL: time.Hour, upstreamCommit: prHash.String()}, spec)
+			require.NoError(t, err)
+			assert.Equal(t, prHash.String(), got)
+			assert.FileExists(t, filepath.Join(cloneDir, "branch-only.txt"))
+
+			// The fresh mirror was not refreshed, so the commit came from upstream.
+			mirrorDir, _, _ := cacheEntryPaths(root, cacheKey(upstreamURL))
+			mirror, err := gogit.PlainOpen(mirrorDir)
+			require.NoError(t, err)
+			_, err = mirror.CommitObject(prHash)
+			assert.Error(t, err, "mirror must not carry the commit")
+		})
+	}
 }

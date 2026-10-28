@@ -260,3 +260,26 @@ func shellGitFetch(ctx context.Context, dir, remoteURL string, opts shellGitFetc
 	}
 	return nil
 }
+
+// shellGitFetchCommit fetches one commit by SHA from remoteURL into the repo
+// at dir. No ref is updated; the objects land with FETCH_HEAD. Auth works as
+// in shellGitFetch.
+func shellGitFetchCommit(ctx context.Context, dir, remoteURL, sha, token string, progress io.Writer) error {
+	src := strings.TrimPrefix(remoteURL, "file://")
+	// -c safe.directory=* — see the note on shellGitClone.
+	args := []string{"-c", "safe.directory=*"}
+	credArgs, childEnv := prepareShellGitAuth(src, token)
+	args = append(args, credArgs...)
+	args = append(args, "-C", dir, "fetch", "--no-tags", src, sha)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if childEnv != nil {
+		cmd.Env = childEnv
+	}
+	if progress != nil {
+		cmd.Stderr = progress
+	}
+	if _, err := cmd.Output(); err != nil {
+		return fmt.Errorf("git fetch %s %s in %s: %w", remoteURL, sha, dir, err)
+	}
+	return nil
+}

@@ -415,3 +415,59 @@ func TestShellGitLsRemote_emptyURL(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty url")
 }
+
+// TestEnsureUpstreamCommit covers a drift-check commit that a clone doesn't
+// carry: it was integrated from a branch that was squash-merged and deleted,
+// so upstream only has it under refs/pull/*. It must be fetched by SHA, and a
+// commit upstream doesn't have at all must surface ErrUpstreamCommitNotFound.
+func TestEnsureUpstreamCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	upstreamDir, mainHash := testharness.MinimalUpstream(t)
+	upstreamRepo, err := gogit.PlainOpen(upstreamDir)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(upstreamDir, "branch-only.txt"), []byte("x"), 0644))
+	prHash := testharness.CommitAllWithMessage(t, upstreamRepo, "commit from a since-deleted branch")
+	require.NoError(t, upstreamRepo.Storer.SetReference(plumbing.NewHashReference("refs/pull/1/head", prHash)))
+	require.NoError(t, upstreamRepo.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", mainHash)))
+
+	for _, useShellGit := range []bool{true, false} {
+		clone := func(t *testing.T) (*gogit.Repository, string) {
+			dir := filepath.Join(t.TempDir(), "clone")
+			// --no-local transfers only reachable objects, like a network clone;
+			// shellGitClone's --local would copy the unreachable commit too
+			require.NoError(t, exec.Command("git", "clone", "-q", "--no-local", upstreamDir, dir).Run())
+			repo, err := gogit.PlainOpen(dir)
+			require.NoError(t, err)
+			_, err = repo.CommitObject(prHash)
+			require.Error(t, err, "clone must not carry the refs/pull-only commit")
+			return repo, dir
+		}
+		name := map[bool]string{true: "shell git", false: "go-git"}[useShellGit]
+
+		t.Run(name+" fetches missing commit", func(t *testing.T) {
+			repo, dir := clone(t)
+			require.NoError(t, ensureUpstreamCommit(repo, dir, "file://"+upstreamDir, "", authInfo{}, prHash.String(), useShellGit, nil, sdktypes.NoopLogger()))
+			reopened, err := gogit.PlainOpen(dir)
+			require.NoError(t, err)
+			_, err = reopened.CommitObject(prHash)
+			assert.NoError(t, err)
+		})
+
+		t.Run(name+" unknown commit", func(t *testing.T) {
+			repo, dir := clone(t)
+			err := ensureUpstreamCommit(repo, dir, "file://"+upstreamDir, "", authInfo{}, strings.Repeat("ab", 20), useShellGit, nil, sdktypes.NoopLogger())
+			assert.ErrorIs(t, err, sdktypes.ErrUpstreamCommitNotFound)
+		})
+	}
+
+	t.Run("present commit is a no-op", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "clone")
+		require.NoError(t, shellGitClone(context.Background(), "file://"+upstreamDir, dir, shellGitCloneOptions{Local: true}, nil, sdktypes.NoopLogger()))
+		repo, err := gogit.PlainOpen(dir)
+		require.NoError(t, err)
+		// unreachable URL proves no fetch is attempted
+		assert.NoError(t, ensureUpstreamCommit(repo, dir, "file:///nonexistent", "", authInfo{}, mainHash.String(), true, nil, sdktypes.NoopLogger()))
+	})
+}

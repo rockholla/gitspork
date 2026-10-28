@@ -602,6 +602,9 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 		}
 	}
 	if req.upstreamCommit != "" {
+		if err := ensureUpstreamCommit(repo, cloneDir, upstreamURL, upstream.Token, auth, req.upstreamCommit, useShellGit, req.progress, req.Logger); err != nil {
+			return "", err
+		}
 		if useShellGit {
 			// Shell git checkout on our own fresh clone. -c advice.detachedHead=false
 			// silences the "you're in detached HEAD state" warning that would
@@ -663,6 +666,45 @@ func cloneUpstreamForIntegrate(cloneDir string, req *internalRequest, upstream s
 // pure waste.
 func canShallowClone(upstreamCommit, prevUpstreamCommitHash string, versionIsCommitHash bool) bool {
 	return upstreamCommit == "" && prevUpstreamCommitHash == "" && !versionIsCommitHash
+}
+
+// ensureUpstreamCommit makes sure the pinned drift-check commit is in the
+// fresh clone. A clone only carries commits reachable from branches and tags,
+// so a commit recorded while integrating from a branch that was later
+// squash-merged and deleted is missing. Hosts like GitHub still serve it by
+// SHA (e.g. via refs/pull/*), so fetch it directly from the network upstream,
+// never the cache. Returns ErrUpstreamCommitNotFound when it can't be had.
+func ensureUpstreamCommit(repo *git.Repository, cloneDir, upstreamURL, token string, auth authInfo, sha string, useShellGit bool, progress io.Writer, logger sdktypes.Logger) error {
+	hash := plumbing.NewHash(sha)
+	if _, err := repo.CommitObject(hash); err == nil {
+		return nil
+	}
+	logger.Log("upstream commit %s is not on any upstream branch or tag, fetching it by SHA", sha)
+	var fetchErr error
+	if useShellGit {
+		fetchErr = shellGitFetchCommit(context.TODO(), cloneDir, upstreamURL, sha, token, progress)
+		// reopen so go-git sees the pack shell git just wrote
+		if reopened, err := git.PlainOpen(cloneDir); err == nil {
+			repo = reopened
+		}
+	} else {
+		fetchErr = repo.Fetch(&git.FetchOptions{
+			RemoteURL:     upstreamURL,
+			RefSpecs:      []gitconfig.RefSpec{gitconfig.RefSpec(sha + ":refs/gitspork/upstream-commit")},
+			ClientOptions: auth.clientOptions,
+			Progress:      &logutil.LoggerWriter{L: logger},
+		})
+		if errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			fetchErr = nil
+		}
+	}
+	if _, err := repo.CommitObject(hash); err != nil {
+		if fetchErr != nil {
+			return fmt.Errorf("%w: %s (was it only on a deleted branch?): %v", sdktypes.ErrUpstreamCommitNotFound, sha, fetchErr)
+		}
+		return fmt.Errorf("%w: %s (was it only on a deleted branch?)", sdktypes.ErrUpstreamCommitNotFound, sha)
+	}
+	return nil
 }
 
 // resolveUpstreamVersionRef probes the remote to disambiguate a bare Version

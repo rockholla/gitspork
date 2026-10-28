@@ -14,3 +14,9 @@ var ErrGitBinaryMissing = errors.New("git binary not found on PATH")
 // detects that the upstream identifies the same repo as the downstream. SDK
 // consumers can check via errors.Is(err, gitspork.ErrSelfIntegration).
 var ErrSelfIntegration = errors.New("upstream and downstream identify the same repo")
+
+// ErrUpstreamCommitNotFound is returned by check-drift when the upstream commit
+// recorded in the downstream state can't be fetched from the upstream, e.g. it
+// was only on a branch that has since been deleted. SDK consumers can check via
+// errors.Is(err, gitspork.ErrUpstreamCommitNotFound).
+var ErrUpstreamCommitNotFound = errors.New("recorded upstream commit not found in upstream")
